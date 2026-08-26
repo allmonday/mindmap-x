@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+
+# Database / runtime（保留 seed 数据；mindmap.db 等不进库）
+var/*
+!var/seed_data.json
+
+# Frontend
+fe/node_modules/
+
+# Vite 构建产物（npm run build 重建，源码在 fe/）
+src/static/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

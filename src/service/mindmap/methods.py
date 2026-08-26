@@ -1,0 +1,373 @@
+"""mindmap domain — 独立业务方法。
+
+方法为普通 async 函数（不含 cls），由 models.mount_method() 桥接挂载到 Map 实体。
+
+接口约定：
+- ``actor`` 参数标识修改来源（'human' / 'agent'），写入 node.updated_by，
+  前端据此高亮 Agent 修改的节点。Agent 端（CLI/MCP/REST）默认 'agent'，
+  浏览器前端调用时显式传 'human'。
+- outline 文本格式（get_tree 输出 / apply_outline 输入）::
+
+    - [id:1] Q3 产品规划
+      - [id:2] 用户增长
+        - 邀请裂变活动            ← 无 id 前缀 = 新节点（apply_outline 时）
+
+  缩进每 2 个空格一级；`[id:N]` 前缀用于锚定已有节点。
+- apply_outline 两种 mode：
+  - merge   —— 有 id 的行更新内容并按缩进重排结构，无 id 的行新建，
+               树中未出现的节点保留不动（不会误删 Human 加的节点）
+  - replace —— 保留根节点，删除其余全部，按 outline 全量重建
+- 所有 mutation 成功后：map.version += 1，并 publish_change 广播。
+"""
+import re
+from datetime import datetime, timezone
+
+from sqlmodel import select
+
+from src.db import async_session
+from src.models import Map, Node
+from src.service.mindmap.events import publish_change
+
+_LINE_RE = re.compile(r"^-\s*(?:\[id:(\d+)\]\s*)?(.*)$")
+INDENT_UNIT = 2
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# ── helpers ───────────────────────────────────────────────────────────
+
+
+def _render_outline(nodes: list[Node]) -> str:
+    """把节点集合渲染为缩进 outline 文本。"""
+    by_parent: dict[int | None, list[Node]] = {}
+    for n in sorted(nodes, key=lambda x: (x.position, x.id)):
+        by_parent.setdefault(n.parent_id, []).append(n)
+
+    lines: list[str] = []
+
+    def walk(node: Node, depth: int) -> None:
+        lines.append("  " * depth + f"- [id:{node.id}] {node.content}")
+        for child in by_parent.get(node.id, []):
+            walk(child, depth + 1)
+
+    for root in by_parent.get(None, []):
+        walk(root, 0)
+    return "\n".join(lines)
+
+
+def _parse_outline(outline: str) -> list[tuple[int, int | None, str]]:
+    """解析 outline 文本为 (level, node_id|None, content) 列表。
+
+    校验：首行必须 level 0；每行 level 至多比上一行深 1。
+    """
+    entries: list[tuple[int, int | None, str]] = []
+    prev_level = -1
+    for raw in outline.expandtabs(INDENT_UNIT).splitlines():
+        if not raw.strip():
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        level, rem = divmod(indent, INDENT_UNIT)
+        if rem != 0:
+            raise ValueError(f"缩进必须是 {INDENT_UNIT} 的倍数: {raw!r}")
+        if prev_level >= 0 and level > prev_level + 1:
+            raise ValueError(f"缩进跳级（比上一行深超过 1 层）: {raw!r}")
+        m = _LINE_RE.match(raw.strip())
+        if not m or not m.group(2).strip():
+            raise ValueError(f"无法解析的行: {raw!r}")
+        node_id = int(m.group(1)) if m.group(1) else None
+        entries.append((level, node_id, m.group(2).strip()))
+        prev_level = level
+    if not entries:
+        raise ValueError("outline 为空")
+    if entries[0][0] != 0:
+        raise ValueError("outline 第一行必须是根节点（无缩进）")
+    return entries
+
+
+async def _get_map(session, map_id: int) -> Map:
+    m = await session.get(Map, map_id)
+    if m is None:
+        raise ValueError(f"map {map_id} not found")
+    return m
+
+
+async def _get_node(session, node_id: int) -> Node:
+    n = await session.get(Node, node_id)
+    if n is None:
+        raise ValueError(f"node {node_id} not found")
+    return n
+
+
+async def _descendant_ids(session, node: Node) -> set[int]:
+    """BFS 收集 node 的全部后代 id（不含 node 自身）。"""
+    ids: set[int] = set()
+    frontier = [node.id]
+    while frontier:
+        rows = (
+            await session.exec(select(Node.id).where(Node.parent_id.in_(frontier)))
+        ).all()
+        new = [r for r in rows if r not in ids]
+        ids.update(new)
+        frontier = new
+    return ids
+
+
+# ── queries ───────────────────────────────────────────────────────────
+
+
+async def list_maps() -> list[Map]:
+    """列出所有脑图。"""
+    async with async_session() as session:
+        result = await session.exec(select(Map).order_by(Map.id))
+        return list(result.all())
+
+
+async def get_map(map_id: int) -> Map:
+    """获取 Map 实体（不含关系数据——nodes 由 Resolver DataLoader 按需批量加载）。"""
+    async with async_session() as session:
+        return await _get_map(session, map_id)
+
+
+async def get_tree(map_id: int) -> str:
+    """整树读取，返回带 [id:N] 标记的缩进 outline 文本（Agent 核心读法）。"""
+    async with async_session() as session:
+        await _get_map(session, map_id)
+        nodes = (
+            await session.exec(select(Node).where(Node.map_id == map_id))
+        ).all()
+        return _render_outline(list(nodes))
+
+
+# ── mutations ─────────────────────────────────────────────────────────
+
+
+async def create_map(title: str, actor: str = "agent") -> Map:
+    """创建新脑图，自动创建根节点（content 复用 title）。"""
+    async with async_session() as session:
+        m = Map(title=title)
+        session.add(m)
+        await session.flush()
+        session.add(
+            Node(map_id=m.id, parent_id=None, content=title, position=0, updated_by=actor)
+        )
+        m.version = 1
+        await session.commit()
+        await session.refresh(m)
+        publish_change(m.id, m.version, "map_created", actor)
+        return m
+
+
+async def add_node(
+    map_id: int,
+    parent_id: int,
+    content: str,
+    position: int | None = None,
+    actor: str = "agent",
+) -> Node:
+    """在 parent 下新增子节点。position=None 追加到同级末尾。"""
+    async with async_session() as session:
+        m = await _get_map(session, map_id)
+        parent = await _get_node(session, parent_id)
+        if parent.map_id != map_id:
+            raise ValueError(f"node {parent_id} 不属于 map {map_id}")
+        if position is None:
+            siblings = (
+                await session.exec(
+                    select(Node.position).where(Node.parent_id == parent_id)
+                )
+            ).all()
+            position = max(siblings, default=-1) + 1
+        node = Node(
+            map_id=map_id,
+            parent_id=parent_id,
+            content=content,
+            position=position,
+            updated_by=actor,
+        )
+        session.add(node)
+        m.version += 1
+        session.add(m)
+        await session.commit()
+        await session.refresh(node)
+        publish_change(map_id, m.version, "node_added", actor)
+        return node
+
+
+async def update_node(
+    node_id: int,
+    content: str | None = None,
+    collapsed: bool | None = None,
+    actor: str = "agent",
+) -> Node:
+    """部分更新节点（content / collapsed），刷新 updated_by 与 updated_at。"""
+    async with async_session() as session:
+        node = await _get_node(session, node_id)
+        m = await _get_map(session, node.map_id)
+        if content is not None:
+            node.content = content
+        if collapsed is not None:
+            node.collapsed = collapsed
+        node.updated_by = actor
+        node.updated_at = _now()
+        m.version += 1
+        session.add(node)
+        session.add(m)
+        await session.commit()
+        await session.refresh(node)
+        publish_change(m.id, m.version, "node_updated", actor)
+        return node
+
+
+async def move_node(
+    node_id: int,
+    new_parent_id: int,
+    position: int | None = None,
+    actor: str = "agent",
+) -> Node:
+    """移动节点（换父 / 同级重排）。禁止移到自己或自己的子树下（防环）。"""
+    async with async_session() as session:
+        node = await _get_node(session, node_id)
+        m = await _get_map(session, node.map_id)
+        if node.parent_id is None:
+            raise ValueError("根节点不可移动")
+        new_parent = await _get_node(session, new_parent_id)
+        if new_parent.map_id != node.map_id:
+            raise ValueError("不能跨脑图移动节点")
+        if new_parent_id == node_id or new_parent_id in await _descendant_ids(session, node):
+            raise ValueError("不能把节点移动到自己或它的子树下（会成环）")
+        node.parent_id = new_parent_id
+        if position is None:
+            siblings = (
+                await session.exec(
+                    select(Node.position).where(
+                        Node.parent_id == new_parent_id, Node.id != node.id
+                    )
+                )
+            ).all()
+            position = max(siblings, default=-1) + 1
+        node.position = position
+        node.updated_by = actor
+        node.updated_at = _now()
+        m.version += 1
+        session.add(node)
+        session.add(m)
+        await session.commit()
+        await session.refresh(node)
+        publish_change(m.id, m.version, "node_moved", actor)
+        return node
+
+
+async def delete_node(node_id: int, actor: str = "agent") -> bool:
+    """删除节点及其整棵子树。根节点不可删除（每棵图必须有根）。"""
+    async with async_session() as session:
+        node = await _get_node(session, node_id)
+        if node.parent_id is None:
+            raise ValueError("根节点不可删除（删除整张图请走后续的 map 级接口）")
+        m = await _get_map(session, node.map_id)
+        ids = {node_id} | await _descendant_ids(session, node)
+        for nid in ids:
+            n = await session.get(Node, nid)
+            if n is not None:
+                await session.delete(n)
+        m.version += 1
+        session.add(m)
+        await session.commit()
+        publish_change(m.id, m.version, "node_deleted", actor)
+        return True
+
+
+async def apply_outline(
+    map_id: int,
+    outline: str,
+    mode: str = "merge",
+    actor: str = "agent",
+) -> Map:
+    """整树写入：按缩进 outline 文本 merge 或 replace 脑图。
+
+    merge   —— 有 [id:N] 的行更新 content 并按缩进调整父子/顺序；无 id 的行新建；
+               树中未出现的节点保留（不误删）。
+    replace —— 保留根节点（content 更新为 outline 首行），其余全删重建。
+    """
+    if mode not in ("merge", "replace"):
+        raise ValueError(f"mode 必须是 'merge' 或 'replace'，收到 {mode!r}")
+    entries = _parse_outline(outline)
+
+    async with async_session() as session:
+        m = await _get_map(session, map_id)
+        existing = {
+            n.id: n
+            for n in (
+                await session.exec(select(Node).where(Node.map_id == map_id))
+            ).all()
+        }
+
+        if mode == "replace":
+            roots = [n for n in existing.values() if n.parent_id is None]
+            root = roots[0] if roots else None
+            if root is None:
+                raise ValueError(f"map {map_id} 缺少根节点，数据异常")
+            # 删除根以外的全部节点
+            for n in existing.values():
+                if n.id != root.id:
+                    await session.delete(n)
+            await session.flush()
+            existing = {root.id: root}
+            # replace 模式下首行强制锚定根
+            lvl0, _oid0, content0 = entries[0]
+            entries[0] = (lvl0, root.id, content0)
+
+        # 逐行处理：维护每层最后出现的节点 id 作为下一层的默认父节点
+        last_at_level: dict[int, int] = {}
+        resolved_nodes: list[Node] = []  # 按出现顺序收集实际节点（新建的 id 在 flush 后才有）
+        for level, node_id, content in entries:
+            if level == 0:
+                parent_id: int | None = None
+            else:
+                pid = last_at_level.get(level - 1)
+                if pid is None:
+                    raise ValueError(f"第 {level} 层找不到父节点（缩进跳级）: {content!r}")
+                parent_id = pid
+
+            if node_id is not None and node_id in existing:
+                node = existing[node_id]
+                node.content = content
+                node.parent_id = parent_id
+                node.updated_by = actor
+                node.updated_at = _now()
+                session.add(node)
+            else:
+                if node_id is not None:
+                    raise ValueError(
+                        f"[id:{node_id}] 不是 map {map_id} 的节点（不能跨图锚定）"
+                    )
+                node = Node(
+                    map_id=map_id,
+                    parent_id=parent_id,
+                    content=content,
+                    position=0,
+                    updated_by=actor,
+                )
+                session.add(node)
+                await session.flush()
+                existing[node.id] = node
+
+            last_at_level[level] = node.id
+            resolved_nodes.append(node)
+
+        # 同级顺序：按本次 entries 的出现次序把涉及节点重排为 0..n；
+        # 未涉及的兄弟节点保持原 position（可能与新值重叠，展示排序兜底 (position, id)）
+        pos_counter: dict[int | None, int] = {}
+        for node in resolved_nodes:
+            base = pos_counter.get(node.parent_id, 0)
+            node.position = base
+            pos_counter[node.parent_id] = base + 1
+            session.add(node)
+
+        m.version += 1
+        session.add(m)
+        await session.commit()
+        await session.refresh(m)
+        publish_change(map_id, m.version, "outline_applied", actor)
+        return m

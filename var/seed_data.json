@@ -1,0 +1,32 @@
+{
+  "maps": [
+    {
+      "id": 1,
+      "title": "Q3 产品规划",
+      "version": 12,
+      "created_at": "2026-08-20T09:00:00+00:00"
+    },
+    {
+      "id": 2,
+      "title": "读书笔记：DDIA",
+      "version": 4,
+      "created_at": "2026-08-22T14:30:00+00:00"
+    }
+  ],
+  "nodes": [
+    {"id": 1,  "map_id": 1, "parent_id": null, "content": "Q3 产品规划",              "position": 0, "collapsed": false, "updated_by": "human", "updated_at": "2026-08-20T09:00:00+00:00"},
+    {"id": 2,  "map_id": 1, "parent_id": 1,    "content": "用户增长",                  "position": 0, "collapsed": false, "updated_by": "human", "updated_at": "2026-08-20T09:05:00+00:00"},
+    {"id": 3,  "map_id": 1, "parent_id": 2,    "content": "邀请裂变活动",              "position": 0, "collapsed": false, "updated_by": "agent", "updated_at": "2026-08-21T10:00:00+00:00"},
+    {"id": 4,  "map_id": 1, "parent_id": 2,    "content": "SEO 落地页改版",            "position": 1, "collapsed": false, "updated_by": "human", "updated_at": "2026-08-20T09:10:00+00:00"},
+    {"id": 5,  "map_id": 1, "parent_id": 1,    "content": "留存优化",                  "position": 1, "collapsed": false, "updated_by": "agent", "updated_at": "2026-08-21T10:05:00+00:00"},
+    {"id": 6,  "map_id": 1, "parent_id": 5,    "content": "Onboarding 引导流重设计",   "position": 0, "collapsed": false, "updated_by": "agent", "updated_at": "2026-08-21T10:06:00+00:00"},
+    {"id": 7,  "map_id": 1, "parent_id": 5,    "content": "推送策略分层",              "position": 1, "collapsed": false, "updated_by": "human", "updated_at": "2026-08-22T08:00:00+00:00"},
+    {"id": 8,  "map_id": 1, "parent_id": 1,    "content": "技术债",                    "position": 2, "collapsed": true,  "updated_by": "human", "updated_at": "2026-08-20T09:20:00+00:00"},
+    {"id": 9,  "map_id": 1, "parent_id": 8,    "content": "消息队列迁移",              "position": 0, "collapsed": false, "updated_by": "human", "updated_at": "2026-08-20T09:21:00+00:00"},
+    {"id": 10, "map_id": 1, "parent_id": 8,    "content": "监控告警治理",              "position": 1, "collapsed": false, "updated_by": "agent", "updated_at": "2026-08-23T16:00:00+00:00"},
+    {"id": 12, "map_id": 2, "parent_id": null, "content": "DDIA 读书笔记",             "position": 0, "collapsed": false, "updated_by": "human", "updated_at": "2026-08-22T14:30:00+00:00"},
+    {"id": 13, "map_id": 2, "parent_id": 12,   "content": "第一部分：数据系统基础",     "position": 0, "collapsed": false, "updated_by": "human", "updated_at": "2026-08-22T14:31:00+00:00"},
+    {"id": 14, "map_id": 2, "parent_id": 12,   "content": "第二部分：分布式数据",       "position": 1, "collapsed": false, "updated_by": "agent", "updated_at": "2026-08-23T09:00:00+00:00"},
+    {"id": 15, "map_id": 2, "parent_id": 12,   "content": "第三部分：派生数据",         "position": 2, "collapsed": false, "updated_by": "human", "updated_at": "2026-08-24T11:00:00+00:00"}
+  ]
+}

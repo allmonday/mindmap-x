@@ -1,0 +1,229 @@
+/* ── 通用 ─────────────────────────────────────────────── */
+.btn {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.btn:hover { border-color: #94a3b8; }
+.btn.primary { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
+.btn.primary:disabled { opacity: 0.5; cursor: default; }
+.btn.sm { padding: 4px 10px; font-size: 13px; }
+
+.spacer { flex: 1; }
+
+.toast {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+/* ── 列表页 ───────────────────────────────────────────── */
+.map-list { max-width: 760px; margin: 48px auto; padding: 0 20px; }
+.map-list h1 { margin: 0 0 4px; }
+.map-list .sub { color: #64748b; margin: 0 0 24px; }
+.map-list .accent { color: #d97706; }
+
+.create-row { display: flex; gap: 10px; margin-bottom: 20px; }
+.create-row input {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+}
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.card {
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.card:hover { box-shadow: 0 4px 16px rgba(15, 23, 42, 0.1); }
+.card-title { font-weight: 600; margin-bottom: 6px; }
+.card-meta { color: #64748b; font-size: 12.5px; }
+
+/* ── 编辑器 ───────────────────────────────────────────── */
+.editor { display: flex; flex-direction: column; height: 100vh; }
+.editor-loading {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #64748b;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  z-index: 5;
+}
+.toolbar .title { font-weight: 700; font-size: 17px; }
+.toolbar .version { color: #64748b; font-size: 13px; }
+.toolbar .hint { color: #94a3b8; font-size: 12.5px; }
+
+.ws-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.ws-dot.live { background: #22c55e; }
+.ws-dot.connecting { background: #eab308; }
+.ws-dot.dead { background: #ef4444; }
+.ws-label { font-size: 12px; color: #64748b; }
+
+.editor-toast { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 20; }
+
+.rf-wrap { flex: 1; position: relative; }
+
+.rf-minimap { background: #f8fafc; }
+
+/* React Flow custom node */
+.rf-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border: 1.6px solid #94a3b8;
+  border-radius: 9px;
+  padding: 4px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  transition: box-shadow 0.12s;
+}
+.rf-node:hover { box-shadow: 0 2px 10px rgba(15, 23, 42, 0.14); }
+.rf-node.root {
+  background: #1e293b;
+  color: #fff;
+  border-color: #1e293b;
+  font-weight: 700;
+}
+.rf-node.by-agent {
+  background: #fffbeb;
+  border-color: #f59e0b;
+}
+.rf-node.sel {
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 2.5px rgba(14, 165, 233, 0.25);
+}
+
+.rf-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.rf-editor {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: 2px solid #0ea5e9;
+  border-radius: 7px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+  resize: none;
+  padding: 0;
+}
+
+.agent-badge {
+  position: absolute;
+  top: -9px;
+  right: -7px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 1px 5px;
+  border: 1.5px solid #fff;
+}
+
+.fold {
+  position: absolute;
+  top: 50%;
+  right: -24px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.4px solid #94a3b8;
+  background: #fff;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.fold.folded { background: #94a3b8; color: #fff; }
+.fold:hover { border-color: #0ea5e9; color: #0ea5e9; }
+
+/* React Flow 边样式 */
+.rf-wrap .react-flow__edge path { stroke: #cbd5e1; stroke-width: 1.6; }
+.rf-wrap .react-flow__handle { border: none; background: transparent; width: 2px; height: 2px; min-width: 0; min-height: 0; }
+
+.node-actions {
+  position: absolute;
+  bottom: 18px;
+  left: 16px;
+  display: flex;
+  gap: 8px;
+  background: #fff;
+  padding: 8px;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+  z-index: 10;
+}
+
+/* ── outline 弹层 ─────────────────────────────────────── */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+.modal-body {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  width: min(680px, 92vw);
+}
+.modal-body h3 { margin: 0 0 12px; font-size: 15px; color: #334155; }
+.outline-editor {
+  width: 100%;
+  height: 46vh;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 12px;
+  font: 13px/1.7 ui-monospace, 'Cascadia Code', Consolas, monospace;
+  resize: vertical;
+}
+.modal-actions { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+.modal-actions select {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
