@@ -118,6 +118,7 @@ def mount_method():
         apply_outline,
         create_map,
         delete_node,
+        expand_all,
         get_tree,
         list_maps,
         move_node,
@@ -138,6 +139,7 @@ def mount_method():
     _mount(Map, update_node, mutation)
     _mount(Map, move_node, mutation)
     _mount(Map, delete_node, mutation)
+    _mount(Map, expand_all, mutation)
     _mount(Map, apply_outline, mutation)
 
 

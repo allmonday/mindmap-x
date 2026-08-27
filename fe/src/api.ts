@@ -30,6 +30,7 @@ export const api = {
     call<NodeDTO>('move_node', { map_id, node_id, new_parent_id, position, actor: 'human' }),
   deleteNode: (map_id: number, node_id: number) =>
     call<boolean>('delete_node', { map_id, node_id, actor: 'human' }),
+  expandAll: (map_id: number) => call<MapDetail>('expand_all', { map_id, actor: 'human' }),
   applyOutline: (map_id: number, outline: string, mode: OutlineMode) =>
     call<MapDetail>('apply_outline', { map_id, outline, mode, actor: 'human' }),
 }

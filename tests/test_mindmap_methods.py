@@ -124,6 +124,24 @@ async def test_delete_root_rejected(session_factory, seeded_map):
         await mm.delete_node(100, 1)
 
 
+# ── expand_all ────────────────────────────────────────────────────────
+
+
+async def test_expand_all(session_factory, seeded_map):
+    # 先折叠 #1 root 和 #2 a
+    await mm.update_node(100, 1, collapsed=True, actor="human")
+    await mm.update_node(100, 2, collapsed=True, actor="human")
+    m = await mm.expand_all(100, actor="human")
+    from sqlmodel import select
+
+    async with session_factory() as s:
+        nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
+        assert all(n.collapsed is False for n in nodes)  # 全部展开
+        # 视图操作不改变修改标记与时间戳
+        assert all(n.updated_by == "human" for n in nodes if n.display_id == 1)
+        assert m.version == 4  # 两次折叠 + 一次 expand
+
+
 # ── apply_outline ─────────────────────────────────────────────────────
 
 

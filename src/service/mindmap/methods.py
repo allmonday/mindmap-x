@@ -314,6 +314,29 @@ async def delete_node(map_id: int, node_id: int, actor: str = "agent") -> bool:
         return True
 
 
+async def expand_all(map_id: int, actor: str = "agent") -> Map:
+    """展开全部节点（collapsed=False），单事务批量更新。
+
+    语义注意：折叠是视图状态而非内容修改 —— 不刷新 updated_by/updated_at
+    （否则 Agent 修改角标会误亮），但 version 递增以驱动客户端刷新。
+    """
+    async with async_session() as session:
+        m = await _get_map(session, map_id)
+        folded = (
+            await session.exec(
+                select(Node).where(Node.map_id == map_id, Node.collapsed == True)  # noqa: E712
+            )
+        ).all()
+        for n in folded:
+            n.collapsed = False
+            session.add(n)
+        m.version += 1
+        session.add(m)
+        await session.commit()
+        publish_change(map_id, m.version, "expanded_all", actor)
+        return m
+
+
 async def apply_outline(
     map_id: int,
     outline: str,

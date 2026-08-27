@@ -283,6 +283,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     <div className="editor">
       <header className="toolbar">
         <button className="btn icon" onClick={onBack} title="返回列表" aria-label="返回列表">☰</button>
+        <button
+          className="btn icon"
+          onClick={() => void guard(() => api.expandAll(mapId))}
+          title="展开所有节点"
+          aria-label="展开所有节点"
+        >
+          ⊞
+        </button>
         <span className="title">{detail.title}</span>
         <span className="version">v{detail.version}</span>
         <span className={`ws-dot ${wsState}`} title={`实时同步: ${wsState}`} />

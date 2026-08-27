@@ -98,6 +98,13 @@ class MindmapService(UseCaseService):
         return await methods.delete_node(map_id, node_id, actor=actor)
 
     @mutation
+    async def expand_all(cls, map_id: int, actor: str = "agent") -> MapDetail:
+        """展开全部节点（视图状态，不改变修改标记/时间戳）。"""
+        m = await methods.expand_all(map_id, actor=actor)
+        dto = MapDetail.model_validate(m)
+        return await Resolver().resolve(dto)
+
+    @mutation
     async def apply_outline(
         cls,
         map_id: int,
