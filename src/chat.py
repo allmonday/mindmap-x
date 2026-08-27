@@ -1,24 +1,28 @@
-"""页内 Agent 对话通道。
+"""页内 Agent 对话通道 —— 应用内嵌 strands agents。
 
-架构（specs/003 计划批准稿）：
-- 每轮用户消息 spawn 一个 headless claude 子进程（--mcp-config 指向本服务 /mcp）
-- Agent 经 MCP 工具改树 → 既有 /ws/{map_id} 广播驱动画布即时刷新（本模块不碰树）
-- 本模块只负责对话文本流转：WS /chat/{map_id} 双向 + 启动前健康检查
+架构（specs/004）：
+- Agent 跑在本进程内（strands Agent.stream_async），模型走 OpenAI 兼容网关
+- 工具 = 应用自己的 MCP：MCPClient(url=SELF_MCP_URL) loopback streamable-http，
+  与外部 Claude Code / Cursor 共用同一个 /mcp 权威接口
+- Agent 调工具改树发生在主进程内 → events hub 快速路径完整保留：
+  改树 → /ws 推送 → 画布 <50ms 刷新
 
-安全：spawn 用 argv 数组（无 shell 拼接）；--allowedTools 精确放行 mindmap MCP
-工具（不给 --dangerously-skip-permissions，Agent 只能操作脑图）。
+为什么不用 stdio：见 specs/004（实时反馈退化到轮询兜底 + 引入第二个 DB 写进程）。
+
+环境变量：
+- OPENAI_BASE_URL / OPENAI_API_KEY / AGENT_MODEL  必填（OpenAI 兼容网关）
+- SELF_MCP_URL        默认 http://127.0.0.1:8740/mcp/
+- AGENT_CHAT_TIMEOUT  默认 180 秒
 """
 import asyncio
 import json
 import os
-import shutil
 
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
 
-AGENT_CHAT_CMD = os.getenv("AGENT_CHAT_CMD", "claude")
 SELF_MCP_URL = os.getenv("SELF_MCP_URL", "http://127.0.0.1:8740/mcp/")
 AGENT_TIMEOUT_S = float(os.getenv("AGENT_CHAT_TIMEOUT", "180"))
 
@@ -33,15 +37,50 @@ SYSTEM_PROMPT = """\
 用户的每轮消息都请实际完成操作，然后用一两句话说明你做了什么。\
 """
 
+_MODEL_ENV = ("OPENAI_BASE_URL", "OPENAI_API_KEY", "AGENT_MODEL")
+
+
+def _agent_model() -> str:
+    """模型名：AGENT_MODEL 优先，回退 OPENAI_MODEL（沿用机器上已有的网关配置）。"""
+    return os.getenv("AGENT_MODEL") or os.getenv("OPENAI_MODEL", "")
+
 
 # ── 健康检查 ───────────────────────────────────────────────────────────
 
 
 async def health_check() -> dict:
-    """面板打开时前端先调——在用户发消息之前暴露问题。"""
-    cli_ok = shutil.which(AGENT_CHAT_CMD) is not None
-    mcp_ok = False
-    mcp_reason: str | None = None
+    """面板打开时前端先调——在用户发消息之前暴露问题。
+
+    三级检查：环境变量完整性 → 模型网关探活 → MCP 握手。
+    """
+    missing = [
+        name
+        for name, value in (
+            ("OPENAI_BASE_URL", os.getenv("OPENAI_BASE_URL")),
+            ("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY")),
+            ("AGENT_MODEL / OPENAI_MODEL", _agent_model()),
+        )
+        if not value
+    ]
+    checks: dict[str, bool] = {"gateway": False, "mcp": False}
+    reason: str | None = None
+
+    if not missing:
+        base = os.getenv("OPENAI_BASE_URL", "").rstrip("/")
+        key = os.getenv("OPENAI_API_KEY", "")
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                resp = await client.get(
+                    f"{base}/models", headers={"Authorization": f"Bearer {key}"}
+                )
+            checks["gateway"] = resp.status_code < 400
+            if not checks["gateway"]:
+                reason = f"模型网关返回 HTTP {resp.status_code}（检查 OPENAI_BASE_URL / OPENAI_API_KEY）"
+        except Exception as e:
+            reason = f"模型网关不可达（{type(e).__name__}）——检查 OPENAI_BASE_URL: {base}"
+    else:
+        reason = f"未配置模型网关环境变量: {', '.join(missing)}（OpenAI 兼容网关三项，见 README）"
+
     try:
         async with httpx.AsyncClient(timeout=3) as client:
             resp = await client.post(
@@ -58,18 +97,15 @@ async def health_check() -> dict:
                 },
                 headers={"Accept": "application/json, text/event-stream"},
             )
-            mcp_ok = resp.status_code == 200
-            if not mcp_ok:
-                mcp_reason = f"MCP 端点返回 HTTP {resp.status_code}"
-    except Exception as e:  # 连接失败/超时等统一归为不可达
-        mcp_reason = f"MCP 服务不可达: {type(e).__name__}"
+            checks["mcp"] = resp.status_code == 200
+            if not checks["mcp"] and reason is None:
+                reason = f"MCP 端点返回 HTTP {resp.status_code}"
+    except Exception as e:
+        checks["mcp"] = False
+        if reason is None:
+            reason = f"MCP 服务不可达: {type(e).__name__}"
 
-    reason = None
-    if not cli_ok:
-        reason = f"未找到 Agent CLI（{AGENT_CHAT_CMD}）——可安装或用环境变量 AGENT_CHAT_CMD 指定"
-    elif not mcp_ok:
-        reason = mcp_reason or "MCP 服务不可用"
-    return {"ok": cli_ok and mcp_ok, "checks": {"cli": cli_ok, "mcp": mcp_ok}, "reason": reason}
+    return {"ok": all(checks.values()) and not missing, "checks": checks, "reason": reason}
 
 
 @router.get("/api/chat/status")
@@ -77,86 +113,81 @@ async def chat_status() -> dict:
     return await health_check()
 
 
-# ── Agent 子进程 ───────────────────────────────────────────────────────
-
-
-def _build_argv(map_id: int, text: str, resume_id: str | None) -> list[str]:
-    mcp_config = json.dumps(
-        {"mcpServers": {"mindmap": {"type": "http", "url": SELF_MCP_URL}}}
-    )
-    argv = [
-        AGENT_CHAT_CMD,
-        "-p",
-        text,
-        "--mcp-config",
-        mcp_config,
-        "--allowedTools",
-        "mcp__mindmap__*",
-        "--append-system-prompt",
-        SYSTEM_PROMPT.format(map_id=map_id),
-        "--output-format",
-        "stream-json",
-        "--verbose",
-    ]
-    if resume_id:
-        argv += ["--resume", resume_id]
-    return argv
+# ── strands Agent runner（进程内） ─────────────────────────────────────
 
 
 async def _run_agent(ws: WebSocket, map_id: int, text: str, state: dict) -> None:
-    """spawn claude、转发流式回复；成功后把 session_id 存进 state 供下轮 resume。"""
-    argv = _build_argv(map_id, text, state.get("session_id"))
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except FileNotFoundError:
-        await ws.send_json({"type": "error", "message": f"无法启动 {AGENT_CHAT_CMD}"})
-        return
+    """一轮对话：strands Agent（工作线程）经 loopback MCP 操作脑图。
 
-    async def pump_stdout() -> None:
-        """逐行解析 stream-json：assistant 文本 → delta；result → 记录 session_id。"""
-        assert proc.stdout is not None
-        async for raw in proc.stdout:
-            line = raw.decode("utf-8", errors="replace").strip()
-            if not line:
-                continue
-            try:
-                evt = json.loads(line)
-            except json.JSONDecodeError:
-                continue  # 非 JSON 行（CLI 杂音）忽略
-            if evt.get("type") == "assistant":
-                for block in evt.get("message", {}).get("content", []):
-                    if block.get("type") == "text" and block.get("text"):
-                        await ws.send_json({"type": "delta", "text": block["text"]})
-            elif evt.get("type") == "result":
-                sid = evt.get("session_id")
-                if sid:
-                    state["session_id"] = sid
+    并发模型（关键）：strands 的 MCPClient 是同步 API——`__enter__` 起后台线程
+    后**阻塞当前线程**等初始化。若直接在协程里调用，会卡死事件循环，而它等待的
+    MCP 响应又需要本进程的事件循环服务（loopback）→ 死锁（实测踩过）。
+    因此整轮 agent 丢 `asyncio.to_thread`，同步 streaming 回调经
+    `loop.call_soon_threadsafe` 桥回事件循环转发 WS。
 
-    async def collect_stderr() -> str:
-        assert proc.stderr is not None
-        data = await proc.stderr.read()
-        return data.decode("utf-8", errors="replace")[-2000:]  # 尾部 2KB 够定位问题
+    会话延续：strands 的 messages 历史（含工具调用轨迹）存在 state，下轮传入。
+    超时：asyncio.timeout 取消 async 侧；工作线程无法强杀，会自然跑完（无害）。
+    """
+    # 局部 import：启动期不依赖 strands（未配 env 时服务其余功能照常）
+    from strands import Agent
+    from strands.models.openai import OpenAIModel
+    from strands.tools.mcp import MCPClient
 
-    try:
-        stderr_task = asyncio.create_task(collect_stderr())
-        await asyncio.wait_for(pump_stdout(), AGENT_TIMEOUT_S)
-        returncode = await asyncio.wait_for(proc.wait(), 10)
-        stderr = await stderr_task
-        if returncode != 0:
-            # resume 失效等场景：清掉 session_id，下一轮自然全新会话（不失忆不崩）
-            state.pop("session_id", None)
-            await ws.send_json(
-                {"type": "error", "message": f"Agent 进程退出（{returncode}）: {stderr.strip()[-400:]}"}
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+
+    def on_event(**kwargs) -> None:
+        """strands 同步流式回调（工作线程内执行，事件 dict 以 kwargs 展开）。
+
+        文本增量的特征键组合是 delta + data（TextStreamEvent）；
+        complete=True 是消息收尾（完整文本重复送达，跳过）。
+        """
+        data = kwargs.get("data")
+        if "delta" in kwargs and isinstance(data, str) and data and not kwargs.get("complete"):
+            loop.call_soon_threadsafe(queue.put_nowait, ("delta", data))
+
+    def work() -> None:
+        """工作线程：同步 MCP 上下文 + 同步 agent 循环。"""
+        with MCPClient(url=SELF_MCP_URL) as mcp:
+            agent = Agent(
+                model=OpenAIModel(
+                    model_id=_agent_model(),
+                    client_args={
+                        "base_url": os.environ["OPENAI_BASE_URL"],
+                        "api_key": os.environ["OPENAI_API_KEY"],
+                    },
+                ),
+                # with 内同步取工具快照（1.53.0 无 .tools 属性；也不能传 ToolProvider
+                # 形式 tools=[mcp]——Agent 会自行 start provider，与 with 冲突）
+                tools=list(mcp.list_tools_sync()),
+                system_prompt=SYSTEM_PROMPT.format(map_id=map_id),
+                messages=state.get("messages") or None,
+                callback_handler=on_event,
             )
-        else:
-            await ws.send_json({"type": "done"})
-    except asyncio.TimeoutError:
-        proc.kill()
-        await ws.send_json({"type": "error", "message": f"Agent 超时（{AGENT_TIMEOUT_S:.0f}s），已终止"})
+            agent(text)  # 同步执行完整「LLM ↔ 工具」循环
+            state["messages"] = list(agent.messages)
+
+    work_task = asyncio.create_task(asyncio.to_thread(work))
+    try:
+        async with asyncio.timeout(AGENT_TIMEOUT_S):
+            while not work_task.done() or not queue.empty():
+                try:
+                    kind, payload = await asyncio.wait_for(queue.get(), timeout=0.2)
+                except asyncio.TimeoutError:
+                    continue  # 工作线程仍在跑，回来看 task 状态
+                if kind == "delta":
+                    await ws.send_json({"type": "delta", "text": payload})
+    except TimeoutError:
+        await ws.send_json(
+            {"type": "error", "message": f"Agent 超时（{AGENT_TIMEOUT_S:.0f}s），已放弃等待"}
+        )
+        return
+    except asyncio.CancelledError:
+        raise  # 连接关闭：事件循环侧退出（工作线程自然结束）
+    if (exc := work_task.exception()) is not None:
+        await ws.send_json({"type": "error", "message": f"Agent 执行失败: {type(exc).__name__}: {exc}"})
+    else:
+        await ws.send_json({"type": "done"})
 
 
 # ── WS 端点 ───────────────────────────────────────────────────────────
@@ -172,7 +203,7 @@ async def chat(ws: WebSocket, map_id: int):
         await ws.close()
         return
 
-    state: dict = {}  # {"session_id": str} —— 会话延续锚点
+    state: dict = {}  # {"messages": [...]} —— 会话延续锚点
     task: asyncio.Task | None = None
     try:
         while True:
@@ -189,6 +220,7 @@ async def chat(ws: WebSocket, map_id: int):
             if task is not None and not task.done():
                 await ws.send_json({"type": "busy", "message": "Agent 正在处理上一条消息…"})
                 continue
+            # 不 await：主循环继续收消息（busy 拒绝可达）；超时由 runner 内部 asyncio.timeout 处理
             task = asyncio.create_task(_run_agent(ws, map_id, text, state))
     except WebSocketDisconnect:
         pass

@@ -10,6 +10,7 @@ dependencies = [
     "sqlmodel",
     "aiosqlite",
     "alembic>=1.13",
+    "strands-agents[openai]>=1.53.0",
 ]
 
 [project.optional-dependencies]

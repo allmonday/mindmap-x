@@ -41,6 +41,21 @@ claude mcp add --transport http mindmap http://localhost:8740/mcp
 curl -X POST localhost:8740/api/mindmap_service/get_tree -H 'Content-Type: application/json' -d '{"map_id": 1}'
 ```
 
+## 页内 Agent 对话（内嵌 strands agents）
+
+浏览器 💬 面板对话的后端是应用内嵌的 [strands agents](https://strandsagents.com/) Agent：
+它经**本应用自己的 MCP**（loopback streamable-http，与外部 Claude Code 共用同一接口）操作脑图，
+模型走任意 OpenAI 兼容网关（DeepSeek / 通义 / Kimi / OpenAI 均可）。环境变量：
+
+```bash
+OPENAI_BASE_URL=https://api.deepseek.com/v1   # 你的网关地址
+OPENAI_API_KEY=sk-xxx
+AGENT_MODEL=deepseek-chat                      # 缺省回退 OPENAI_MODEL
+```
+
+未配置时面板会显示明确的错误横幅（健康检查：env 完整性 → 网关探活 → MCP 握手）。
+设计细节见 `specs/004-embedded-strands-agent/`。
+
 outline 协议：`- [id:N] 内容`，2 空格缩进一级；`[id:N]` 锚定已有节点，无 id 则新建。
 
 ## 测试

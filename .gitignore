@@ -16,6 +16,9 @@ env/
 .pytest_cache/
 .coverage
 
+# 凭据
+.env
+
 # Database / runtime（保留 seed 数据；mindmap.db 等不进库）
 var/*
 !var/seed_data.json
