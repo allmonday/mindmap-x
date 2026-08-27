@@ -117,7 +117,7 @@ export function layoutMap(detail: MapDetail): LayoutResult {
   inheritSide(rootLn)
 
   // ── 3. 定位 ─────────────────────────────────────────────────────
-  // y：孩子块垂直居中于父节点的子树块
+  // y：孩子块垂直居中于父节点的子树块（子树内部递归）
   function placeY(ln: LNode, top: number) {
     ln.y = top + ln.subtreeH / 2
     let cy = top + (ln.subtreeH - ln.childrenH) / 2
@@ -126,7 +126,23 @@ export function layoutMap(detail: MapDetail): LayoutResult {
       cy += c.subtreeH + GAP_Y
     }
   }
-  placeY(rootLn, 0)
+
+  // 根的孩子不走单链堆叠（那会导致"左组占上半、右组占下半"）——
+  // 左右两组各自独立堆叠、整体垂直居中于根（XMind 镜像对称形态）
+  rootLn.y = 0
+  for (const group of [
+    rootLn.children.filter((c) => c.side === -1),
+    rootLn.children.filter((c) => c.side === 1),
+  ]) {
+    if (group.length === 0) continue
+    const total =
+      group.reduce((s, c) => s + c.subtreeH, 0) + GAP_Y * (group.length - 1)
+    let top = -total / 2
+    for (const c of group) {
+      placeY(c, top)
+      top += c.subtreeH + GAP_Y
+    }
+  }
 
   // x：根先居中，孩子基于父真实边缘推导（左右层间距都恒为 LEVEL_GAP）
   rootLn.x = -rootLn.w / 2
