@@ -199,15 +199,11 @@ async def watch_map(ws: WebSocket, map_id: int):
         unsubscribe(map_id, q)
 
 
-# ── 前端静态资源（fe/ 的 Vite 构建产物，构建后可用） ─────────────────
+# ── 页内 Agent 对话通道（ChatPanel 用） ────────────────────────────────
 
-import os  # noqa: E402
+from src import chat  # noqa: E402
 
-if os.path.isdir("src/static"):
-    from fastapi.staticfiles import StaticFiles  # noqa: E402
-
-    # mount 在最后注册：/api、/graphql、/mcp、/ws 等路由优先匹配
-    app.mount("/", StaticFiles(directory="src/static", html=True), name="fe")
+app.include_router(chat.router)
 
 
 @app.get("/")
@@ -219,5 +215,18 @@ async def root():
         "graphql": "/graphql",
         "mcp": "/mcp",
         "voyager": "/voyager",
+        "chat_status": "/api/chat/status",
         "cli": "uv run python -m src.cli",
     }
+
+
+# ── 前端静态资源（fe/ 的 Vite 构建产物，构建后可用） ─────────────────
+# 必须是全文件最后注册的路由：Mount("/") 会匹配一切未命中的路径，
+# 注册在其后的任何 route（含 WS）都会被它截胡（StaticFiles 只收 http scope，WS 会 500）。
+
+import os  # noqa: E402
+
+if os.path.isdir("src/static"):
+    from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+    app.mount("/", StaticFiles(directory="src/static", html=True), name="fe")

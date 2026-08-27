@@ -15,6 +15,7 @@ export default defineConfig({
         ws: true, // streamable-http 可能升级 SSE/WS 长连接
       },
       '/ws': { target: 'ws://localhost:8740', ws: true },
+      '/chat': { target: 'ws://localhost:8740', ws: true },
     },
   },
   build: {

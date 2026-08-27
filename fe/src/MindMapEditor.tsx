@@ -13,6 +13,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api } from './api'
+import { ChatPanel } from './ChatPanel'
 import { fitText, layoutMap, type LNode } from './layout'
 import type { MapDetail, OutlineMode } from './types'
 
@@ -113,6 +114,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
+  const [chatOpen, setChatOpen] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -298,6 +300,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           {wsState === 'live' ? '实时' : wsState === 'connecting' ? '连接中' : '已断开'}
         </span>
         <div className="spacer" />
+        <button
+          className={`btn icon ${chatOpen ? 'active' : ''}`}
+          onClick={() => setChatOpen((v) => !v)}
+          title="Agent 对话"
+          aria-label="Agent 对话"
+        >
+          💬
+        </button>
         <button className="btn icon" onClick={openOutline} title="outline 编辑" aria-label="outline 编辑">✎</button>
       </header>
 
@@ -369,6 +379,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           </div>
         </div>
       )}
+
+      {chatOpen && <ChatPanel mapId={mapId} onClose={() => setChatOpen(false)} />}
     </div>
   )
 }
