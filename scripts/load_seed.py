@@ -69,6 +69,7 @@ def main() -> None:
             session.add(
                 Node(
                     id=n["id"],
+                    display_id=n["display_id"],
                     map_id=n["map_id"],
                     parent_id=n["parent_id"],
                     content=n["content"],

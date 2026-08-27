@@ -31,17 +31,17 @@ async def session_factory(monkeypatch):
 
 
 async def seed_tree(factory) -> int:
-    """建一棵测试树::
+    """建一棵测试树（全局 id / display_id 对照）::
 
-        root(200)
-        └── a(201)
-            └── a1(202)
+        root(全局 200, #1)
+        └── a(201, #2)
+            └── a1(202, #3)
     """
     async with factory() as session:
         session.add(Map(id=100, title="T", version=1))
-        session.add(Node(id=200, map_id=100, parent_id=None, content="root", position=0))
-        session.add(Node(id=201, map_id=100, parent_id=200, content="a", position=0))
-        session.add(Node(id=202, map_id=100, parent_id=201, content="a1", position=0))
+        session.add(Node(id=200, display_id=1, map_id=100, parent_id=None, content="root", position=0))
+        session.add(Node(id=201, display_id=2, map_id=100, parent_id=200, content="a", position=0))
+        session.add(Node(id=202, display_id=3, map_id=100, parent_id=201, content="a1", position=0))
         await session.commit()
     return 100
 

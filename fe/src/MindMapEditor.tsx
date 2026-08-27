@@ -47,11 +47,11 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       style={{ width: lnode.w, height: lnode.h }}
       onClick={(e) => {
         e.stopPropagation()
-        data.onSelect(n.id)
+        data.onSelect(n.display_id)
       }}
       onDoubleClick={(e) => {
         e.stopPropagation()
-        data.onStartEdit(n.id)
+        data.onStartEdit(n.display_id)
       }}
     >
       {/* 四向 handle：供父子边按 child.side 选择正确一侧连接 */}
@@ -66,11 +66,11 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
           autoFocus
           defaultValue={n.content}
           onClick={(e) => e.stopPropagation()}
-          onBlur={(e) => data.onCommitEdit(n.id, e.target.value)}
+          onBlur={(e) => data.onCommitEdit(n.display_id, e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault()
-              data.onCommitEdit(n.id, (e.target as HTMLTextAreaElement).value)
+              data.onCommitEdit(n.display_id, (e.target as HTMLTextAreaElement).value)
             }
             if (e.key === 'Escape') data.onCancelEdit()
           }}
@@ -80,7 +80,7 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       )}
 
       {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
-      <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.id}</span>
+      <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
 
       {byAgent && !isEditing && <span className="agent-badge">AI</span>}
 
@@ -154,37 +154,38 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       setEditingId(null)
       const t = text.trim()
       if (!t) return
-      void guard(() => api.updateNode(id, t))
+      void guard(() => api.updateNode(mapId, id, t))
     },
-    [], // guard 稳定引用（不依赖组件 state）
+    [mapId],
   )
   const addChild = (parentId: number) => void guard(() => api.addNode(mapId, parentId, '新节点'))
-  const deleteNode = (id: number) => void guard(() => api.deleteNode(id))
+  const deleteNode = (id: number) => void guard(() => api.deleteNode(mapId, id))
   const toggleCollapse = useCallback(
-    (lnode: LNode) => void guard(() => api.updateNode(lnode.node.id, undefined, !lnode.node.collapsed)),
-    [],
+    (lnode: LNode) =>
+      void guard(() => api.updateNode(mapId, lnode.node.display_id, undefined, !lnode.node.collapsed)),
+    [mapId],
   )
 
   // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除） ────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (editingId != null || outlineOpen || selectedId == null || !detail) return
-      const node = detail.nodes.find((n) => n.id === selectedId)
+      const node = detail.nodes.find((n) => n.display_id === selectedId)
       if (!node) return
       if (e.key === 'F2') {
         e.preventDefault()
-        setEditingId(node.id)
+        setEditingId(node.display_id)
       } else if (e.key === 'Tab') {
         e.preventDefault()
-        addChild(node.id)
+        addChild(node.display_id)
       } else if (e.key === 'Enter') {
-        if (node.parent_id == null) return // 根无兄弟
+        if (node.parent == null) return // 根无兄弟
         e.preventDefault()
-        addChild(node.parent_id)
+        addChild(node.parent.display_id)
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (node.parent_id == null) return // 根不可删
+        if (node.parent == null) return // 根不可删
         e.preventDefault()
-        deleteNode(node.id)
+        deleteNode(node.display_id)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -195,10 +196,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const layout = useMemo(() => (detail ? layoutMap(detail) : null), [detail])
 
   const childCount = useMemo(() => {
+    // 键为父节点 display_id（parent_id 是全局内部键，不能与 display_id 混用）
     const m = new Map<number, number>()
     if (detail) {
       for (const n of detail.nodes) {
-        if (n.parent_id != null) m.set(n.parent_id, (m.get(n.parent_id) ?? 0) + 1)
+        if (n.parent != null) m.set(n.parent.display_id, (m.get(n.parent.display_id) ?? 0) + 1)
       }
     }
     return m
@@ -218,15 +220,15 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const rfNodes: MindNode[] = useMemo(() => {
     if (!layout) return []
     return layout.all.map((lnode) => ({
-      id: String(lnode.node.id),
+      id: String(lnode.node.display_id),
       type: 'mind' as const,
       position: { x: lnode.x, y: lnode.y - lnode.h / 2 },
       style: { width: lnode.w, height: lnode.h },
-      selected: lnode.node.id === selectedId,
+      selected: lnode.node.display_id === selectedId,
       data: {
         lnode,
-        isEditing: lnode.node.id === editingId,
-        hasChildren: (childCount.get(lnode.node.id) ?? 0) > 0,
+        isEditing: lnode.node.display_id === editingId,
+        hasChildren: (childCount.get(lnode.node.display_id) ?? 0) > 0,
         ...callbacks,
       },
     }))
@@ -238,9 +240,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     for (const ln of layout.all) {
       for (const c of ln.children) {
         edges.push({
-          id: `e-${ln.node.id}-${c.node.id}`,
-          source: String(ln.node.id),
-          target: String(c.node.id),
+          id: `e-${ln.node.display_id}-${c.node.display_id}`,
+          source: String(ln.node.display_id),
+          target: String(c.node.display_id),
           // 锚定侧由 child 的方向决定（见 layout.ts edgePath 的同款规则）
           sourceHandle: c.side === 1 ? 'sr' : 'sl',
           targetHandle: c.side === 1 ? 'tl' : 'tr',
@@ -275,7 +277,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     )
   }
 
-  const selNode = selectedId != null ? detail.nodes.find((n) => n.id === selectedId) : null
+  const selNode = selectedId != null ? detail.nodes.find((n) => n.display_id === selectedId) : null
 
   return (
     <div className="editor">
@@ -316,10 +318,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         </ReactFlow>
       </div>
 
-      {selNode && selNode.parent_id != null && (
+      {selNode && selNode.parent != null && (
         <div className="node-actions">
-          <button className="btn sm" onClick={() => addChild(selNode.id)}>+ 子级</button>
-          <button className="btn sm" onClick={() => deleteNode(selNode.id)}>删除</button>
+          <button className="btn sm" onClick={() => addChild(selNode.display_id)}>+ 子级</button>
+          <button className="btn sm" onClick={() => deleteNode(selNode.display_id)}>删除</button>
         </div>
       )}
 

@@ -3,6 +3,8 @@
 方法为普通 async 函数（不含 cls），由 models.mount_method() 桥接挂载到 Map 实体。
 
 接口约定：
+- **节点 ID 语义 = display_id（map 内编号，每图从 1 起）**。全局主键 node.id
+  仅作内部 FK/环检测使用，不对外暴露。所有单节点操作以 (map_id, display_id) 定位。
 - ``actor`` 参数标识修改来源（'human' / 'agent'），写入 node.updated_by，
   前端据此高亮 Agent 修改的节点。Agent 端（CLI/MCP/REST）默认 'agent'，
   浏览器前端调用时显式传 'human'。
@@ -12,11 +14,11 @@
       - [id:2] 用户增长
         - 邀请裂变活动            ← 无 id 前缀 = 新节点（apply_outline 时）
 
-  缩进每 2 个空格一级；`[id:N]` 前缀用于锚定已有节点。
+  缩进每 2 个空格一级；`[id:N]` 中的 N 是 display_id（map 内编号）。
 - apply_outline 两种 mode：
-  - merge   —— 有 id 的行更新内容并按缩进重排结构，无 id 的行新建，
-               树中未出现的节点保留不动（不会误删 Human 加的节点）
-  - replace —— 保留根节点，删除其余全部，按 outline 全量重建
+  - merge   —— 有 id 的行更新内容并按缩进重排结构，无 id 的行新建（分配
+               map 内下一个 display_id），树中未出现的节点保留不动
+  - replace —— 保留根节点，删除其余全部，按 outline 顺序重排 display_id 为 1..n
 - 所有 mutation 成功后：map.version += 1，并 publish_change 广播。
 """
 import re
@@ -40,7 +42,7 @@ def _now() -> datetime:
 
 
 def _render_outline(nodes: list[Node]) -> str:
-    """把节点集合渲染为缩进 outline 文本。"""
+    """把节点集合渲染为缩进 outline 文本（[id:N] 为 display_id）。"""
     by_parent: dict[int | None, list[Node]] = {}
     for n in sorted(nodes, key=lambda x: (x.position, x.id)):
         by_parent.setdefault(n.parent_id, []).append(n)
@@ -48,7 +50,7 @@ def _render_outline(nodes: list[Node]) -> str:
     lines: list[str] = []
 
     def walk(node: Node, depth: int) -> None:
-        lines.append("  " * depth + f"- [id:{node.id}] {node.content}")
+        lines.append("  " * depth + f"- [id:{node.display_id}] {node.content}")
         for child in by_parent.get(node.id, []):
             walk(child, depth + 1)
 
@@ -58,7 +60,7 @@ def _render_outline(nodes: list[Node]) -> str:
 
 
 def _parse_outline(outline: str) -> list[tuple[int, int | None, str]]:
-    """解析 outline 文本为 (level, node_id|None, content) 列表。
+    """解析 outline 文本为 (level, display_id|None, content) 列表。
 
     校验：首行必须 level 0；每行 level 至多比上一行深 1。
     """
@@ -76,13 +78,15 @@ def _parse_outline(outline: str) -> list[tuple[int, int | None, str]]:
         m = _LINE_RE.match(raw.strip())
         if not m or not m.group(2).strip():
             raise ValueError(f"无法解析的行: {raw!r}")
-        node_id = int(m.group(1)) if m.group(1) else None
-        entries.append((level, node_id, m.group(2).strip()))
+        display_id = int(m.group(1)) if m.group(1) else None
+        entries.append((level, display_id, m.group(2).strip()))
         prev_level = level
     if not entries:
         raise ValueError("outline 为空")
     if entries[0][0] != 0:
         raise ValueError("outline 第一行必须是根节点（无缩进）")
+    if sum(1 for lvl, _, _ in entries if lvl == 0) > 1:
+        raise ValueError("outline 只能有一个根节点（level 0 的行只能有一行）")
     return entries
 
 
@@ -93,15 +97,28 @@ async def _get_map(session, map_id: int) -> Map:
     return m
 
 
-async def _get_node(session, node_id: int) -> Node:
-    n = await session.get(Node, node_id)
-    if n is None:
-        raise ValueError(f"node {node_id} not found")
-    return n
+async def _get_node(session, map_id: int, display_id: int) -> Node:
+    """按 (map_id, display_id) 定位节点 —— 对外 ID 语义的唯一入口。"""
+    result = await session.exec(
+        select(Node).where(Node.map_id == map_id, Node.display_id == display_id)
+    )
+    node = result.first()
+    if node is None:
+        raise ValueError(f"map {map_id} 中不存在节点 #{display_id}")
+    return node
+
+
+async def _next_display_id(session, map_id: int) -> int:
+    """分配 map 内下一个 display_id（max + 1，从 1 起）。"""
+    result = await session.exec(
+        select(Node.display_id).where(Node.map_id == map_id).order_by(Node.display_id.desc())
+    )
+    current = result.first()
+    return (current + 1) if current is not None else 1
 
 
 async def _descendant_ids(session, node: Node) -> set[int]:
-    """BFS 收集 node 的全部后代 id（不含 node 自身）。"""
+    """BFS 收集 node 的全部后代全局 id（不含 node 自身；内部用全局 id）。"""
     ids: set[int] = set()
     frontier = [node.id]
     while frontier:
@@ -131,7 +148,7 @@ async def get_map(map_id: int) -> Map:
 
 
 async def get_tree(map_id: int) -> str:
-    """整树读取，返回带 [id:N] 标记的缩进 outline 文本（Agent 核心读法）。"""
+    """整树读取，返回带 [id:N] 标记的缩进 outline 文本（Agent 核心读法，N 为 map 内编号）。"""
     async with async_session() as session:
         await _get_map(session, map_id)
         nodes = (
@@ -144,13 +161,20 @@ async def get_tree(map_id: int) -> str:
 
 
 async def create_map(title: str, actor: str = "agent") -> Map:
-    """创建新脑图，自动创建根节点（content 复用 title）。"""
+    """创建新脑图，自动创建根节点（content 复用 title，display_id = 1）。"""
     async with async_session() as session:
         m = Map(title=title)
         session.add(m)
         await session.flush()
         session.add(
-            Node(map_id=m.id, parent_id=None, content=title, position=0, updated_by=actor)
+            Node(
+                map_id=m.id,
+                display_id=1,
+                parent_id=None,
+                content=title,
+                position=0,
+                updated_by=actor,
+            )
         )
         m.version = 1
         await session.commit()
@@ -166,22 +190,25 @@ async def add_node(
     position: int | None = None,
     actor: str = "agent",
 ) -> Node:
-    """在 parent 下新增子节点。position=None 追加到同级末尾。"""
+    """在 parent 下新增子节点。
+
+    parent_id 语义为 map 内 display_id；新节点分配 map 内下一个 display_id。
+    position=None 追加到同级末尾。
+    """
     async with async_session() as session:
         m = await _get_map(session, map_id)
-        parent = await _get_node(session, parent_id)
-        if parent.map_id != map_id:
-            raise ValueError(f"node {parent_id} 不属于 map {map_id}")
+        parent = await _get_node(session, map_id, parent_id)
         if position is None:
             siblings = (
                 await session.exec(
-                    select(Node.position).where(Node.parent_id == parent_id)
+                    select(Node.position).where(Node.parent_id == parent.id)
                 )
             ).all()
             position = max(siblings, default=-1) + 1
         node = Node(
             map_id=map_id,
-            parent_id=parent_id,
+            display_id=await _next_display_id(session, map_id),
+            parent_id=parent.id,
             content=content,
             position=position,
             updated_by=actor,
@@ -196,15 +223,19 @@ async def add_node(
 
 
 async def update_node(
+    map_id: int,
     node_id: int,
     content: str | None = None,
     collapsed: bool | None = None,
     actor: str = "agent",
 ) -> Node:
-    """部分更新节点（content / collapsed），刷新 updated_by 与 updated_at。"""
+    """部分更新节点（content / collapsed），刷新 updated_by 与 updated_at。
+
+    node_id 语义为 map 内 display_id。
+    """
     async with async_session() as session:
-        node = await _get_node(session, node_id)
-        m = await _get_map(session, node.map_id)
+        node = await _get_node(session, map_id, node_id)
+        m = await _get_map(session, map_id)
         if content is not None:
             node.content = content
         if collapsed is not None:
@@ -221,28 +252,30 @@ async def update_node(
 
 
 async def move_node(
+    map_id: int,
     node_id: int,
     new_parent_id: int,
     position: int | None = None,
     actor: str = "agent",
 ) -> Node:
-    """移动节点（换父 / 同级重排）。禁止移到自己或自己的子树下（防环）。"""
+    """移动节点（换父 / 同级重排）。禁止移到自己或自己的子树下（防环）。
+
+    node_id / new_parent_id 语义均为 map 内 display_id。
+    """
     async with async_session() as session:
-        node = await _get_node(session, node_id)
-        m = await _get_map(session, node.map_id)
+        node = await _get_node(session, map_id, node_id)
+        m = await _get_map(session, map_id)
         if node.parent_id is None:
             raise ValueError("根节点不可移动")
-        new_parent = await _get_node(session, new_parent_id)
-        if new_parent.map_id != node.map_id:
-            raise ValueError("不能跨脑图移动节点")
-        if new_parent_id == node_id or new_parent_id in await _descendant_ids(session, node):
+        new_parent = await _get_node(session, map_id, new_parent_id)
+        if new_parent.id == node.id or new_parent.id in await _descendant_ids(session, node):
             raise ValueError("不能把节点移动到自己或它的子树下（会成环）")
-        node.parent_id = new_parent_id
+        node.parent_id = new_parent.id
         if position is None:
             siblings = (
                 await session.exec(
                     select(Node.position).where(
-                        Node.parent_id == new_parent_id, Node.id != node.id
+                        Node.parent_id == new_parent.id, Node.id != node.id
                     )
                 )
             ).all()
@@ -259,14 +292,17 @@ async def move_node(
         return node
 
 
-async def delete_node(node_id: int, actor: str = "agent") -> bool:
-    """删除节点及其整棵子树。根节点不可删除（每棵图必须有根）。"""
+async def delete_node(map_id: int, node_id: int, actor: str = "agent") -> bool:
+    """删除节点及其整棵子树。根节点不可删除（每棵图必须有根）。
+
+    node_id 语义为 map 内 display_id；被删除的 display_id 不复用（保持编号稳定）。
+    """
     async with async_session() as session:
-        node = await _get_node(session, node_id)
+        node = await _get_node(session, map_id, node_id)
         if node.parent_id is None:
             raise ValueError("根节点不可删除（删除整张图请走后续的 map 级接口）")
-        m = await _get_map(session, node.map_id)
-        ids = {node_id} | await _descendant_ids(session, node)
+        m = await _get_map(session, map_id)
+        ids = {node.id} | await _descendant_ids(session, node)
         for nid in ids:
             n = await session.get(Node, nid)
             if n is not None:
@@ -286,9 +322,12 @@ async def apply_outline(
 ) -> Map:
     """整树写入：按缩进 outline 文本 merge 或 replace 脑图。
 
-    merge   —— 有 [id:N] 的行更新 content 并按缩进调整父子/顺序；无 id 的行新建；
-               树中未出现的节点保留（不误删）。
-    replace —— 保留根节点（content 更新为 outline 首行），其余全删重建。
+    [id:N] 中的 N 是 map 内 display_id。
+    merge   —— 有 [id:N] 的行更新 content 并按缩进调整父子/顺序（锚定节点保留
+               原 display_id）；无 id 的行新建（分配 map 内下一个号）；树中
+               未出现的节点保留（不误删）。
+    replace —— 保留根节点（content 更新为 outline 首行），其余全删重建，
+               display_id 按 outline 顺序重排为 1..n。
     """
     if mode not in ("merge", "replace"):
         raise ValueError(f"mode 必须是 'merge' 或 'replace'，收到 {mode!r}")
@@ -297,11 +336,14 @@ async def apply_outline(
     async with async_session() as session:
         m = await _get_map(session, map_id)
         existing = {
-            n.id: n
+            n.display_id: n
             for n in (
                 await session.exec(select(Node).where(Node.map_id == map_id))
             ).all()
         }
+
+        # 新节点 display_id 分配器：merge 从 map 内当前最大号 +1 起
+        next_display = max(existing.keys(), default=0) + 1
 
         if mode == "replace":
             roots = [n for n in existing.values() if n.parent_id is None]
@@ -313,45 +355,49 @@ async def apply_outline(
                 if n.id != root.id:
                     await session.delete(n)
             await session.flush()
-            existing = {root.id: root}
-            # replace 模式下首行强制锚定根
+            # replace 重排：根 = 1，其余按 outline 顺序 2..n
+            root.display_id = 1
+            session.add(root)
             lvl0, _oid0, content0 = entries[0]
-            entries[0] = (lvl0, root.id, content0)
+            entries[0] = (lvl0, 1, content0)
+            next_display = 2
 
-        # 逐行处理：维护每层最后出现的节点 id 作为下一层的默认父节点
+        # 逐行处理：维护每层最后出现的节点全局 id 作为下一层的默认父节点
         last_at_level: dict[int, int] = {}
         resolved_nodes: list[Node] = []  # 按出现顺序收集实际节点（新建的 id 在 flush 后才有）
-        for level, node_id, content in entries:
+        for level, display_id, content in entries:
             if level == 0:
-                parent_id: int | None = None
+                parent_gid: int | None = None
             else:
-                pid = last_at_level.get(level - 1)
-                if pid is None:
+                pgid = last_at_level.get(level - 1)
+                if pgid is None:
                     raise ValueError(f"第 {level} 层找不到父节点（缩进跳级）: {content!r}")
-                parent_id = pid
+                parent_gid = pgid
 
-            if node_id is not None and node_id in existing:
-                node = existing[node_id]
+            if display_id is not None and display_id in existing:
+                node = existing[display_id]
                 node.content = content
-                node.parent_id = parent_id
+                node.parent_id = parent_gid
                 node.updated_by = actor
                 node.updated_at = _now()
                 session.add(node)
             else:
-                if node_id is not None:
+                if display_id is not None:
                     raise ValueError(
-                        f"[id:{node_id}] 不是 map {map_id} 的节点（不能跨图锚定）"
+                        f"[id:{display_id}] 不是 map {map_id} 的节点编号（不能跨图锚定）"
                     )
                 node = Node(
                     map_id=map_id,
-                    parent_id=parent_id,
+                    display_id=next_display,
+                    parent_id=parent_gid,
                     content=content,
                     position=0,
                     updated_by=actor,
                 )
+                next_display += 1
                 session.add(node)
                 await session.flush()
-                existing[node.id] = node
+                existing[node.display_id] = node
 
             last_at_level[level] = node.id
             resolved_nodes.append(node)

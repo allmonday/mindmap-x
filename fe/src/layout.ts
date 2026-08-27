@@ -54,25 +54,27 @@ export interface LayoutResult {
 }
 
 export function layoutMap(detail: MapDetail): LayoutResult {
+  // 组树用 display_id 体系：byParent 键 = 父节点的 display_id（来自 parent 引用）
   const byParent = new Map<number, NodeDTO[]>()
   let root: NodeDTO | null = null
   for (const n of detail.nodes) {
-    if (n.parent_id === null) root = n
+    if (n.parent == null) root = n
     else {
-      const list = byParent.get(n.parent_id)
+      const key = n.parent.display_id
+      const list = byParent.get(key)
       if (list) list.push(n)
-      else byParent.set(n.parent_id, [n])
+      else byParent.set(key, [n])
     }
   }
   for (const list of byParent.values()) {
-    list.sort((a, b) => a.position - b.position || a.id - b.id)
+    list.sort((a, b) => a.position - b.position || a.display_id - b.display_id)
   }
   if (!root) return { root: null, all: [], bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 } }
 
   // ── 1. 形状 ─────────────────────────────────────────────────────
   const all: LNode[] = []
   function buildShape(node: NodeDTO): LNode {
-    const kids = node.collapsed ? [] : (byParent.get(node.id) ?? [])
+    const kids = node.collapsed ? [] : (byParent.get(node.display_id) ?? [])
     const { w, h } = measure(node.content)
     const children = kids.map(buildShape)
     const childrenH =

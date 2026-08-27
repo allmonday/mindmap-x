@@ -56,7 +56,7 @@ class MindmapService(UseCaseService):
         position: int | None = None,
         actor: str = "agent",
     ) -> NodeDTO:
-        """在 parent 下新增子节点（position=None 追加到末尾）。"""
+        """在 parent 下新增子节点（position=None 追加到末尾）。parent_id 为 map 内 display_id。"""
         node = await methods.add_node(map_id, parent_id, content, position=position, actor=actor)
         dto = NodeDTO.model_validate(node)
         return await Resolver().resolve(dto)
@@ -64,33 +64,38 @@ class MindmapService(UseCaseService):
     @mutation
     async def update_node(
         cls,
+        map_id: int,
         node_id: int,
         content: str | None = None,
         collapsed: bool | None = None,
         actor: str = "agent",
     ) -> NodeDTO:
-        """部分更新节点（content / collapsed）。"""
-        node = await methods.update_node(node_id, content=content, collapsed=collapsed, actor=actor)
+        """部分更新节点（content / collapsed）。node_id 为 map 内 display_id。"""
+        node = await methods.update_node(map_id, node_id, content=content, collapsed=collapsed, actor=actor)
         dto = NodeDTO.model_validate(node)
         return await Resolver().resolve(dto)
 
     @mutation
     async def move_node(
         cls,
+        map_id: int,
         node_id: int,
         new_parent_id: int,
         position: int | None = None,
         actor: str = "agent",
     ) -> NodeDTO:
-        """移动节点（换父 / 同级重排）；禁止移到自己子树下（防环）。"""
-        node = await methods.move_node(node_id, new_parent_id, position=position, actor=actor)
+        """移动节点（换父 / 同级重排）；禁止移到自己子树下（防环）。
+
+        node_id / new_parent_id 均为 map 内 display_id。
+        """
+        node = await methods.move_node(map_id, node_id, new_parent_id, position=position, actor=actor)
         dto = NodeDTO.model_validate(node)
         return await Resolver().resolve(dto)
 
     @mutation
-    async def delete_node(cls, node_id: int, actor: str = "agent") -> bool:
-        """删除节点及其子树（根节点不可删除）。"""
-        return await methods.delete_node(node_id, actor=actor)
+    async def delete_node(cls, map_id: int, node_id: int, actor: str = "agent") -> bool:
+        """删除节点及其子树（根节点不可删除）。node_id 为 map 内 display_id。"""
+        return await methods.delete_node(map_id, node_id, actor=actor)
 
     @mutation
     async def apply_outline(

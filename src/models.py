@@ -56,14 +56,21 @@ class Node(BaseEntity, table=True):
 
     updated_by 标记最后一次修改来自 human 还是 agent —— 协同可见性的关键，
     前端据此给 Agent 修改过的节点做高亮，Human 一眼看到"AI 刚动了哪里"。
+
+    双 ID 架构：id 是全局主键（parent_id 自引用 FK、内部环检测用），
+    display_id 是 map 内编号（每图从 1 起，UNIQUE(map_id, display_id)）——
+    对外接口（REST/CLI/MCP 参数、outline [id:N]、前端角标）只用 display_id。
     """
 
-    id: Optional[int] = Field(default=None, primary_key=True, description="节点唯一标识")
+    id: Optional[int] = Field(default=None, primary_key=True, description="全局主键（内部使用，不对外暴露）")
+    display_id: int = Field(
+        description="map 内节点编号，每图从 1 起；对外接口与 outline 协议的唯一 ID 语义",
+    )
     map_id: int = Field(foreign_key="map.id", description="所属脑图 ID")
     parent_id: Optional[int] = Field(
         default=None,
         foreign_key="node.id",
-        description="父节点 ID；根节点为 None（每棵 Map 恰有一个根节点）",
+        description="父节点全局主键（内部使用）；根节点为 None（每棵 Map 恰有一个根节点）",
     )
     content: str = Field(description="节点文本内容")
     position: int = Field(
