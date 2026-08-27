@@ -206,23 +206,11 @@ from src import chat  # noqa: E402
 app.include_router(chat.router)
 
 
-@app.get("/")
-async def root():
-    return {
-        "service": "agent-mindmap",
-        "phase": 3,
-        "rest_docs": "/docs",
-        "graphql": "/graphql",
-        "mcp": "/mcp",
-        "voyager": "/voyager",
-        "chat_status": "/api/chat/status",
-        "cli": "uv run python -m src.cli",
-    }
-
-
 # ── 前端静态资源（fe/ 的 Vite 构建产物，构建后可用） ─────────────────
-# 必须是全文件最后注册的路由：Mount("/") 会匹配一切未命中的路径，
-# 注册在其后的任何 route（含 WS）都会被它截胡（StaticFiles 只收 http scope，WS 会 500）。
+# 必须是全文件最后注册的路由：Mount("/") 会匹配一切未命中的路径。
+# 注意：不要再在它之后（或之前）注册 GET / ——之前 root() JSON 端点曾被静态
+# mount 遮蔽为死代码，路由顺序调整后又反向抢走 /（浏览器看到 JSON 而非页面）。
+# 服务信息可通过 /docs（OpenAPI）查看。
 
 import os  # noqa: E402
 
