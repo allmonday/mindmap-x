@@ -112,7 +112,6 @@
 .map-list { max-width: 760px; margin: 48px auto; padding: 0 20px; }
 .map-list h1 { margin: 0 0 4px; }
 .map-list .sub { color: #64748b; margin: 0 0 24px; }
-.map-list .accent { color: #d97706; }
 
 .create-row { display: flex; gap: 10px; margin-bottom: 20px; }
 .create-row input {
@@ -217,17 +216,6 @@
   border-color: #1e293b;
   font-weight: 700;
 }
-.rf-node.by-agent {
-  background: #fffbeb;
-  border-color: #f59e0b;
-}
-/* 根节点被 Agent 修改时保持深底白字（by-agent 的浅底会盖掉深底 + 白字不可读），
-   修改来源用橙色边框 + AI 角标体现 */
-.rf-node.root.by-agent {
-  background: #1e293b;
-  color: #fff;
-  border-color: #f59e0b;
-}
 .rf-node.sel {
   border-color: #0ea5e9;
   box-shadow: 0 0 0 2.5px rgba(14, 165, 233, 0.25);
@@ -270,19 +258,6 @@
   pointer-events: none; /* 角标不拦截节点的点击/双击 */
 }
 .id-badge.on-root { background: #cbd5e1; }
-
-.agent-badge {
-  position: absolute;
-  top: -9px;
-  right: -7px;
-  background: #f59e0b;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  border-radius: 8px;
-  padding: 1px 5px;
-  border: 1.5px solid #fff;
-}
 
 .fold {
   position: absolute;

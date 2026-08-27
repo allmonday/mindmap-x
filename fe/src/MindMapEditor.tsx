@@ -40,11 +40,10 @@ type MindNode = Node<MindNodeData, 'mind'>
 function MindNodeView({ data, selected }: NodeProps<MindNode>) {
   const { lnode, isEditing, hasChildren } = data
   const n = lnode.node
-  const byAgent = n.updated_by === 'agent'
   const isRoot = n.parent_id === null
   return (
     <div
-      className={`rf-node ${isRoot ? 'root' : ''} ${byAgent ? 'by-agent' : ''} ${selected ? 'sel' : ''}`}
+      className={`rf-node ${isRoot ? 'root' : ''} ${selected ? 'sel' : ''}`}
       style={{ width: lnode.w, height: lnode.h }}
       onClick={(e) => {
         e.stopPropagation()
@@ -82,8 +81,6 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
 
       {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
       <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
-
-      {byAgent && !isEditing && <span className="agent-badge">AI</span>}
 
       {hasChildren && (
         <button
@@ -344,7 +341,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             nodeColor={(n) => {
               const d = n.data as MindNodeData
               if (d.lnode.node.parent_id == null) return '#1e293b' // 根
-              if (d.lnode.node.updated_by === 'agent') return '#f59e0b' // Agent 修改
               return '#cbd5e1'
             }}
           />
