@@ -70,6 +70,7 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
           onClick={(e) => e.stopPropagation()}
           onBlur={(e) => data.onCommitEdit(n.display_id, e.target.value)}
           onKeyDown={(e) => {
+            e.stopPropagation() // 编辑态按键不冒泡到 window 快捷键（防 Enter 提交后误触发"加同级"）
             if (e.key === 'Enter') {
               e.preventDefault()
               data.onCommitEdit(n.display_id, (e.target as HTMLTextAreaElement).value)
@@ -203,6 +204,13 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (editingId != null || outlineOpen || selectedId == null || !detail) return
+      // 焦点在任何输入元素上时快捷键一律失效（编辑框/聊天面板/outline 弹层）
+      const el = document.activeElement
+      if (
+        el instanceof HTMLElement &&
+        (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+      )
+        return
       const node = detail.nodes.find((n) => n.display_id === selectedId)
       if (!node) return
       if (e.key === 'F2') {
