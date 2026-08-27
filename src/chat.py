@@ -21,6 +21,26 @@ import os
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+
+def _load_dotenv(path: str = ".env") -> None:
+    """极简 .env 加载（不覆盖已存在的环境变量，无额外依赖）。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except FileNotFoundError:
+        pass
+
+
+_load_dotenv()
+
 router = APIRouter()
 
 SELF_MCP_URL = os.getenv("SELF_MCP_URL", "http://127.0.0.1:8740/mcp/")

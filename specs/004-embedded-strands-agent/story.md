@@ -40,3 +40,11 @@ ChatPanel ──WS /chat/{map_id}──► src/chat.py
 - 端到端（DeepSeek 网关真实模型）：「在 #2 下加子节点」→ 流式 delta 逐字回复 → `- [id:7] strands 内嵌验收` 真实落树 ✓
 - 会话延续：第二轮「刚才那个节点」→ 正确锚定 #7，建 #8 ✓
 - busy 拒绝 ✓；pytest 21 passed 无回归 ✓
+
+## 变更记录
+
+- 2026-08-27 Provider 切换为 **GLM 5.3 Flash（智谱）**：新增极简 `.env` 加载
+  （`chat.py::_load_dotenv`，不覆盖已有环境变量，零依赖），配置
+  `https://open.bigmodel.cn/api/paas/v4` + `glm-5.3-flash`；实测（剥离 shell 网关
+  变量后 `.env` 补位生效）健康检查全绿、对话改树落库 `- [id:9] GLM 验收` ✓。
+  换任意 OpenAI 兼容 Provider 只改 `.env` 三行——当初网关抽象的直接红利。

@@ -45,12 +45,14 @@ curl -X POST localhost:8740/api/mindmap_service/get_tree -H 'Content-Type: appli
 
 浏览器 💬 面板对话的后端是应用内嵌的 [strands agents](https://strandsagents.com/) Agent：
 它经**本应用自己的 MCP**（loopback streamable-http，与外部 Claude Code 共用同一接口）操作脑图，
-模型走任意 OpenAI 兼容网关（DeepSeek / 通义 / Kimi / OpenAI 均可）。环境变量：
+模型走任意 OpenAI 兼容网关。当前默认配置为 **GLM 5.3 Flash（智谱）**，写在项目根 `.env`
+（已被 gitignore 保护，启动时自动加载，不覆盖已有环境变量）：
 
 ```bash
-OPENAI_BASE_URL=https://api.deepseek.com/v1   # 你的网关地址
-OPENAI_API_KEY=sk-xxx
-AGENT_MODEL=deepseek-chat                      # 缺省回退 OPENAI_MODEL
+# .env 示例（换 Provider 只改这三行：DeepSeek / 通义 / Kimi / OpenAI 均同构）
+OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+OPENAI_API_KEY=<智谱 API Key>
+AGENT_MODEL=glm-5.3-flash
 ```
 
 未配置时面板会显示明确的错误横幅（健康检查：env 完整性 → 网关探活 → MCP 握手）。
