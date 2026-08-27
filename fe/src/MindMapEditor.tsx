@@ -33,6 +33,8 @@ type MindNodeData = {
   onToggleCollapse: (lnode: LNode) => void
   onCommitEdit: (id: number, text: string) => void
   onCancelEdit: () => void
+  onAddChild: (parentId: number) => void
+  onDelete: (id: number) => void
 }
 
 type MindNode = Node<MindNodeData, 'mind'>
@@ -81,6 +83,32 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
 
       {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
       <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
+
+      {/* 选中节点的操作按钮：节点正下方，上下排列；根可加子级不可删 */}
+      {selected && !isEditing && (
+        <div className="node-actions">
+          <button
+            className="btn sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              data.onAddChild(n.display_id)
+            }}
+          >
+            + 子级
+          </button>
+          {!isRoot && (
+            <button
+              className="btn sm danger"
+              onClick={(e) => {
+                e.stopPropagation()
+                data.onDelete(n.display_id)
+              }}
+            >
+              删除
+            </button>
+          )}
+        </div>
+      )}
 
       {hasChildren && !isRoot && (
         <button
@@ -157,8 +185,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     },
     [mapId],
   )
-  const addChild = (parentId: number) => void guard(() => api.addNode(mapId, parentId, '新节点'))
-  const deleteNode = (id: number) => void guard(() => api.deleteNode(mapId, id))
+  const addChild = useCallback(
+    (parentId: number) => void guard(() => api.addNode(mapId, parentId, '新节点')),
+    [mapId],
+  )
+  const deleteNode = useCallback(
+    (id: number) => void guard(() => api.deleteNode(mapId, id)),
+    [mapId],
+  )
   const toggleCollapse = useCallback(
     (lnode: LNode) =>
       void guard(() => api.updateNode(mapId, lnode.node.display_id, undefined, !lnode.node.collapsed)),
@@ -212,8 +246,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       onToggleCollapse: toggleCollapse,
       onCommitEdit: commitEdit,
       onCancelEdit: () => setEditingId(null),
+      onAddChild: addChild,
+      onDelete: deleteNode,
     }),
-    [toggleCollapse, commitEdit],
+    [toggleCollapse, commitEdit, addChild, deleteNode],
   )
 
   const rfNodes: MindNode[] = useMemo(() => {
@@ -277,8 +313,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       </div>
     )
   }
-
-  const selNode = selectedId != null ? detail.nodes.find((n) => n.display_id === selectedId) : null
 
   return (
     <div className="editor">
@@ -346,13 +380,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           />
         </ReactFlow>
       </div>
-
-      {selNode && selNode.parent != null && (
-        <div className="node-actions">
-          <button className="btn sm" onClick={() => addChild(selNode.display_id)}>+ 子级</button>
-          <button className="btn sm" onClick={() => deleteNode(selNode.display_id)}>删除</button>
-        </div>
-      )}
 
       {outlineOpen && (
         <div className="modal" onClick={() => setOutlineOpen(false)}>
