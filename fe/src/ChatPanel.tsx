@@ -37,6 +37,16 @@ export function ChatPanel({ mapId, onClose }: Props) {
         if (!msg.ok) setHealthErr(msg.reason ?? 'Agent 对话不可用')
         return
       }
+      if (msg.type === 'history') {
+        // 服务端持久化的历史对话（跨会话延续），一次性格式化为气泡
+        setMessages(
+          (msg.messages as { role: 'user' | 'agent'; text: string }[]).map((m) => ({
+            role: m.role === 'user' ? ('user' as const) : ('agent' as const),
+            text: m.text,
+          })),
+        )
+        return
+      }
       if (msg.type === 'delta') {
         // 增量追加到当前流式 agent 气泡（没有则开一个）
         setMessages((prev) => {

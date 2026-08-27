@@ -48,3 +48,13 @@ ChatPanel ──WS /chat/{map_id}──► src/chat.py
   `https://open.bigmodel.cn/api/paas/v4` + `glm-5.3-flash`；实测（剥离 shell 网关
   变量后 `.env` 补位生效）健康检查全绿、对话改树落库 `- [id:9] GLM 验收` ✓。
   换任意 OpenAI 兼容 Provider 只改 `.env` 三行——当初网关抽象的直接红利。
+- 2026-08-28 **会话持久化（方向 C）**：strands `FileSessionManager`（每图一个
+  session `mindmap-map{id}`、固定 `agent_id="chat"`、`var/sessions/` JSON 落盘），
+  替代连接级 `state["messages"]`——Agent 构造时自动恢复历史、每轮 `sync_agent`
+  自动落盘；WS 连接时把历史（提取 user/assistant 文本块）推给前端渲染旧气泡。
+  踩坑：① 新会话 `list_messages` 抛 `SessionException`（无目录≠空列表）；
+  ② strands 消息块**无 type 字段**（文本块就是 `{"text"}`，工具块 `{"toolUse"}`，
+  思考块 `{"reasoningContent"}`），提取按实际键判别；
+  ③ GLM 推理模型的 reasoning_content 在多轮 Chat Completions 下 strands 有
+  warning（不回传思考，正常行为）。
+  实测：跨 WS 连接「刚才那个节点」正确锚定 #13 改名 ✓。

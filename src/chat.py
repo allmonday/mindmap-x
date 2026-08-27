@@ -46,6 +46,43 @@ router = APIRouter()
 SELF_MCP_URL = os.getenv("SELF_MCP_URL", "http://127.0.0.1:8740/mcp/")
 AGENT_TIMEOUT_S = float(os.getenv("AGENT_CHAT_TIMEOUT", "180"))
 
+# 会话持久化（strands FileSessionManager）：每张脑图一个 session、固定 agent_id，
+# 历史存 var/sessions/（JSON 文件，随 var/* 进 gitignore）
+SESSIONS_DIR = os.getenv("CHAT_SESSIONS_DIR", "var/sessions")
+SESSION_AGENT_ID = "chat"
+
+
+def _session_id(map_id: int) -> str:
+    return f"mindmap-map{map_id}"
+
+
+def _history_payload(map_id: int) -> list[dict]:
+    """读取该脑图的持久化对话历史，提取为 [{role, text}]（跳过工具调用块）。"""
+    from strands.session import FileSessionManager
+    from strands.types.exceptions import SessionException
+
+    sm = FileSessionManager(session_id=_session_id(map_id), storage_dir=SESSIONS_DIR)
+    try:
+        entries = sm.list_messages(_session_id(map_id), SESSION_AGENT_ID)
+    except SessionException:
+        return []  # 新会话：messages 目录尚不存在 = 无历史
+    out: list[dict] = []
+    for sm_entry in entries:
+        msg = sm_entry.message
+        role = msg.get("role", "assistant")
+        if role not in ("user", "assistant"):
+            continue
+        # strands 消息块无 type 字段：文本块直接 {"text": ...}；
+        # 思考块 {"reasoningContent"}、工具块 {"toolUse"/"toolResult"} 均无 text 键
+        text = "".join(
+            block["text"]
+            for block in msg.get("content", [])
+            if isinstance(block, dict) and isinstance(block.get("text"), str)
+        ).strip()
+        if text:
+            out.append({"role": role, "text": text})
+    return out
+
 SYSTEM_PROMPT = """\
 你在一个人机协同脑图工具中充当 Agent，通过 mindmap MCP 工具操作当前脑图（map_id={map_id}）。
 节点 ID 是 map 内编号（display_id，每图从 1 起）：
@@ -136,7 +173,7 @@ async def chat_status() -> dict:
 # ── strands Agent runner（进程内） ─────────────────────────────────────
 
 
-async def _run_agent(ws: WebSocket, map_id: int, text: str, state: dict) -> None:
+async def _run_agent(ws: WebSocket, map_id: int, text: str) -> None:
     """一轮对话：strands Agent（工作线程）经 loopback MCP 操作脑图。
 
     并发模型（关键）：strands 的 MCPClient 是同步 API——`__enter__` 起后台线程
@@ -145,7 +182,7 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str, state: dict) -> None
     因此整轮 agent 丢 `asyncio.to_thread`，同步 streaming 回调经
     `loop.call_soon_threadsafe` 桥回事件循环转发 WS。
 
-    会话延续：strands 的 messages 历史（含工具调用轨迹）存在 state，下轮传入。
+    会话延续：FileSessionManager 持久化（构造恢复 / 每轮 sync_agent 落盘）。
     超时：asyncio.timeout 取消 async 侧；工作线程无法强杀，会自然跑完（无害）。
     """
     # 局部 import：启动期不依赖 strands（未配 env 时服务其余功能照常）
@@ -167,9 +204,18 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str, state: dict) -> None
             loop.call_soon_threadsafe(queue.put_nowait, ("delta", data))
 
     def work() -> None:
-        """工作线程：同步 MCP 上下文 + 同步 agent 循环。"""
+        """工作线程：同步 MCP 上下文 + 同步 agent 循环。
+
+        会话持久化交给 FileSessionManager（Agent 注册为 hook，每轮结束
+        sync_agent 自动写盘；构造时自动恢复该 session 的历史——跨 WS 连接延续）。
+        """
+        from strands.session import FileSessionManager
+
+        sm = FileSessionManager(session_id=_session_id(map_id), storage_dir=SESSIONS_DIR)
         with MCPClient(url=SELF_MCP_URL) as mcp:
             agent = Agent(
+                agent_id=SESSION_AGENT_ID,
+                session_manager=sm,
                 model=OpenAIModel(
                     model_id=_agent_model(),
                     client_args={
@@ -181,11 +227,9 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str, state: dict) -> None
                 # 形式 tools=[mcp]——Agent 会自行 start provider，与 with 冲突）
                 tools=list(mcp.list_tools_sync()),
                 system_prompt=SYSTEM_PROMPT.format(map_id=map_id),
-                messages=state.get("messages") or None,
                 callback_handler=on_event,
             )
-            agent(text)  # 同步执行完整「LLM ↔ 工具」循环
-            state["messages"] = list(agent.messages)
+            agent(text)  # 同步执行完整「LLM ↔ 工具」循环；结束自动 sync_agent 落盘
 
     work_task = asyncio.create_task(asyncio.to_thread(work))
     try:
@@ -223,7 +267,11 @@ async def chat(ws: WebSocket, map_id: int):
         await ws.close()
         return
 
-    state: dict = {}  # {"messages": [...]} —— 会话延续锚点
+    # 推送持久化的对话历史（文件 IO 丢线程，避免阻塞事件循环）
+    history = await asyncio.to_thread(_history_payload, map_id)
+    if history:
+        await ws.send_json({"type": "history", "messages": history})
+
     task: asyncio.Task | None = None
     try:
         while True:
@@ -241,7 +289,7 @@ async def chat(ws: WebSocket, map_id: int):
                 await ws.send_json({"type": "busy", "message": "Agent 正在处理上一条消息…"})
                 continue
             # 不 await：主循环继续收消息（busy 拒绝可达）；超时由 runner 内部 asyncio.timeout 处理
-            task = asyncio.create_task(_run_agent(ws, map_id, text, state))
+            task = asyncio.create_task(_run_agent(ws, map_id, text))
     except WebSocketDisconnect:
         pass
     finally:
