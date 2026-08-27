@@ -82,9 +82,9 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
       <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
 
-      {hasChildren && (
+      {hasChildren && !isRoot && (
         <button
-          className={`fold ${n.collapsed ? 'folded' : ''}`}
+          className={`fold ${lnode.side === -1 ? 'left' : ''} ${n.collapsed ? 'folded' : ''}`}
           title={n.collapsed ? '展开' : '折叠'}
           onClick={(e) => {
             e.stopPropagation()

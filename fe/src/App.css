@@ -278,6 +278,7 @@
   justify-content: center;
   padding: 0;
 }
+.fold.left { right: auto; left: -24px; } /* 左侧子树的折叠按钮放在节点左侧 */
 .fold.folded { background: #94a3b8; color: #fff; }
 .fold:hover { border-color: #0ea5e9; color: #0ea5e9; }
 
