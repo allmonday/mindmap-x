@@ -114,6 +114,13 @@
   background: #fffbeb;
   border-color: #f59e0b;
 }
+/* 根节点被 Agent 修改时保持深底白字（by-agent 的浅底会盖掉深底 + 白字不可读），
+   修改来源用橙色边框 + AI 角标体现 */
+.rf-node.root.by-agent {
+  background: #1e293b;
+  color: #fff;
+  border-color: #f59e0b;
+}
 .rf-node.sel {
   border-color: #0ea5e9;
   box-shadow: 0 0 0 2.5px rgba(14, 165, 233, 0.25);
