@@ -79,6 +79,9 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
         <span className="rf-label">{fitText(n.content, lnode.w)}</span>
       )}
 
+      {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
+      <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.id}</span>
+
       {byAgent && !isEditing && <span className="agent-badge">AI</span>}
 
       {hasChildren && (

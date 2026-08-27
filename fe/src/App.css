@@ -141,6 +141,22 @@
   padding: 0;
 }
 
+.id-badge {
+  position: absolute;
+  top: -9px;
+  left: -7px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: ui-monospace, Consolas, monospace;
+  border-radius: 6px;
+  padding: 1px 5px;
+  border: 1.5px solid #fff;
+  pointer-events: none; /* 角标不拦截节点的点击/双击 */
+}
+.id-badge.on-root { background: #cbd5e1; }
+
 .agent-badge {
   position: absolute;
   top: -9px;
