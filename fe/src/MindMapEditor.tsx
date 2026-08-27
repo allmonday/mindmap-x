@@ -293,20 +293,22 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         >
           ⊞
         </button>
-        <span className="title">{detail.title}</span>
-        <span className="version">v{detail.version}</span>
         <span className={`ws-dot ${wsState}`} title={`实时同步: ${wsState}`} />
         <span className={`ws-label ${wsState}`}>
           {wsState === 'live' ? '实时' : wsState === 'connecting' ? '连接中' : '已断开'}
         </span>
         <div className="spacer" />
-        <span className="hint">双击或 F2 编辑 · Tab 加子级 · Enter 加同级 · Del 删除</span>
         <button className="btn icon" onClick={openOutline} title="outline 编辑" aria-label="outline 编辑">✎</button>
       </header>
 
       {error && <div className="toast editor-toast">{error}</div>}
 
       <div className="rf-wrap">
+        {/* 标题悬浮于画板左上角，独立于工具栏；pointer-events:none 不挡画布交互 */}
+        <div className="map-title">
+          <span className="name">{detail.title}</span>
+          <span className="ver">v{detail.version}</span>
+        </div>
         <ReactFlow
           nodes={rfNodes}
           edges={rfEdges}

@@ -73,9 +73,6 @@
   border-bottom: 1px solid #e2e8f0;
   z-index: 5;
 }
-.toolbar .title { font-weight: 700; font-size: 17px; }
-.toolbar .version { color: #64748b; font-size: 13px; }
-.toolbar .hint { color: #94a3b8; font-size: 12.5px; }
 
 .ws-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .ws-dot.live { background: #22c55e; }
@@ -86,6 +83,31 @@
 .editor-toast { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 20; }
 
 .rf-wrap { flex: 1; position: relative; }
+
+/* 画板左上角悬浮标题（独立于顶部工具栏） */
+.map-title {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 4;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  pointer-events: none; /* 不挡画布拖拽/缩放 */
+  background: rgba(255, 255, 255, 0.82);
+  padding: 6px 12px;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(15, 23, 42, 0.08);
+  max-width: 40vw;
+}
+.map-title .name {
+  font-weight: 700;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-title .ver { color: #94a3b8; font-size: 12px; }
 
 .rf-minimap { background: #f8fafc; }
 
