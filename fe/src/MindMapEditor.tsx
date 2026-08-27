@@ -282,7 +282,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   return (
     <div className="editor">
       <header className="toolbar">
-        <button className="btn" onClick={onBack}>← 列表</button>
+        <button className="btn icon" onClick={onBack} title="返回列表" aria-label="返回列表">☰</button>
         <span className="title">{detail.title}</span>
         <span className="version">v{detail.version}</span>
         <span className={`ws-dot ${wsState}`} title={`实时同步: ${wsState}`} />
@@ -291,7 +291,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         </span>
         <div className="spacer" />
         <span className="hint">双击或 F2 编辑 · Tab 加子级 · Enter 加同级 · Del 删除</span>
-        <button className="btn" onClick={openOutline}>outline 编辑</button>
+        <button className="btn icon" onClick={openOutline} title="outline 编辑" aria-label="outline 编辑">✎</button>
       </header>
 
       {error && <div className="toast editor-toast">{error}</div>}

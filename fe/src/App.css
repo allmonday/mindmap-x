@@ -11,6 +11,7 @@
 .btn.primary { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
 .btn.primary:disabled { opacity: 0.5; cursor: default; }
 .btn.sm { padding: 4px 10px; font-size: 13px; }
+.btn.icon { padding: 6px 10px; font-size: 16px; line-height: 1; }
 
 .spacer { flex: 1; }
 
