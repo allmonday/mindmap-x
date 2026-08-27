@@ -223,6 +223,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       id: String(lnode.node.display_id),
       type: 'mind' as const,
       position: { x: lnode.x, y: lnode.y - lnode.h / 2 },
+      width: lnode.w, // 供 MiniMap 等在 DOM 测量前使用（nodeHasDimensions）
+      height: lnode.h,
       style: { width: lnode.w, height: lnode.h },
       selected: lnode.node.display_id === selectedId,
       data: {
@@ -322,7 +324,18 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         >
           <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} />
           <Controls showInteractive={false} />
-          <MiniMap pannable zoomable className="rf-minimap" />
+          <MiniMap
+            pannable
+            zoomable
+            className="rf-minimap"
+            nodeStrokeColor="#94a3b8"
+            nodeColor={(n) => {
+              const d = n.data as MindNodeData
+              if (d.lnode.node.parent_id == null) return '#1e293b' // 根
+              if (d.lnode.node.updated_by === 'agent') return '#f59e0b' // Agent 修改
+              return '#cbd5e1'
+            }}
+          />
         </ReactFlow>
       </div>
 
