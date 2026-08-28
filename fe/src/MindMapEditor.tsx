@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -10,7 +10,6 @@ import {
   type Edge,
   type Node,
   type NodeProps,
-  type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api } from './api'
@@ -205,14 +204,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
   const [chatOpen, setChatOpen] = useState(false)
-  const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
-
-  // 聊天面板开合会改变画布宽度/高度，重新 fitView 防止边缘节点被新视口裁掉
-  // （fitView prop 只在挂载时生效；容器 resize 后视口变换不会自动调整）
-  useEffect(() => {
-    const t = setTimeout(() => rfRef.current?.fitView({ padding: 0.25, maxZoom: 1 }), 60)
-    return () => clearTimeout(t)
-  }, [chatOpen])
 
   const refresh = useCallback(async () => {
     try {
@@ -440,7 +431,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
       {error && <div className="toast editor-toast">{error}</div>}
 
-      {/* 横向主体：画布与右侧聊天面板并排，面板打开时画布收窄（ReactFlow 自动适配） */}
+      {/* 横向主体：画布始终全宽；聊天面板 absolute 悬浮于右侧（overlay，不压缩画布） */}
       <div className="editor-main">
         <div className="rf-wrap">
           {/* 标题悬浮于画板左上角，独立于工具栏；pointer-events:none 不挡画布交互 */}
@@ -452,9 +443,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={nodeTypes}
-            onInit={(inst) => {
-              rfRef.current = inst
-            }}
             fitView
             fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
             minZoom={0.1}

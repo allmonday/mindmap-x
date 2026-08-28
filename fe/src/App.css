@@ -16,13 +16,19 @@
 .btn.icon { padding: 6px 10px; font-size: 16px; line-height: 1; }
 .btn.icon.active { border-color: #0ea5e9; background: #f0f9ff; }
 
-/* ── Agent 对话面板（右侧面板） ────────────────────────── */
+/* ── Agent 对话面板（悬浮于画布右侧，不压缩画布） ──────── */
 .chat-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6; /* 盖过 ReactFlow 的 Controls/MiniMap（内部面板 z-index ~5）与 map-title */
   display: flex;
   flex-direction: column;
   width: min(360px, 92vw);
   border-left: 1px solid #e2e8f0;
   background: #fff;
+  box-shadow: -6px 0 18px rgba(15, 23, 42, 0.12);
 }
 
 .chat-head {
@@ -191,8 +197,8 @@
 
 /* ── 编辑器 ───────────────────────────────────────────── */
 .editor { display: flex; flex-direction: column; height: 100vh; }
-/* 横向主体：画布占余宽，右侧聊天面板定宽 */
-.editor-main { flex: 1; display: flex; min-height: 0; }
+/* 横向主体：画布始终占满全宽；聊天面板 absolute 悬浮右侧 */
+.editor-main { flex: 1; display: flex; min-height: 0; position: relative; }
 .editor-loading {
   height: 100vh;
   display: flex;
