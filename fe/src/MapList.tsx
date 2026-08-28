@@ -28,8 +28,7 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
 
   return (
     <div className="map-list">
-      <h1>Agent MindMap</h1>
-      <p className="sub">人 + AI Agent 协同脑图 · 浏览器与 Agent 实时共编</p>
+      <h1>MindMap X</h1>
       <div className="create-row">
         <input
           value={title}
