@@ -28,19 +28,32 @@ const FONT = 14
 const MAX_W = 320
 const LINE_H = 20 // 多行行高（与 .rf-label 的 line-height:20px 严格一致，勿改回比例值）
 const MAX_LINES = 4 // 最多展示行数，超出由 CSS clamp 省略 + hover title 兜底
+// 水平留白（与 CSS 严格同步）：节点 padding 10×2 + .rf-label padding 8×2 + 6 余量。
+// 曾只算 26 漏掉 label 的 16px，导致"并不长的文本"实际渲染宽超出标签盒而意外折行
+const PAD_X = 26 + 16
+
+// 东亚"宽度歧义"字符：码点落在拉丁区（≤0x2e7f），但在中文字体里按全角 ~14px 渲染。
+// 按半角 0.55 估会显著低估宽度（曾导致含 "——" 的短文本意外折行）；高估只会让节点
+// 稍宽不会折行，方向安全，宁可多列
+const FULLWIDTH_EXTRA = new Set(['—', '…', '·', '‘', '’', '“', '”', '～'])
 
 export function measure(text: string): { w: number; h: number; truncated: boolean } {
-  // 宽度估算：CJK 字符记 1 单位，ASCII 记 0.55 单位
+  // 宽度估算：全角（CJK + 歧义字符）记 1 单位，其余 ASCII 记 0.55 单位
   let units = 0
-  for (const ch of text) units += ch.codePointAt(0)! > 0x2e7f ? 1 : 0.55
-  const oneLine = Math.ceil(units * FONT) + 26 // 单行所需宽（含左右留白 26）
+  for (const ch of text) units += ch.codePointAt(0)! > 0x2e7f || FULLWIDTH_EXTRA.has(ch) ? 1 : 0.55
+  const oneLine = Math.ceil(units * FONT) + PAD_X // 单行所需宽（含左右留白）
   if (oneLine <= MAX_W) return { w: Math.max(48, oneLine), h: NODE_H, truncated: false }
   // 放不进一行：定宽 MAX_W 换行。行数按每行容量估算、封顶 MAX_LINES——
   // 实际断行由 CSS（word-break:break-all + line-clamp）决定，此处只负责预留高度
-  const unitsPerLine = Math.floor((MAX_W - 26) / FONT) // =21：纯中文每行 21 字
+  const unitsPerLine = Math.floor((MAX_W - PAD_X) / FONT) // =19：纯中文每行 19 字
   const lines = Math.min(MAX_LINES, Math.ceil(units / unitsPerLine))
-  // 单行沿用 NODE_H 不动存量视觉；每多一行 +LINE_H（2/3/4 行 = 56/76/96）
-  return { w: MAX_W, h: NODE_H + (lines - 1) * LINE_H, truncated: units > unitsPerLine * MAX_LINES }
+  // 单行沿用 NODE_H 不动存量视觉；每多一行 +LINE_H，再 +12 上下呼吸留白
+  // （2/3/4 行 = 68/88/108；内容盒高 ≥ 行数×20 且余 16.8px）
+  return {
+    w: MAX_W,
+    h: NODE_H + (lines - 1) * LINE_H + 12,
+    truncated: units > unitsPerLine * MAX_LINES,
+  }
 }
 
 export interface LayoutResult {

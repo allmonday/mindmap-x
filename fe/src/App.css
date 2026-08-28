@@ -453,7 +453,9 @@ button.crumb:hover { text-decoration: underline; }
 }
 
 /* 长文本自动换行多行节点：字符级断行与 measure 的逐字符单位模型同构，
-   行高 20px 与 layout.ts LINE_H 严格一致；4 行后省略，全文 hover title 兜底 */
+   行高 20px 与 layout.ts LINE_H 严格一致；多行左对齐（单行节点宽度裹内容，
+   text-align 不影响）；label 左右各 8px 额外留白（measure 的 unitsPerLine 已同步扣除）；
+   4 行后省略，全文 hover title 兜底 */
 .rf-label {
   max-width: 100%;
   overflow: hidden;
@@ -464,7 +466,8 @@ button.crumb:hover { text-decoration: underline; }
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
   line-clamp: 4;
-  text-align: center;
+  text-align: left;
+  padding: 0 8px;
 }
 
 .rf-editor {
