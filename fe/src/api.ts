@@ -45,7 +45,7 @@ export interface ArchiveMeta {
 export interface ArchiveDoc {
   id: string
   created_at: string
-  messages: { role: 'user' | 'agent'; text: string }[]
+  messages: { role: 'user' | 'agent'; text: string; thinking?: string }[]
 }
 
 async function get<T>(url: string): Promise<T> {

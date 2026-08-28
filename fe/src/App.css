@@ -25,10 +25,27 @@
   z-index: 6; /* 盖过 ReactFlow 的 Controls/MiniMap（内部面板 z-index ~5）与 map-title */
   display: flex;
   flex-direction: column;
-  width: min(360px, 92vw);
+  max-width: 92vw; /* 宽度由行内 style 控制（拖拽调宽），此处只做小屏兜底 */
   border-left: 1px solid #e2e8f0;
   background: #fff;
-  box-shadow: -6px 0 18px rgba(15, 23, 42, 0.12);
+}
+
+/* 左缘拖拽调宽柄 */
+.chat-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+}
+.chat-resize:hover {
+  background: rgba(14, 165, 233, 0.28);
+}
+body.chat-resizing {
+  cursor: col-resize;
+  user-select: none; /* 拖拽中防选中文本 */
 }
 
 .chat-head {
@@ -95,6 +112,65 @@
 .bubble.agent.err { background: #fef2f2; color: #b91c1c; }
 .bubble.agent.thinking { color: #94a3b8; }
 .bubble .cursor { animation: blink 1s step-start infinite; }
+
+/* 思考过程：可折叠区域（流式思考时展开、正文开始后收起） */
+.bubble .thinking { margin-bottom: 6px; }
+.bubble .thinking summary {
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 12px;
+  user-select: none;
+  list-style: none;
+}
+.bubble .thinking summary::before { content: '▸ '; }
+.bubble .thinking[open] summary::before { content: '▾ '; }
+.bubble .thinking-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #64748b;
+  font-size: 12.5px;
+  line-height: 1.55;
+  border-left: 2px solid #e2e8f0;
+  padding-left: 8px;
+  margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto; /* 长思考内部滚动，不撑爆气泡 */
+}
+
+/* agent 气泡的 markdown 渲染（user/error 气泡保持纯文本 pre-wrap） */
+.bubble .md { white-space: normal; }
+.bubble .md > :first-child { margin-top: 0; }
+.bubble .md > :last-child { margin-bottom: 0; }
+.bubble .md p { margin: 6px 0; }
+.bubble .md ul,
+.bubble .md ol { margin: 6px 0; padding-left: 18px; }
+.bubble .md li { margin: 2px 0; }
+.bubble .md h1,
+.bubble .md h2,
+.bubble .md h3 { font-size: 13.5px; margin: 8px 0 4px; }
+.bubble .md code {
+  background: rgba(15, 23, 42, 0.07);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.bubble .md pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.bubble .md pre code { background: none; padding: 0; color: inherit; }
+.bubble .md a { color: #0284c7; }
+.bubble .md blockquote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 3px solid #cbd5e1;
+  color: #64748b;
+}
 @keyframes blink { 50% { opacity: 0; } }
 
 .chat-input-row {

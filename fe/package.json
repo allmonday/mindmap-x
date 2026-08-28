@@ -12,7 +12,8 @@
   "dependencies": {
     "@xyflow/react": "^12.11.5",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

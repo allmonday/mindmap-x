@@ -89,10 +89,20 @@ def _history_payload(map_id: int) -> list[dict]:
             for block in msg.get("content", [])
             if isinstance(block, dict) and isinstance(block.get("text"), str)
         ).strip()
+        # 思考块 {"reasoningContent": {"reasoningText": {"text": ...}}}（推理模型），
+        # 作为可选 thinking 字段带给前端可折叠展示；不回传 LLM（多轮协议不支持）
+        thinking = "".join(
+            block["reasoningContent"].get("reasoningText", {}).get("text", "")
+            for block in msg.get("content", [])
+            if isinstance(block, dict) and isinstance(block.get("reasoningContent"), dict)
+        ).strip()
         if role == "user":
             text = _EXTERNAL_CHANGES_RE.sub("", text).strip()
-        if text:
-            out.append({"role": role, "text": text})
+        if text or thinking:
+            entry = {"role": role, "text": text}
+            if thinking:
+                entry["thinking"] = thinking
+            out.append(entry)
     return out
 
 
@@ -306,9 +316,15 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str) -> None:
     def on_event(**kwargs) -> None:
         """strands 同步流式回调（工作线程内执行，事件 dict 以 kwargs 展开）。
 
-        文本增量的特征键组合是 delta + data（TextStreamEvent）；
+        文本增量 = delta + data（TextStreamEvent）；思考增量 = delta + reasoning +
+        reasoningText（ReasoningTextStreamEvent，GLM 推理模型先思考后作答）；
         complete=True 是消息收尾（完整文本重复送达，跳过）。
         """
+        if "delta" in kwargs and kwargs.get("reasoning"):
+            text = kwargs.get("reasoningText")
+            if isinstance(text, str) and text:
+                loop.call_soon_threadsafe(queue.put_nowait, ("reasoning", text))
+            return
         data = kwargs.get("data")
         if "delta" in kwargs and isinstance(data, str) and data and not kwargs.get("complete"):
             loop.call_soon_threadsafe(queue.put_nowait, ("delta", data))
@@ -351,6 +367,8 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str) -> None:
                     continue  # 工作线程仍在跑，回来看 task 状态
                 if kind == "delta":
                     await ws.send_json({"type": "delta", "text": payload})
+                elif kind == "reasoning":
+                    await ws.send_json({"type": "reasoning", "text": payload})
     except TimeoutError:
         await ws.send_json(
             {"type": "error", "message": f"Agent 超时（{AGENT_TIMEOUT_S:.0f}s），已放弃等待"}

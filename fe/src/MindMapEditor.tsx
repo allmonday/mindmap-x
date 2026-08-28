@@ -204,6 +204,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
   const [chatOpen, setChatOpen] = useState(false)
+  // 侧边栏宽度：拖拽调整，localStorage 跨会话记忆
+  const [chatWidth, setChatWidth] = useState(() => {
+    const saved = Number(localStorage.getItem('chatWidth'))
+    return saved >= 280 && saved <= 760 ? saved : 360
+  })
+  useEffect(() => {
+    localStorage.setItem('chatWidth', String(chatWidth))
+  }, [chatWidth])
 
   const refresh = useCallback(async () => {
     try {
@@ -213,21 +221,43 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }
   }, [mapId])
 
-  // 数据加载 + WebSocket 实时同步（hello/changed 都触发重拉）
+  // 数据加载 + WebSocket 实时同步（hello/changed 都触发重拉）。
+  // 断线自动重连（指数退避 1s→8s 封顶）——hello 到达即重拉，恢复后状态自然同步。
   useEffect(() => {
     setDetail(null)
     setSelectedId(null)
     setEditingId(null)
     refresh()
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${proto}://${location.host}/ws/${mapId}`)
-    ws.onopen = () => setWsState('live')
-    ws.onclose = () => setWsState('dead')
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data)
-      if (msg.type === 'hello' || msg.type === 'changed') void refresh()
+    let closed = false // 组件卸载/换图：停止重连
+    let timer: number | undefined
+    let attempt = 0
+    let ws: WebSocket | null = null
+    const connect = () => {
+      if (closed) return
+      ws = new WebSocket(`${proto}://${location.host}/ws/${mapId}`)
+      ws.onopen = () => {
+        attempt = 0
+        setWsState('live')
+      }
+      ws.onclose = () => {
+        setWsState('dead')
+        if (closed) return
+        const delay = Math.min(1000 * 2 ** attempt, 8000)
+        attempt += 1
+        timer = window.setTimeout(connect, delay)
+      }
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data)
+        if (msg.type === 'hello' || msg.type === 'changed') void refresh()
+      }
     }
-    return () => ws.close()
+    connect()
+    return () => {
+      closed = true
+      window.clearTimeout(timer)
+      ws?.close()
+    }
   }, [mapId, refresh])
 
   // ── 编辑操作（成功后由 WS 事件驱动重拉，保持单一数据流） ─────────────
@@ -473,7 +503,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           </ReactFlow>
         </div>
 
-        {chatOpen && <ChatPanel mapId={mapId} onClose={() => setChatOpen(false)} />}
+        {chatOpen && (
+          <ChatPanel mapId={mapId} width={chatWidth} onResize={setChatWidth} onClose={() => setChatOpen(false)} />
+        )}
       </div>
 
       {outlineOpen && (
