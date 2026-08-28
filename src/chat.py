@@ -22,6 +22,8 @@ import re
 import httpx
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
+from src.service.mindmap.events import drain_pending
+
 
 def _load_dotenv(path: str = ".env") -> None:
     """极简 .env 加载（不覆盖已存在的环境变量，无额外依赖）。"""
@@ -62,7 +64,10 @@ def _session_id(map_id: int) -> str:
 
 
 def _history_payload(map_id: int) -> list[dict]:
-    """读取该脑图的持久化对话历史，提取为 [{role, text}]（跳过工具调用块）。"""
+    """读取该脑图的持久化对话历史，提取为 [{role, text}]（跳过工具调用块）。
+
+    user 消息尾部注入的 <external_changes> 块是给 LLM 的上下文，气泡/归档不显示。
+    """
     from strands.session import FileSessionManager
     from strands.types.exceptions import SessionException
 
@@ -84,9 +89,15 @@ def _history_payload(map_id: int) -> list[dict]:
             for block in msg.get("content", [])
             if isinstance(block, dict) and isinstance(block.get("text"), str)
         ).strip()
+        if role == "user":
+            text = _EXTERNAL_CHANGES_RE.sub("", text).strip()
         if text:
             out.append({"role": role, "text": text})
     return out
+
+
+# 剥掉 user 消息尾部的外部改动注入块（含前导空白，DOTALL 跨行匹配）
+_EXTERNAL_CHANGES_RE = re.compile(r"<external_changes>.*?</external_changes>", re.DOTALL)
 
 
 # ── 「清除 context」：当前对话归档 + 重置 strands 会话 ──────────────────
@@ -188,7 +199,9 @@ SYSTEM_PROMPT = """\
 - apply_outline 用缩进文本批量重构（merge 不误删未提及节点）
 注意：get_map 返回里的 parent_id 是全局内部键（组树用），不是节点编号，操作时请始终用 display_id；
 拿不准时先 get_tree 核对。
-用户的每轮消息都请实际完成操作，然后用一两句话说明你做了什么。\
+用户的每轮消息都请实际完成操作，然后用一两句话说明你做了什么。
+用户消息尾部可能附带 <external_changes> 块 = 你上一轮之后用户在画布上手动
+修改的清单；与你历史记忆冲突时以其为准，拿不准再 get_tree 核对。\
 """
 
 _MODEL_ENV = ("OPENAI_BASE_URL", "OPENAI_API_KEY", "AGENT_MODEL")
@@ -398,6 +411,16 @@ async def chat(ws: WebSocket, map_id: int):
             if task is not None and not task.done():
                 await ws.send_json({"type": "busy", "message": "Agent 正在处理上一条消息…"})
                 continue
+            # 外部改动通知：用户在你不在时手动改了树 → 拼在本轮 user 消息尾部发给
+            # LLM（消费即清空）。注入在末尾追加区，system prompt 与既有历史不动，
+            # KV-cache 前缀安全。
+            pending = drain_pending(map_id)
+            if pending:
+                text += (
+                    "\n\n<external_changes>\n用户在画布上手动修改了：\n"
+                    + "\n".join(f"- {d}" for d in pending)
+                    + "\n</external_changes>"
+                )
             # 不 await：主循环继续收消息（busy 拒绝可达）；超时由 runner 内部 asyncio.timeout 处理
             task = asyncio.create_task(_run_agent(ws, map_id, text))
     except WebSocketDisconnect:

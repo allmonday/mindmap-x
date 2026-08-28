@@ -218,7 +218,10 @@ async def add_node(
         session.add(m)
         await session.commit()
         await session.refresh(node)
-        publish_change(map_id, m.version, "node_added", actor)
+        publish_change(
+            map_id, m.version, "node_added", actor,
+            detail=f"add_node #{node.display_id}「{content}」（父 #{parent_id}）",
+        )
         return node
 
 
@@ -247,7 +250,15 @@ async def update_node(
         session.add(m)
         await session.commit()
         await session.refresh(node)
-        publish_change(m.id, m.version, "node_updated", actor)
+        changes: list[str] = []
+        if content is not None:
+            changes.append(f"内容→「{content}」")
+        if collapsed is not None:
+            changes.append("折叠" if collapsed else "展开")
+        publish_change(
+            m.id, m.version, "node_updated", actor,
+            detail=f"update_node #{node_id} {'，'.join(changes)}",
+        )
         return node
 
 
@@ -288,7 +299,10 @@ async def move_node(
         session.add(m)
         await session.commit()
         await session.refresh(node)
-        publish_change(m.id, m.version, "node_moved", actor)
+        publish_change(
+            m.id, m.version, "node_moved", actor,
+            detail=f"move_node #{node_id} → 父 #{new_parent_id}",
+        )
         return node
 
 
@@ -310,7 +324,10 @@ async def delete_node(map_id: int, node_id: int, actor: str = "agent") -> bool:
         m.version += 1
         session.add(m)
         await session.commit()
-        publish_change(m.id, m.version, "node_deleted", actor)
+        publish_change(
+            m.id, m.version, "node_deleted", actor,
+            detail=f"delete_node #{node_id}（含 {len(ids) - 1} 个后代）",
+        )
         return True
 
 
@@ -333,7 +350,10 @@ async def expand_all(map_id: int, actor: str = "agent") -> Map:
         m.version += 1
         session.add(m)
         await session.commit()
-        publish_change(map_id, m.version, "expanded_all", actor)
+        publish_change(
+            map_id, m.version, "expanded_all", actor,
+            detail=f"expand_all（展开了 {len(folded)} 个折叠节点）",
+        )
         return m
 
 
@@ -438,5 +458,8 @@ async def apply_outline(
         session.add(m)
         await session.commit()
         await session.refresh(m)
-        publish_change(map_id, m.version, "outline_applied", actor)
+        publish_change(
+            map_id, m.version, "outline_applied", actor,
+            detail=f"apply_outline（mode={mode}，涉及 {len(entries)} 行）",
+        )
         return m
