@@ -98,6 +98,14 @@ class MindmapService(UseCaseService):
         return await methods.delete_node(map_id, node_id, actor=actor)
 
     @mutation
+    async def delete_map(cls, map_id: int, actor: str = "agent") -> bool:
+        """删除整张脑图（map + 全部节点），不可恢复。
+
+        删除后向仍打开该图的客户端广播 map_deleted（浏览器自动退回列表）。
+        """
+        return await methods.delete_map(map_id, actor=actor)
+
+    @mutation
     async def expand_all(cls, map_id: int, actor: str = "agent") -> MapDetail:
         """展开全部节点（视图状态，不改变修改标记/时间戳）。"""
         m = await methods.expand_all(map_id, actor=actor)

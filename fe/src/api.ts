@@ -30,6 +30,7 @@ export const api = {
     call<NodeDTO>('move_node', { map_id, node_id, new_parent_id, position, actor: 'human' }),
   deleteNode: (map_id: number, node_id: number) =>
     call<boolean>('delete_node', { map_id, node_id, actor: 'human' }),
+  deleteMap: (map_id: number) => call<boolean>('delete_map', { map_id, actor: 'human' }),
   expandAll: (map_id: number) => call<MapDetail>('expand_all', { map_id, actor: 'human' }),
   setFoldLevel: (map_id: number, level: number) =>
     call<MapDetail>('set_fold_level', { map_id, level, actor: 'human' }),

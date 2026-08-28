@@ -181,7 +181,19 @@ async def watch_map(ws: WebSocket, map_id: int):
             except asyncio.TimeoutError:
                 async with async_session() as session:
                     m = await session.get(Map, map_id)
-                if m is not None and m.version > last_version:
+                if m is None:
+                    # 图已被删除（外部直写 DB 等，未经 events hub 的路径）：
+                    # 补发 map_deleted 让客户端退回列表，然后关闭连接
+                    await ws.send_json({
+                        "type": "changed",
+                        "map_id": map_id,
+                        "version": last_version + 1,
+                        "action": "map_deleted",
+                        "actor": "external",
+                    })
+                    await ws.close(code=4404)
+                    break
+                if m.version > last_version:
                     event = {
                         "type": "changed",
                         "map_id": map_id,

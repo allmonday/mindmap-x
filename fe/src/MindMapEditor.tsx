@@ -358,6 +358,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       }
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data)
+        // 图被删除（列表页 / Agent）：退回列表，不再重拉（get_map 会 404）
+        if (msg.action === 'map_deleted') {
+          onBack()
+          return
+        }
         if (msg.type === 'hello' || msg.type === 'changed') void refresh()
       }
     }

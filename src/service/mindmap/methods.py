@@ -24,11 +24,12 @@
 import re
 from datetime import datetime, timezone
 
+from sqlalchemy import delete
 from sqlmodel import select
 
 from src.db import async_session
 from src.models import Map, Node
-from src.service.mindmap.events import publish_change
+from src.service.mindmap.events import drain_pending, publish_change
 
 _LINE_RE = re.compile(r"^-\s*(?:\[id:(\d+)\]\s*)?(.*)$")
 INDENT_UNIT = 2
@@ -329,6 +330,25 @@ async def delete_node(map_id: int, node_id: int, actor: str = "agent") -> bool:
             detail=f"delete_node #{node_id}（含 {len(ids) - 1} 个后代）",
         )
         return True
+
+
+async def delete_map(map_id: int, actor: str = "agent") -> bool:
+    """删除整张脑图（map 行 + 全部节点，单事务，不可恢复）。
+
+    附带清理：commit 后向仍打开该图的 WS 客户端广播 map_deleted（前端收到后
+    自动退回列表），并清空该图的外部改动待通知缓冲。聊天归档不级联——它按
+    map_id 查询，图不存在即不可达，留作历史记录。
+    """
+    async with async_session() as session:
+        m = await _get_map(session, map_id)
+        next_version = m.version + 1  # 图即将不存在，version 仅用于事件单调
+        await session.execute(delete(Node).where(Node.map_id == map_id))
+        await session.delete(m)
+        await session.commit()
+    # 先 commit 再广播：订阅者收到事件后重拉 get_map 应当看到 404
+    publish_change(map_id, next_version, "map_deleted", actor)
+    drain_pending(map_id)
+    return True
 
 
 async def expand_all(map_id: int, actor: str = "agent") -> Map:

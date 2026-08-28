@@ -45,6 +45,7 @@ In-page agent chat
 | --- | --- |
 | `list_maps` / `get_map` / `get_tree` | Queries: map list / structured full tree / outline text |
 | `create_map` / `add_node` / `update_node` / `move_node` / `delete_node` | Point operations: create / add / update / move / delete (with cycle detection) |
+| `delete_map` | Delete an entire map (all nodes included; broadcasts `map_deleted`, open clients return to the list) |
 | `expand_all` / `set_fold_level` | Batch view state: expand all / fold by level |
 | `apply_outline` | Bulk tree write via the outline protocol (below) |
 

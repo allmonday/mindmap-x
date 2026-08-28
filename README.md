@@ -44,6 +44,7 @@
 | --- | --- |
 | `list_maps` / `get_map` / `get_tree` | 查询：图列表 / 结构化全量 / outline 文本 |
 | `create_map` / `add_node` / `update_node` / `move_node` / `delete_node` | 单点增删改移（含环检测） |
+| `delete_map` | 删除整张图（含全部节点；广播 `map_deleted`，打开中的客户端自动退回列表） |
 | `expand_all` / `set_fold_level` | 批量视图态：全展开 / 按层级收放 |
 | `apply_outline` | 整树批量写入（outline 协议，见下） |
 
