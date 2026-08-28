@@ -245,8 +245,7 @@ body.chat-resizing {
 
 /* ── 列表页 ───────────────────────────────────────────── */
 .map-list { max-width: 760px; margin: 48px auto; padding: 0 20px; }
-.map-list h1 { margin: 0 0 4px; }
-.map-list .sub { color: #64748b; margin: 0 0 24px; }
+.map-list h1 { margin: 0 0 20px; }
 
 .create-row { display: flex; gap: 10px; margin-bottom: 20px; }
 .create-row input {
@@ -328,6 +327,54 @@ body.chat-resizing {
   white-space: nowrap;
 }
 .map-title .ver { color: #94a3b8; font-size: 12px; }
+
+/* 画布左上角工具列：标题正下方，纵向排列（布局切换 / 全部展开） */
+.canvas-tools {
+  position: absolute;
+  top: 58px;
+  left: 16px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.canvas-tools .btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 0;
+}
+
+/* 布局切换 loading 遮罩 */
+.rf-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(248, 250, 252, 0.65);
+  backdrop-filter: blur(2px);
+  color: #64748b;
+  font-size: 13px;
+  animation: rf-fade-in 0.15s ease;
+}
+.rf-loading-spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #0ea5e9;
+  border-radius: 50%;
+  animation: rf-spin 0.8s linear infinite;
+}
+@keyframes rf-spin { to { transform: rotate(360deg); } }
+@keyframes rf-fade-in { from { opacity: 0; } }
 
 .rf-minimap { background: #f8fafc; }
 

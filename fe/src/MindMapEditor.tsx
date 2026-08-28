@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -10,11 +10,12 @@ import {
   type Edge,
   type Node,
   type NodeProps,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api } from './api'
 import { ChatPanel } from './ChatPanel'
-import { fitText, layoutMap, type LNode } from './layout'
+import { fitText, layoutMap, type LNode, type LayoutMode } from './layout'
 import type { MapDetail, OutlineMode } from './types'
 
 interface Props {
@@ -179,6 +180,22 @@ const CheckIcon = () => (
   </svg>
 )
 
+// 布局形态图标（lucide columns-2 / panel-right 同形对比）：外框相同、
+// 分隔线位置不同——居中=左右对称、靠右=一律靠右，一眼可辨
+const LayoutBalancedIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="3" width="18" height="18" rx="2.5" />
+    <path d="M12 3v18" />
+  </svg>
+)
+
+const LayoutRightIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="3" width="18" height="18" rx="2.5" />
+    <path d="M15 3v18" />
+  </svg>
+)
+
 const PlusIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
     <path d="M5 12h14M12 5v14" />
@@ -204,6 +221,28 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
   const [chatOpen, setChatOpen] = useState(false)
+  // 布局形态：左右镜像 / 一律靠右；localStorage 记忆
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(
+    () => (localStorage.getItem('layoutMode') as LayoutMode) || 'balanced',
+  )
+  useEffect(() => {
+    localStorage.setItem('layoutMode', layoutMode)
+  }, [layoutMode])
+  const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
+
+  // 切换布局形态后节点坐标整体翻转，重新 fitView 才不会跑出视口
+  useEffect(() => {
+    const t = setTimeout(() => rfRef.current?.fitView({ padding: 0.25, maxZoom: 1 }), 60)
+    return () => clearTimeout(t)
+  }, [layoutMode])
+
+  // 切换是同步重排，节点瞬移会很突兀——用短暂遮罩盖住重排与 fitView 的过程
+  const [switching, setSwitching] = useState(false)
+  const toggleLayout = () => {
+    setSwitching(true)
+    setLayoutMode((m) => (m === 'balanced' ? 'right' : 'balanced'))
+    window.setTimeout(() => setSwitching(false), 300)
+  }
   // 侧边栏宽度：拖拽调整，localStorage 跨会话记忆
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = Number(localStorage.getItem('chatWidth'))
@@ -339,7 +378,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   }, [selectedId, editingId, outlineOpen, detail, mapId])
 
   // ── layout → React Flow nodes/edges ────────────────────────────────
-  const layout = useMemo(() => (detail ? layoutMap(detail) : null), [detail])
+  const layout = useMemo(
+    () => (detail ? layoutMap(detail, layoutMode) : null),
+    [detail, layoutMode],
+  )
 
   const childCount = useMemo(() => {
     // 键为父节点 display_id（parent_id 是全局内部键，不能与 display_id 混用）
@@ -435,14 +477,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     <div className="editor">
       <header className="toolbar">
         <button className="btn icon" onClick={onBack} title="返回列表" aria-label="返回列表">☰</button>
-        <button
-          className="btn icon"
-          onClick={() => void guard(() => api.expandAll(mapId))}
-          title="展开所有节点"
-          aria-label="展开所有节点"
-        >
-          ⊞
-        </button>
         <span className={`ws-dot ${wsState}`} title={`实时同步: ${wsState}`} />
         <span className={`ws-label ${wsState}`}>
           {wsState === 'live' ? '实时' : wsState === 'connecting' ? '连接中' : '已断开'}
@@ -469,10 +503,33 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             <span className="name">{detail.title}</span>
             <span className="ver">v{detail.version}</span>
           </div>
+          {/* 画布左上角工具列：标题下方，布局切换 + 全部展开 */}
+          <div className="canvas-tools">
+            <button
+              className="btn"
+              disabled={switching}
+              onClick={toggleLayout}
+              title={layoutMode === 'balanced' ? '当前：左右对称，点击切换为一律靠右' : '当前：一律靠右，点击切换为左右对称'}
+              aria-label={layoutMode === 'balanced' ? '布局：左右对称' : '布局：一律靠右'}
+            >
+              {layoutMode === 'balanced' ? <LayoutBalancedIcon /> : <LayoutRightIcon />}
+            </button>
+            <button
+              className="btn"
+              onClick={() => void guard(() => api.expandAll(mapId))}
+              title="展开所有节点"
+              aria-label="展开所有节点"
+            >
+              ⊞
+            </button>
+          </div>
           <ReactFlow
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={nodeTypes}
+            onInit={(inst) => {
+              rfRef.current = inst
+            }}
             fitView
             fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
             minZoom={0.1}
@@ -501,6 +558,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               }}
             />
           </ReactFlow>
+
+          {/* 布局切换遮罩：盖住同步重排 + fitView，揭开后已是新布局 */}
+          {switching && (
+            <div className="rf-loading">
+              <span className="rf-loading-spinner" />
+              <span>布局切换中…</span>
+            </div>
+          )}
         </div>
 
         {chatOpen && (

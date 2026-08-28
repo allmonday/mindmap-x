@@ -53,7 +53,9 @@ export interface LayoutResult {
   bounds: { minX: number; minY: number; maxX: number; maxY: number }
 }
 
-export function layoutMap(detail: MapDetail): LayoutResult {
+export type LayoutMode = 'balanced' | 'right' // 左右镜像对称 / 一律靠右
+
+export function layoutMap(detail: MapDetail, mode: LayoutMode = 'balanced'): LayoutResult {
   // 组树用 display_id 体系：byParent 键 = 父节点的 display_id（来自 parent 引用）
   const byParent = new Map<number, NodeDTO[]>()
   let root: NodeDTO | null = null
@@ -88,8 +90,13 @@ export function layoutMap(detail: MapDetail): LayoutResult {
   const rootLn = buildShape(root)
 
   // ── 2. 左右分割（前缀分割：children[0..k) 左、[k..n) 右，k 取两侧高度差最小）──
+  // 'right' 模式跳过分割：根的所有孩子一律 side=+1（全在右侧，单向逻辑图形态）
   const kids = rootLn.children
-  if (kids.length > 0) {
+  if (mode === 'right') {
+    kids.forEach((c) => {
+      c.side = 1
+    })
+  } else if (kids.length > 0) {
     const prefix: number[] = [0]
     for (const c of kids) prefix.push(prefix[prefix.length - 1] + c.subtreeH + GAP_Y)
     const total = prefix[prefix.length - 1]
