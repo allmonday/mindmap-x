@@ -341,7 +341,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
           )}
           {archives.map((a) => (
             <button key={a.id} className="archive-item" onClick={() => void openArchive(a.id)}>
-              <span className="archive-preview">{a.preview || '（无预览）'}</span>
+              <span className="archive-preview" title={a.preview || undefined}>{a.preview || '（无预览）'}</span>
               <span className="archive-meta">
                 {a.created_at.replace('T', ' ')} · {a.count} 条
               </span>

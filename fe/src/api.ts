@@ -31,6 +31,8 @@ export const api = {
   deleteNode: (map_id: number, node_id: number) =>
     call<boolean>('delete_node', { map_id, node_id, actor: 'human' }),
   expandAll: (map_id: number) => call<MapDetail>('expand_all', { map_id, actor: 'human' }),
+  setFoldLevel: (map_id: number, level: number) =>
+    call<MapDetail>('set_fold_level', { map_id, level, actor: 'human' }),
   applyOutline: (map_id: number, outline: string, mode: OutlineMode) =>
     call<MapDetail>('apply_outline', { map_id, outline, mode, actor: 'human' }),
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -15,8 +15,8 @@ import {
 import '@xyflow/react/dist/style.css'
 import { api } from './api'
 import { ChatPanel } from './ChatPanel'
-import { fitText, layoutMap, type LNode, type LayoutMode } from './layout'
-import type { MapDetail, OutlineMode } from './types'
+import { layoutMap, type LNode, type LayoutMode } from './layout'
+import type { MapDetail, NodeDTO, OutlineMode } from './types'
 
 interface Props {
   mapId: number
@@ -27,6 +27,7 @@ interface Props {
 
 type MindNodeData = {
   lnode: LNode
+  isLayoutRoot: boolean // 当前布局根 = 真根（非聚焦时）或聚焦节点
   isEditing: boolean
   isAdding: boolean
   hasChildren: boolean
@@ -40,6 +41,7 @@ type MindNodeData = {
   onCommitAdd: (parentId: number, text: string) => void
   onCancelAdd: () => void
   onDelete: (id: number) => void
+  onFocus: (id: number) => void // 聚焦（下钻）到该节点
 }
 
 type MindNode = Node<MindNodeData, 'mind'>
@@ -47,7 +49,7 @@ type MindNode = Node<MindNodeData, 'mind'>
 function MindNodeView({ data, selected }: NodeProps<MindNode>) {
   const { lnode, isEditing, isAdding, hasChildren } = data
   const n = lnode.node
-  const isRoot = n.parent_id === null
+  const isRoot = data.isLayoutRoot // 布局根 = 真根或聚焦节点；非聚焦时与真根判定完全一致
   return (
     <div
       className={`rf-node ${isRoot ? 'root' : ''} ${selected ? 'sel' : ''}`}
@@ -84,7 +86,9 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
           }}
         />
       ) : (
-        <span className="rf-label">{fitText(n.content, lnode.w)}</span>
+        <span className="rf-label" title={lnode.truncated ? n.content : undefined}>
+          {n.content}
+        </span>
       )}
 
       {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
@@ -137,6 +141,19 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
             >
               <PlusIcon />
             </button>
+            {!isRoot && hasChildren && (
+              <button
+                className="btn sm"
+                title="聚焦：只看此节点的子树（Esc / 点面包屑根节点退出）"
+                aria-label="聚焦"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data.onFocus(n.display_id)
+                }}
+              >
+                <FocusIcon />
+              </button>
+            )}
             {!isRoot && (
               <button
                 className="btn sm danger"
@@ -196,6 +213,28 @@ const LayoutRightIcon = () => (
   </svg>
 )
 
+// 全部展开（lucide expand：四角外扩箭头）
+const ExpandIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+  </svg>
+)
+
+// Agent 对话开关（lucide message-circle：带尾气泡）
+const ChatIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719" />
+  </svg>
+)
+
+// outline 编辑（lucide pencil：斜置铅笔）
+const PencilIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+    <path d="m15 5 4 4" />
+  </svg>
+)
+
 const PlusIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
     <path d="M5 12h14M12 5v14" />
@@ -205,6 +244,14 @@ const PlusIcon = () => (
 const TrashIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" />
+  </svg>
+)
+
+// 聚焦/下钻（lucide crosshair：圆 + 四向准星线）
+const FocusIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M22 12h-4M6 12H2M12 6V2M12 22v-4" />
   </svg>
 )
 
@@ -221,6 +268,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
   const [chatOpen, setChatOpen] = useState(false)
+  // 聚焦（下钻）：作为画布布局根的节点 display_id；null = 全图。
+  // 会话级视图态——不进 localStorage，换图即清空
+  const [focusId, setFocusId] = useState<number | null>(null)
   // 布局形态：左右镜像 / 一律靠右；localStorage 记忆
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(
     () => (localStorage.getItem('layoutMode') as LayoutMode) || 'balanced',
@@ -230,11 +280,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   }, [layoutMode])
   const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
 
-  // 切换布局形态后节点坐标整体翻转，重新 fitView 才不会跑出视口
+  // 切换布局形态 / 聚焦切换后节点坐标剧变，重新 fitView 才不会跑出视口
   useEffect(() => {
     const t = setTimeout(() => rfRef.current?.fitView({ padding: 0.25, maxZoom: 1 }), 60)
     return () => clearTimeout(t)
-  }, [layoutMode])
+  }, [layoutMode, focusId])
 
   // 切换是同步重排，节点瞬移会很突兀——用短暂遮罩盖住重排与 fitView 的过程
   const [switching, setSwitching] = useState(false)
@@ -243,6 +293,25 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     setLayoutMode((m) => (m === 'balanced' ? 'right' : 'balanced'))
     window.setTimeout(() => setSwitching(false), 300)
   }
+
+  // 聚焦/切换/退出：与布局形态切换同款处理——遮罩盖住同步重排 + fitView
+  const switchFocus = useCallback(
+    (id: number | null) => {
+      if (id === focusId) return
+      setSwitching(true)
+      setFocusId(id)
+      window.setTimeout(() => setSwitching(false), 300)
+    },
+    [focusId],
+  )
+
+  // WS 全量重拉后，聚焦节点可能已被 Agent 删除 / replace 重建（display_id 变了）——
+  // 不存在即静默退回全图（不走遮罩：WS 刷新本身就有画面变化）
+  useEffect(() => {
+    if (focusId != null && detail && !detail.nodes.some((n) => n.display_id === focusId)) {
+      setFocusId(null)
+    }
+  }, [detail, focusId])
   // 侧边栏宽度：拖拽调整，localStorage 跨会话记忆
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = Number(localStorage.getItem('chatWidth'))
@@ -266,6 +335,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     setDetail(null)
     setSelectedId(null)
     setEditingId(null)
+    setFocusId(null)
     refresh()
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     let closed = false // 组件卸载/换图：停止重连
@@ -344,9 +414,18 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     [mapId],
   )
 
-  // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除） ────────
+  // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Esc 退聚焦）──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Esc 退出聚焦：不依赖节点选中（在通用守卫之外先行处理），但输入态/弹层打开时让位
+      if (e.key === 'Escape') {
+        const el = document.activeElement
+        const typing =
+          el instanceof HTMLElement &&
+          (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+        if (focusId != null && !typing && !outlineOpen) switchFocus(null)
+        return
+      }
       if (editingId != null || outlineOpen || selectedId == null || !detail) return
       // 焦点在任何输入元素上时快捷键一律失效（编辑框/聊天面板/outline 弹层）
       const el = document.activeElement
@@ -364,23 +443,24 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         e.preventDefault()
         addChild(node.display_id)
       } else if (e.key === 'Enter') {
-        if (node.parent == null) return // 根无兄弟
+        // 布局根无兄弟：聚焦根加兄弟会挂到视野外的真父上，成为不可见变更
+        if (node.parent == null || node.display_id === focusId) return
         e.preventDefault()
         addChild(node.parent.display_id)
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (node.parent == null) return // 根不可删
+        if (node.parent == null || node.display_id === focusId) return // 布局根不可删
         e.preventDefault()
         deleteNode(node.display_id)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, editingId, outlineOpen, detail, mapId])
+  }, [selectedId, editingId, outlineOpen, detail, mapId, focusId, switchFocus])
 
   // ── layout → React Flow nodes/edges ────────────────────────────────
   const layout = useMemo(
-    () => (detail ? layoutMap(detail, layoutMode) : null),
-    [detail, layoutMode],
+    () => (detail ? layoutMap(detail, layoutMode, focusId) : null),
+    [detail, layoutMode, focusId],
   )
 
   const childCount = useMemo(() => {
@@ -394,6 +474,41 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     return m
   }, [detail])
 
+  // 全树最大深度（无视折叠现算——layout.all 只含可见节点，折叠后会低估）
+  const maxDepth = useMemo(() => {
+    if (!detail) return 1
+    const byParent = new Map<number, NodeDTO[]>()
+    let root: NodeDTO | null = null
+    for (const n of detail.nodes) {
+      if (n.parent == null) root = n
+      else byParent.set(n.parent.display_id, [...(byParent.get(n.parent.display_id) ?? []), n])
+    }
+    if (!root) return 1
+    let max = 1
+    const stack: [NodeDTO, number][] = [[root, 1]]
+    while (stack.length) {
+      const [n, d] = stack.pop()!
+      max = Math.max(max, d)
+      for (const c of byParent.get(n.display_id) ?? []) stack.push([c, d + 1])
+    }
+    return max
+  }, [detail])
+
+  // 聚焦路径（真根 → 各级祖先 → 聚焦节点）：每次从 detail 现算，
+  // Agent 移动节点（move_node 改父）后路径自动跟随；1000 步上限防断链/成环死循环
+  const focusPath = useMemo(() => {
+    if (focusId == null || !detail) return [] as NodeDTO[]
+    const byId = new Map(detail.nodes.map((n) => [n.display_id, n]))
+    const path: NodeDTO[] = []
+    let cur = byId.get(focusId) ?? null
+    let steps = 0
+    while (cur && steps++ < 1000) {
+      path.push(cur)
+      cur = cur.parent != null ? (byId.get(cur.parent.display_id) ?? null) : null
+    }
+    return path.reverse()
+  }, [detail, focusId])
+
   const callbacks = useMemo(
     () => ({
       onSelect: (id: number) => setSelectedId(id),
@@ -406,8 +521,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       onCommitAdd: commitAdd,
       onCancelAdd: cancelAdd,
       onDelete: deleteNode,
+      onFocus: switchFocus,
     }),
-    [toggleCollapse, commitEdit, addChild, startAdd, commitAdd, cancelAdd, deleteNode],
+    [toggleCollapse, commitEdit, addChild, startAdd, commitAdd, cancelAdd, deleteNode, switchFocus],
   )
 
   const rfNodes: MindNode[] = useMemo(() => {
@@ -422,6 +538,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       selected: lnode.node.display_id === selectedId,
       data: {
         lnode,
+        isLayoutRoot: lnode === layout.root, // 引用相等：all 里的根对象就是 layout.root
         isEditing: lnode.node.display_id === editingId,
         isAdding: lnode.node.display_id === addingId,
         hasChildren: (childCount.get(lnode.node.display_id) ?? 0) > 0,
@@ -488,9 +605,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           title="Agent 对话"
           aria-label="Agent 对话"
         >
-          💬
+          <ChatIcon />
         </button>
-        <button className="btn icon" onClick={openOutline} title="outline 编辑" aria-label="outline 编辑">✎</button>
+        <button className="btn icon" onClick={openOutline} title="outline 编辑" aria-label="outline 编辑">
+          <PencilIcon />
+        </button>
       </header>
 
       {error && <div className="toast editor-toast">{error}</div>}
@@ -498,10 +617,36 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       {/* 横向主体：画布始终全宽；聊天面板 absolute 悬浮于右侧（overlay，不压缩画布） */}
       <div className="editor-main">
         <div className="rf-wrap">
-          {/* 标题悬浮于画板左上角，独立于工具栏；pointer-events:none 不挡画布交互 */}
+          {/* 标题悬浮于画板左上角，独立于工具栏；pointer-events:none 不挡画布交互
+              （面包屑在 .crumbs 上局部恢复 pointer-events:auto） */}
           <div className="map-title">
-            <span className="name">{detail.title}</span>
+            <span className="name" title={detail.title}>{detail.title}</span>
             <span className="ver">v{detail.version}</span>
+            {focusPath.length > 0 && (
+              <span className="crumbs">
+                {focusPath.map((n, i) => {
+                  const isCurrent = i === focusPath.length - 1
+                  return (
+                    <Fragment key={n.display_id}>
+                      <span className="crumb-sep">›</span>
+                      {isCurrent ? (
+                        <span className="crumb cur" title={n.content}>
+                          {n.content}
+                        </span>
+                      ) : (
+                        <button
+                          className="crumb"
+                          title={i === 0 ? '返回全图' : `聚焦到「${n.content}」`}
+                          onClick={() => (i === 0 ? switchFocus(null) : switchFocus(n.display_id))}
+                        >
+                          {n.content}
+                        </button>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </span>
+            )}
           </div>
           {/* 画布左上角工具列：标题下方，布局切换 + 全部展开 */}
           <div className="canvas-tools">
@@ -520,8 +665,31 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               title="展开所有节点"
               aria-label="展开所有节点"
             >
-              ⊞
+              <ExpandIcon />
             </button>
+            {maxDepth >= 3 && (
+              <select
+                className="btn fold-select"
+                value=""
+                title="折叠到指定层级：保留前 N 层可见，更深层收起"
+                aria-label="折叠至第 N 层"
+                onChange={(e) => {
+                  const lv = Number(e.target.value)
+                  // 受控 value="" 恒为占位符：命令型控件，执行后不驻留所选值
+                  if (lv >= 2) void guard(() => api.setFoldLevel(mapId, lv))
+                }}
+              >
+                <option value="" disabled>
+                  折叠至…
+                </option>
+                {/* level=maxDepth 是纯展开，与相邻「全部展开」按钮重复，砍掉 */}
+                {Array.from({ length: maxDepth - 2 }, (_, i) => i + 2).map((lv) => (
+                  <option key={lv} value={lv}>
+                    折叠至 {lv} 层
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <ReactFlow
             nodes={rfNodes}
@@ -553,17 +721,17 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               nodeStrokeColor="#94a3b8"
               nodeColor={(n) => {
                 const d = n.data as MindNodeData
-                if (d.lnode.node.parent_id == null) return '#1e293b' // 根
+                if (d.isLayoutRoot) return '#1e293b' // 布局根（真根或聚焦节点）
                 return '#cbd5e1'
               }}
             />
           </ReactFlow>
 
-          {/* 布局切换遮罩：盖住同步重排 + fitView，揭开后已是新布局 */}
+          {/* 视图切换遮罩（布局形态/聚焦）：盖住同步重排 + fitView，揭开后已是新布局 */}
           {switching && (
             <div className="rf-loading">
               <span className="rf-loading-spinner" />
-              <span>布局切换中…</span>
+              <span>视图切换中…</span>
             </div>
           )}
         </div>

@@ -328,6 +328,42 @@ body.chat-resizing {
 }
 .map-title .ver { color: #94a3b8; font-size: 12px; }
 
+/* 聚焦面包屑：map-title 整体 pointer-events:none，此处局部恢复可点。
+   超长省略策略：中间祖先优先压缩（flex-shrink:1 + ellipsis），头（返回全图入口）
+   与尾（当前目标）保留完整，hover 有 title 全文 */
+.crumbs {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0; /* 允许在 map-title(max-width:40vw) 内被压缩 */
+  overflow: hidden;
+  pointer-events: auto;
+}
+.crumb-sep { color: #94a3b8; flex-shrink: 0; user-select: none; margin: 0 3px; }
+button.crumb {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: #0284c7;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  max-width: 180px;
+}
+button.crumb:hover { text-decoration: underline; }
+.crumb.cur {
+  color: #0f172a;
+  font-weight: 600;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* 极端情况下兜底 */
+}
+
 /* 画布左上角工具列：标题正下方，纵向排列（布局切换 / 全部展开） */
 .canvas-tools {
   position: absolute;
@@ -347,6 +383,17 @@ body.chat-resizing {
   justify-content: center;
   font-size: 15px;
   line-height: 0;
+}
+/* 命令型「折叠至 N 层」下拉：竖排图标列里唯一的文本控件，宽度自适应文案 */
+.canvas-tools .fold-select {
+  width: auto;
+  height: 28px;
+  padding: 0 6px;
+  display: block;
+  font-size: 12px;
+  line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 /* 布局切换 loading 遮罩 */
@@ -405,11 +452,19 @@ body.chat-resizing {
   box-shadow: 0 0 0 2.5px rgba(14, 165, 233, 0.25);
 }
 
+/* 长文本自动换行多行节点：字符级断行与 measure 的逐字符单位模型同构，
+   行高 20px 与 layout.ts LINE_H 严格一致；4 行后省略，全文 hover title 兜底 */
 .rf-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   max-width: 100%;
+  overflow: hidden;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 20px;
+  display: -webkit-box; /* line-clamp 标准载体：box + vertical + clamp */
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  text-align: center;
 }
 
 .rf-editor {
@@ -425,6 +480,7 @@ body.chat-resizing {
   text-align: center;
   resize: none;
   padding: 0;
+  overflow-y: auto; /* 编辑内容超节点高时区内滚动（高度 commit 后才重排） */
 }
 
 .id-badge {

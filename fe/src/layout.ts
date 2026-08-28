@@ -14,6 +14,7 @@ export interface LNode {
   y: number // 节点中心 y
   w: number
   h: number
+  truncated: boolean // 内容超出 4 行容量：组件据此挂原生 title 显示全文
   children: LNode[]
   side: 1 | -1 // 子树方向（根 = 1）
   childrenH: number // 孩子堆叠总高（含 gap）
@@ -25,26 +26,21 @@ const GAP_Y = 16
 const LEVEL_GAP = 86
 const FONT = 14
 const MAX_W = 320
+const LINE_H = 20 // 多行行高（与 .rf-label 的 line-height:20px 严格一致，勿改回比例值）
+const MAX_LINES = 4 // 最多展示行数，超出由 CSS clamp 省略 + hover title 兜底
 
-export function measure(text: string): { w: number; h: number } {
+export function measure(text: string): { w: number; h: number; truncated: boolean } {
   // 宽度估算：CJK 字符记 1 单位，ASCII 记 0.55 单位
   let units = 0
   for (const ch of text) units += ch.codePointAt(0)! > 0x2e7f ? 1 : 0.55
-  const w = Math.min(MAX_W, Math.max(48, Math.ceil(units * FONT) + 26))
-  return { w, h: NODE_H }
-}
-
-// 长文本截断显示（编辑态仍显示全文）；返回可放入宽度 w 的前缀
-export function fitText(text: string, w: number): string {
-  const maxUnits = (w - 24) / FONT
-  let units = 0
-  let out = ''
-  for (const ch of text) {
-    units += ch.codePointAt(0)! > 0x2e7f ? 1 : 0.55
-    if (units > maxUnits) return out + '…'
-    out += ch
-  }
-  return text
+  const oneLine = Math.ceil(units * FONT) + 26 // 单行所需宽（含左右留白 26）
+  if (oneLine <= MAX_W) return { w: Math.max(48, oneLine), h: NODE_H, truncated: false }
+  // 放不进一行：定宽 MAX_W 换行。行数按每行容量估算、封顶 MAX_LINES——
+  // 实际断行由 CSS（word-break:break-all + line-clamp）决定，此处只负责预留高度
+  const unitsPerLine = Math.floor((MAX_W - 26) / FONT) // =21：纯中文每行 21 字
+  const lines = Math.min(MAX_LINES, Math.ceil(units / unitsPerLine))
+  // 单行沿用 NODE_H 不动存量视觉；每多一行 +LINE_H（2/3/4 行 = 56/76/96）
+  return { w: MAX_W, h: NODE_H + (lines - 1) * LINE_H, truncated: units > unitsPerLine * MAX_LINES }
 }
 
 export interface LayoutResult {
@@ -55,7 +51,11 @@ export interface LayoutResult {
 
 export type LayoutMode = 'balanced' | 'right' // 左右镜像对称 / 一律靠右
 
-export function layoutMap(detail: MapDetail, mode: LayoutMode = 'balanced'): LayoutResult {
+export function layoutMap(
+  detail: MapDetail,
+  mode: LayoutMode = 'balanced',
+  focusId?: number | null, // 下钻：以该节点为布局根（只布局它的子树）；null/undefined = 全图
+): LayoutResult {
   // 组树用 display_id 体系：byParent 键 = 父节点的 display_id（来自 parent 引用）
   const byParent = new Map<number, NodeDTO[]>()
   let root: NodeDTO | null = null
@@ -71,23 +71,29 @@ export function layoutMap(detail: MapDetail, mode: LayoutMode = 'balanced'): Lay
   for (const list of byParent.values()) {
     list.sort((a, b) => a.position - b.position || a.display_id - b.display_id)
   }
-  if (!root) return { root: null, all: [], bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 } }
+  // 下钻只是把递归起点从真根换成聚焦节点，组树照常全量（后代各自的 collapsed 正常生效）
+  let focusNode: NodeDTO | null = null
+  if (focusId != null) focusNode = detail.nodes.find((n) => n.display_id === focusId) ?? null
+  if (!root && !focusNode) return { root: null, all: [], bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 } }
+  const layoutRoot = focusNode ?? root
 
   // ── 1. 形状 ─────────────────────────────────────────────────────
   const all: LNode[] = []
   function buildShape(node: NodeDTO): LNode {
-    const kids = node.collapsed ? [] : (byParent.get(node.display_id) ?? [])
-    const { w, h } = measure(node.content)
+    // 聚焦根在布局上视作展开（不动 node.collapsed，退出聚焦后恢复原折叠态）；
+    // 真根行为不变（真根无 fold 钮、服务端不会置它 collapsed）
+    const kids = node.collapsed && node !== focusNode ? [] : (byParent.get(node.display_id) ?? [])
+    const { w, h, truncated } = measure(node.content)
     const children = kids.map(buildShape)
     const childrenH =
       children.length === 0
         ? 0
         : children.reduce((s, c) => s + c.subtreeH, 0) + GAP_Y * (children.length - 1)
-    const ln: LNode = { node, x: 0, y: 0, w, h, children, side: 1, childrenH, subtreeH: Math.max(h, childrenH) }
+    const ln: LNode = { node, x: 0, y: 0, w, h, truncated, children, side: 1, childrenH, subtreeH: Math.max(h, childrenH) }
     all.push(ln)
     return ln
   }
-  const rootLn = buildShape(root)
+  const rootLn = buildShape(layoutRoot!)
 
   // ── 2. 左右分割（前缀分割：children[0..k) 左、[k..n) 右，k 取两侧高度差最小）──
   // 'right' 模式跳过分割：根的所有孩子一律 side=+1（全在右侧，单向逻辑图形态）
