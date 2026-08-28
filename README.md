@@ -1,14 +1,21 @@
-# Agent MindMap
+# MindMap X
 
 > **任何 Agent 都能操作的思维导图** —— 人和 AI 共编同一棵树。
 
 人在浏览器里编辑脑图，Agent（页内对话、Claude Code、Cursor、CLI 脚本…）通过同一套 API 读写**服务端权威的树**，双方改动经 WebSocket 实时互见；Agent 改动的节点带高亮标记，人手改的部分也会在下一轮注入 Agent 的上下文。
 
-![全图视图](docs/screenshots/full-map.png)
+<img width="1596" height="1024" alt="image" src="https://github.com/user-attachments/assets/b5f91c02-f49a-4825-86f1-8f0744a6833e" />
 
-| 聚焦下钻（面包屑切换） | 页内 Agent 对话 |
-| --- | --- |
-| ![聚焦视图](docs/screenshots/focus-view.png) | ![聊天面板](docs/screenshots/chat-panel.png) |
+----
+
+聚焦下钻（面包屑切换）
+
+<img width="1158" height="724" alt="image" src="https://github.com/user-attachments/assets/35ad01a0-b429-4ead-9f44-82601a47ae45" />
+
+----
+页内 Agent 对话
+
+<img width="1595" height="810" alt="image" src="https://github.com/user-attachments/assets/73511cfb-2526-4665-b393-66433b6b60c3" />
 
 ## 为什么
 
