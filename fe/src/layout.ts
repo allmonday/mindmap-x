@@ -32,27 +32,34 @@ const MAX_LINES = 4 // 最多展示行数，超出由 CSS clamp 省略 + hover t
 // 曾只算 26 漏掉 label 的 16px，导致"并不长的文本"实际渲染宽超出标签盒而意外折行
 const PAD_X = 26 + 16
 
-// 东亚"宽度歧义"字符：码点落在拉丁区（≤0x2e7f），但在中文字体里按全角 ~14px 渲染。
-// 按半角 0.55 估会显著低估宽度（曾导致含 "——" 的短文本意外折行）；高估只会让节点
-// 稍宽不会折行，方向安全，宁可多列
-const FULLWIDTH_EXTRA = new Set(['—', '…', '·', '‘', '’', '“', '”', '～'])
+// 真实文本宽度：canvas 按节点同字体栈/字号/字重量测，彻底替代字符单位估算。
+// 估算模型对全角歧义字符（——）、大写字母占比（"PNG / SVG"）都存在系统性偏差，
+// 在不同系统的字体回退下误差方向不定，曾两次导致"不长的文本意外折行"
+const FONT_STACK = `-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif` // 与 index.css 同步
+let _ctx: CanvasRenderingContext2D | null = null
+function textWidth(text: string, bold: boolean): number {
+  if (!_ctx) {
+    _ctx = document.createElement('canvas').getContext('2d')
+    if (!_ctx) return text.length * FONT // 无 canvas 环境的兜底（粗略高估，方向安全）
+  }
+  _ctx.font = `${bold ? '700 ' : ''}${FONT}px ${FONT_STACK}`
+  return _ctx.measureText(text).width
+}
 
-export function measure(text: string): { w: number; h: number; truncated: boolean } {
-  // 宽度估算：全角（CJK + 歧义字符）记 1 单位，其余 ASCII 记 0.55 单位
-  let units = 0
-  for (const ch of text) units += ch.codePointAt(0)! > 0x2e7f || FULLWIDTH_EXTRA.has(ch) ? 1 : 0.55
-  const oneLine = Math.ceil(units * FONT) + PAD_X // 单行所需宽（含左右留白）
+export function measure(text: string, bold = false): { w: number; h: number; truncated: boolean } {
+  const width = textWidth(text, bold)
+  const oneLine = Math.ceil(width) + PAD_X // 单行所需宽（含左右留白）
   if (oneLine <= MAX_W) return { w: Math.max(48, oneLine), h: NODE_H, truncated: false }
-  // 放不进一行：定宽 MAX_W 换行。行数按每行容量估算、封顶 MAX_LINES——
-  // 实际断行由 CSS（word-break:break-all + line-clamp）决定，此处只负责预留高度
-  const unitsPerLine = Math.floor((MAX_W - PAD_X) / FONT) // =19：纯中文每行 19 字
-  const lines = Math.min(MAX_LINES, Math.ceil(units / unitsPerLine))
+  // 放不进一行：定宽 MAX_W 换行。word-break:break-all 下每字符都是断点，
+  // 折行完全由像素决定——canvas 实测宽度 / 每行可用像素 = 精确行数
+  const perLine = MAX_W - PAD_X // =278px
+  const lines = Math.min(MAX_LINES, Math.ceil(width / perLine))
   // 单行沿用 NODE_H 不动存量视觉；每多一行 +LINE_H，再 +12 上下呼吸留白
   // （2/3/4 行 = 68/88/108；内容盒高 ≥ 行数×20 且余 16.8px）
   return {
     w: MAX_W,
     h: NODE_H + (lines - 1) * LINE_H + 12,
-    truncated: units > unitsPerLine * MAX_LINES,
+    truncated: width > perLine * MAX_LINES,
   }
 }
 
@@ -92,12 +99,12 @@ export function layoutMap(
 
   // ── 1. 形状 ─────────────────────────────────────────────────────
   const all: LNode[] = []
-  function buildShape(node: NodeDTO): LNode {
+  function buildShape(node: NodeDTO, bold = false): LNode {
     // 聚焦根在布局上视作展开（不动 node.collapsed，退出聚焦后恢复原折叠态）；
     // 真根行为不变（真根无 fold 钮、服务端不会置它 collapsed）
     const kids = node.collapsed && node !== focusNode ? [] : (byParent.get(node.display_id) ?? [])
-    const { w, h, truncated } = measure(node.content)
-    const children = kids.map(buildShape)
+    const { w, h, truncated } = measure(node.content, bold)
+    const children = kids.map((k) => buildShape(k))
     const childrenH =
       children.length === 0
         ? 0
@@ -106,7 +113,7 @@ export function layoutMap(
     all.push(ln)
     return ln
   }
-  const rootLn = buildShape(layoutRoot!)
+  const rootLn = buildShape(layoutRoot!, true) // 布局根渲染为粗体（.rf-node.root），实测宽度需同字重
 
   // ── 2. 左右分割（前缀分割：children[0..k) 左、[k..n) 右，k 取两侧高度差最小）──
   // 'right' 模式跳过分割：根的所有孩子一律 side=+1（全在右侧，单向逻辑图形态）

@@ -452,10 +452,10 @@ button.crumb:hover { text-decoration: underline; }
   box-shadow: 0 0 0 2.5px rgba(14, 165, 233, 0.25);
 }
 
-/* 长文本自动换行多行节点：字符级断行与 measure 的逐字符单位模型同构，
-   行高 20px 与 layout.ts LINE_H 严格一致；多行左对齐（单行节点宽度裹内容，
-   text-align 不影响）；label 左右各 8px 额外留白（measure 的 unitsPerLine 已同步扣除）；
-   4 行后省略，全文 hover title 兜底 */
+/* 长文本自动换行多行节点：word-break:break-all 使折行完全由像素决定，
+   与 measure 的 canvas 实测同源；行高 20px 与 layout.ts LINE_H 严格一致；
+   多行左对齐（单行节点宽度裹内容，text-align 不影响）；label 左右各 8px
+   额外留白（layout.ts PAD_X 已同步计入）；4 行后省略，全文 hover title 兜底 */
 .rf-label {
   max-width: 100%;
   overflow: hidden;
