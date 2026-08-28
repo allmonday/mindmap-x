@@ -16,13 +16,12 @@
 .btn.icon { padding: 6px 10px; font-size: 16px; line-height: 1; }
 .btn.icon.active { border-color: #0ea5e9; background: #f0f9ff; }
 
-/* ── Agent 对话面板（底部抽屉） ────────────────────────── */
+/* ── Agent 对话面板（右侧面板） ────────────────────────── */
 .chat-panel {
   display: flex;
   flex-direction: column;
-  height: 34vh;
-  min-height: 220px;
-  border-top: 1px solid #e2e8f0;
+  width: min(360px, 92vw);
+  border-left: 1px solid #e2e8f0;
   background: #fff;
 }
 
@@ -33,8 +32,19 @@
   padding: 8px 14px;
   border-bottom: 1px solid #f1f5f9;
 }
-.chat-title { font-weight: 700; font-size: 13.5px; }
-.chat-sub { color: #94a3b8; font-size: 12px; }
+.chat-title {
+  font-weight: 700;
+  font-size: 13.5px;
+  white-space: nowrap;
+  flex-shrink: 0; /* 窄面板里标题不换行，压缩状态文案 */
+}
+.chat-sub {
+  color: #94a3b8;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap; /* 窄面板里状态文案单行截断，不撑高头部 */
+}
 
 .chat-banner {
   background: #fef2f2;
@@ -95,9 +105,50 @@
   font: inherit;
   font-size: 13.5px;
   resize: none;
-  height: 58px;
+  min-height: 38px;
+  max-height: 120px;
+  overflow-y: auto; /* 内容超过 120px 后内部滚动，输入区不再长高 */
 }
 .chat-input:disabled { background: #f8fafc; color: #94a3b8; }
+
+.chat-head .btn.icon {
+  display: inline-flex; /* SVG 图标按钮垂直居中（.btn.icon 原为 emoji 设计） */
+  align-items: center;
+  justify-content: center;
+}
+
+/* 历史对话列表条目 */
+.archive-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.archive-item:hover { border-color: #94a3b8; }
+.archive-preview {
+  font-size: 13px;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.archive-meta { font-size: 12px; color: #94a3b8; }
+.archive-back { align-self: flex-start; margin-bottom: 4px; }
+
+.chat-send {
+  width: 38px;
+  height: 38px; /* 固定高度：输入框长高时按钮不变 */
+  align-self: flex-end; /* 贴底对齐，随输入行底边 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
 
 .spacer { flex: 1; }
 
@@ -140,6 +191,8 @@
 
 /* ── 编辑器 ───────────────────────────────────────────── */
 .editor { display: flex; flex-direction: column; height: 100vh; }
+/* 横向主体：画布占余宽，右侧聊天面板定宽 */
+.editor-main { flex: 1; display: flex; min-height: 0; }
 .editor-loading {
   height: 100vh;
   display: flex;
@@ -288,14 +341,12 @@
 .rf-wrap .react-flow__edge path { stroke: #cbd5e1; stroke-width: 1.6; }
 .rf-wrap .react-flow__handle { border: none; background: transparent; width: 2px; height: 2px; min-width: 0; min-height: 0; }
 
-/* 选中节点的操作按钮：渲染在节点 DOM 内（随画布平移缩放），节点正下方、上下排列 */
+/* 选中节点的操作按钮：渲染在节点 DOM 内（随画布平移缩放），节点左下方、左右排列 */
 .node-actions {
   position: absolute;
   top: calc(100% + 9px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   display: flex;
-  flex-direction: column;
   gap: 6px;
   background: #fff;
   padding: 6px;
@@ -303,7 +354,32 @@
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
   z-index: 5;
 }
-.node-actions .btn { width: 72px; } /* 统一宽度，上下对齐 */
+.node-actions .btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+/* 加子模式：+ 操作条变为 输入框 + 保存 */
+.node-actions.adding { gap: 5px; }
+.add-input {
+  width: 150px;
+  height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 13px;
+}
+.add-input:focus {
+  outline: none;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+}
+.save-add { border-radius: 7px; }
 
 /* ── outline 弹层 ─────────────────────────────────────── */
 .modal {

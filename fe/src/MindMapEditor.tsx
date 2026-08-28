@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -10,6 +10,7 @@ import {
   type Edge,
   type Node,
   type NodeProps,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api } from './api'
@@ -27,6 +28,7 @@ interface Props {
 type MindNodeData = {
   lnode: LNode
   isEditing: boolean
+  isAdding: boolean
   hasChildren: boolean
   onSelect: (id: number) => void
   onStartEdit: (id: number) => void
@@ -34,13 +36,16 @@ type MindNodeData = {
   onCommitEdit: (id: number, text: string) => void
   onCancelEdit: () => void
   onAddChild: (parentId: number) => void
+  onStartAdd: (parentId: number) => void
+  onCommitAdd: (parentId: number, text: string) => void
+  onCancelAdd: () => void
   onDelete: (id: number) => void
 }
 
 type MindNode = Node<MindNodeData, 'mind'>
 
 function MindNodeView({ data, selected }: NodeProps<MindNode>) {
-  const { lnode, isEditing, hasChildren } = data
+  const { lnode, isEditing, isAdding, hasChildren } = data
   const n = lnode.node
   const isRoot = n.parent_id === null
   return (
@@ -85,30 +90,68 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
       <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
 
-      {/* 选中节点的操作按钮：节点正下方，上下排列；根可加子级不可删 */}
+      {/* 选中节点的操作按钮：节点左下方。加子模式 = 输入框 + 保存，确认后才创建节点 */}
       {selected && !isEditing && (
-        <div className="node-actions">
-          <button
-            className="btn sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              data.onAddChild(n.display_id)
-            }}
-          >
-            + 子级
-          </button>
-          {!isRoot && (
+        isAdding ? (
+          <div className="node-actions adding">
+            <input
+              className="add-input"
+              autoFocus
+              placeholder="子节点内容…"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation() // 输入态按键不冒泡（防 Enter 触发全局"加同级"）
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  data.onCommitAdd(n.display_id, (e.target as HTMLInputElement).value)
+                }
+                if (e.key === 'Escape') data.onCancelAdd()
+              }}
+              // 与节点编辑（rf-editor）同款语义：失焦即提交，空文本视为取消
+              onBlur={(e) => data.onCommitAdd(n.display_id, e.target.value)}
+            />
             <button
-              className="btn sm danger"
+              className="btn sm primary save-add"
+              title="保存（Enter）"
+              aria-label="保存"
+              // 阻止 mousedown 抢焦点 → 不触发 input blur（blur 也会提交，避免双写）
+              onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
-                e.stopPropagation()
-                data.onDelete(n.display_id)
+                const input = e.currentTarget.previousElementSibling as HTMLInputElement
+                data.onCommitAdd(n.display_id, input.value)
               }}
             >
-              删除
+              <CheckIcon />
             </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="node-actions">
+            <button
+              className="btn sm"
+              title="加子级（Tab 用默认名快速加）"
+              aria-label="加子级"
+              onClick={(e) => {
+                e.stopPropagation()
+                data.onStartAdd(n.display_id)
+              }}
+            >
+              <PlusIcon />
+            </button>
+            {!isRoot && (
+              <button
+                className="btn sm danger"
+                title="删除（Delete）"
+                aria-label="删除"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data.onDelete(n.display_id)
+                }}
+              >
+                <TrashIcon />
+              </button>
+            )}
+          </div>
+        )
       )}
 
       {hasChildren && !isRoot && (
@@ -129,18 +172,47 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
 
 const nodeTypes = { mind: MindNodeView }
 
+// ── 节点操作按钮的小图标（stroke 用 currentColor，继承按钮配色） ──────
+
+const CheckIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+)
+
+const PlusIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+    <path d="M5 12h14M12 5v14" />
+  </svg>
+)
+
+const TrashIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" />
+  </svg>
+)
+
 // ── editor ────────────────────────────────────────────────────────────
 
 export function MindMapEditor({ mapId, onBack }: Props) {
   const [detail, setDetail] = useState<MapDetail | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [addingId, setAddingId] = useState<number | null>(null)
   const [wsState, setWsState] = useState<'connecting' | 'live' | 'dead'>('connecting')
   const [error, setError] = useState<string | null>(null)
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
   const [chatOpen, setChatOpen] = useState(false)
+  const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
+
+  // 聊天面板开合会改变画布宽度/高度，重新 fitView 防止边缘节点被新视口裁掉
+  // （fitView prop 只在挂载时生效；容器 resize 后视口变换不会自动调整）
+  useEffect(() => {
+    const t = setTimeout(() => rfRef.current?.fitView({ padding: 0.25, maxZoom: 1 }), 60)
+    return () => clearTimeout(t)
+  }, [chatOpen])
 
   const refresh = useCallback(async () => {
     try {
@@ -190,6 +262,18 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     (parentId: number) => void guard(() => api.addNode(mapId, parentId, '新节点')),
     [mapId],
   )
+  // + 按钮的两段式加子：先转输入框，确认内容后才真正创建（空文本 = 取消）
+  const startAdd = useCallback((parentId: number) => setAddingId(parentId), [])
+  const commitAdd = useCallback(
+    (parentId: number, text: string) => {
+      setAddingId(null)
+      const t = text.trim()
+      if (!t) return
+      void guard(() => api.addNode(mapId, parentId, t))
+    },
+    [mapId],
+  )
+  const cancelAdd = useCallback(() => setAddingId(null), [])
   const deleteNode = useCallback(
     (id: number) => void guard(() => api.deleteNode(mapId, id)),
     [mapId],
@@ -255,9 +339,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       onCommitEdit: commitEdit,
       onCancelEdit: () => setEditingId(null),
       onAddChild: addChild,
+      onStartAdd: startAdd,
+      onCommitAdd: commitAdd,
+      onCancelAdd: cancelAdd,
       onDelete: deleteNode,
     }),
-    [toggleCollapse, commitEdit, addChild, deleteNode],
+    [toggleCollapse, commitEdit, addChild, startAdd, commitAdd, cancelAdd, deleteNode],
   )
 
   const rfNodes: MindNode[] = useMemo(() => {
@@ -273,11 +360,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       data: {
         lnode,
         isEditing: lnode.node.display_id === editingId,
+        isAdding: lnode.node.display_id === addingId,
         hasChildren: (childCount.get(lnode.node.display_id) ?? 0) > 0,
         ...callbacks,
       },
     }))
-  }, [layout, selectedId, editingId, childCount, callbacks])
+  }, [layout, selectedId, editingId, addingId, childCount, callbacks])
 
   const rfEdges: Edge[] = useMemo(() => {
     if (!layout) return []
@@ -352,41 +440,52 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
       {error && <div className="toast editor-toast">{error}</div>}
 
-      <div className="rf-wrap">
-        {/* 标题悬浮于画板左上角，独立于工具栏；pointer-events:none 不挡画布交互 */}
-        <div className="map-title">
-          <span className="name">{detail.title}</span>
-          <span className="ver">v{detail.version}</span>
-        </div>
-        <ReactFlow
-          nodes={rfNodes}
-          edges={rfEdges}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
-          minZoom={0.1}
-          maxZoom={2.5}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          zoomOnDoubleClick={false}
-          elementsSelectable
-          onPaneClick={() => setSelectedId(null)}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} />
-          <Controls showInteractive={false} />
-          <MiniMap
-            pannable
-            zoomable
-            className="rf-minimap"
-            nodeStrokeColor="#94a3b8"
-            nodeColor={(n) => {
-              const d = n.data as MindNodeData
-              if (d.lnode.node.parent_id == null) return '#1e293b' // 根
-              return '#cbd5e1'
+      {/* 横向主体：画布与右侧聊天面板并排，面板打开时画布收窄（ReactFlow 自动适配） */}
+      <div className="editor-main">
+        <div className="rf-wrap">
+          {/* 标题悬浮于画板左上角，独立于工具栏；pointer-events:none 不挡画布交互 */}
+          <div className="map-title">
+            <span className="name">{detail.title}</span>
+            <span className="ver">v{detail.version}</span>
+          </div>
+          <ReactFlow
+            nodes={rfNodes}
+            edges={rfEdges}
+            nodeTypes={nodeTypes}
+            onInit={(inst) => {
+              rfRef.current = inst
             }}
-          />
-        </ReactFlow>
+            fitView
+            fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
+            minZoom={0.1}
+            maxZoom={2.5}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            zoomOnDoubleClick={false}
+            elementsSelectable
+            onPaneClick={() => {
+            setSelectedId(null)
+            setAddingId(null)
+          }}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} />
+            <Controls showInteractive={false} />
+            <MiniMap
+              pannable
+              zoomable
+              className="rf-minimap"
+              nodeStrokeColor="#94a3b8"
+              nodeColor={(n) => {
+                const d = n.data as MindNodeData
+                if (d.lnode.node.parent_id == null) return '#1e293b' // 根
+                return '#cbd5e1'
+              }}
+            />
+          </ReactFlow>
+        </div>
+
+        {chatOpen && <ChatPanel mapId={mapId} onClose={() => setChatOpen(false)} />}
       </div>
 
       {outlineOpen && (
@@ -410,8 +509,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           </div>
         </div>
       )}
-
-      {chatOpen && <ChatPanel mapId={mapId} onClose={() => setChatOpen(false)} />}
     </div>
   )
 }
