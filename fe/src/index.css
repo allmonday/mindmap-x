@@ -1,14 +1,26 @@
 :root {
   font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   color-scheme: light;
+
+  /* Notion 风格 token（画布 .rf-* 不引用这些变量，重主题时画布不受影响） */
+  --ink: #37352f;        /* 正文墨色 */
+  --ink-2: #787774;      /* 次级文字 */
+  --ink-3: #9b9a97;      /* 弱化/占位 */
+  --bg: #ffffff;         /* 内容区 */
+  --bg-side: #f7f7f5;    /* 侧栏/工作区暖灰 */
+  --bg-hover: #f1f1ef;   /* hover 背景（Notion 用背景变化代替阴影） */
+  --hairline: #e9e9e7;   /* hairline 边框 */
+  --accent: #2383e2;     /* Notion 蓝 */
+  --danger: #eb5757;     /* Notion 红 */
+  --radius: 6px;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--bg);
+  color: var(--ink);
 }
 
 button { font: inherit; }

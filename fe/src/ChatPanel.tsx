@@ -383,7 +383,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
               }
             }}
           />
-          <button className="btn primary chat-send" disabled={disabled} onClick={send} title="发送" aria-label="发送">
+          <button className="btn chat-send" disabled={disabled} onClick={send} title="发送" aria-label="发送">
             <SendIcon />
           </button>
         </div>

@@ -1,7 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background,
-  BackgroundVariant,
   Controls,
   Handle,
   MiniMap,
@@ -50,10 +48,28 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
   const { lnode, isEditing, isAdding, hasChildren } = data
   const n = lnode.node
   const isRoot = data.isLayoutRoot // 布局根 = 真根或聚焦节点；非聚焦时与真根判定完全一致
+
+  // hover 意图延迟：指针停留 0.5s 才亮操作按钮（快速扫过不闪）。
+  // 不用 CSS transition-delay——hover 开始时排定的延迟过渡无法被"中途选中"
+  // 打断，点击选中会跟着等 0.5s；JS 定时器则可即时互斥。
+  // 移入按钮行/悬停桥不算离开（它们是本节点 DOM 的后代，mouseleave 不触发）
+  const [hoverSettled, setHoverSettled] = useState(false)
+  const hoverTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(hoverTimer.current), [])
+  const showActions = !isEditing && (hoverSettled || selected)
+
   return (
     <div
       className={`rf-node ${isRoot ? 'root' : ''} ${selected ? 'sel' : ''}`}
       style={{ width: lnode.w, height: lnode.h }}
+      onMouseEnter={() => {
+        window.clearTimeout(hoverTimer.current)
+        hoverTimer.current = window.setTimeout(() => setHoverSettled(true), 500)
+      }}
+      onMouseLeave={() => {
+        window.clearTimeout(hoverTimer.current)
+        setHoverSettled(false)
+      }}
       onClick={(e) => {
         e.stopPropagation()
         data.onSelect(n.display_id)
@@ -94,8 +110,9 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
       <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
 
-      {/* 选中节点的操作按钮：节点左下方。加子模式 = 输入框 + 保存，确认后才创建节点 */}
-      {selected && !isEditing && (
+      {/* 节点操作按钮：节点左下方，hover 停留 0.5s 或选中时显示（.show 由
+          hoverSettled/selected 驱动）。加子模式 = 输入框 + 保存，确认后才创建节点 */}
+      {!isEditing && (
         isAdding ? (
           <div className="node-actions adding">
             <input
@@ -129,7 +146,7 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
             </button>
           </div>
         ) : (
-          <div className="node-actions">
+          <div className={`node-actions${showActions ? ' show' : ''}`}>
             <button
               className="btn sm"
               title="加子级（Tab 用默认名快速加）"
@@ -717,17 +734,15 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           }}
             proOptions={{ hideAttribution: true }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} />
             <Controls showInteractive={false} />
             <MiniMap
               pannable
               zoomable
               className="rf-minimap"
-              nodeStrokeColor="#94a3b8"
-              nodeColor={(n) => {
+              nodeColor="#ffffff" /* 全部白底（与画布节点一致），形状靠描边呈现 */
+              nodeStrokeColor={(n) => {
                 const d = n.data as MindNodeData
-                if (d.isLayoutRoot) return '#1e293b' // 布局根（真根或聚焦节点）
-                return '#cbd5e1'
+                return d.isLayoutRoot ? '#0f172a' : '#94a3b8' // 根用深描边保持可寻
               }}
             />
           </ReactFlow>
@@ -761,7 +776,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
                 <option value="merge">merge（锚定更新 + 新建，未提及保留）</option>
                 <option value="replace">replace（保留根，其余全删重建）</option>
               </select>
-              <button className="btn primary" onClick={applyOutline}>应用</button>
+              <button className="btn" onClick={applyOutline}>应用</button>
               <button className="btn" onClick={() => setOutlineOpen(false)}>取消</button>
             </div>
           </div>
