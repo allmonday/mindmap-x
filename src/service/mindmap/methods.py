@@ -336,6 +336,8 @@ async def expand_all(map_id: int, actor: str = "agent") -> Map:
 
     语义注意：折叠是视图状态而非内容修改 —— 不刷新 updated_by/updated_at
     （否则 Agent 修改角标会误亮），但 version 递增以驱动客户端刷新。
+    全图已展开时是空操作：不递增 version（version 是变更信号，无变更不 bump，
+    否则标题 v{N} 白跳）。get_tree 不感知 collapsed，因此不向 Agent 通知。
     """
     async with async_session() as session:
         m = await _get_map(session, map_id)
@@ -344,6 +346,8 @@ async def expand_all(map_id: int, actor: str = "agent") -> Map:
                 select(Node).where(Node.map_id == map_id, Node.collapsed == True)  # noqa: E712
             )
         ).all()
+        if not folded:
+            return m  # 空操作：version 不动、不广播、不入 Agent 通知缓冲
         for n in folded:
             n.collapsed = False
             session.add(n)
@@ -352,7 +356,6 @@ async def expand_all(map_id: int, actor: str = "agent") -> Map:
         await session.commit()
         publish_change(
             map_id, m.version, "expanded_all", actor,
-            detail=f"expand_all（展开了 {len(folded)} 个折叠节点）",
         )
         return m
 
