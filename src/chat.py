@@ -17,9 +17,10 @@
 import asyncio
 import json
 import os
+import re
 
 import httpx
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 
 def _load_dotenv(path: str = ".env") -> None:
@@ -50,6 +51,10 @@ AGENT_TIMEOUT_S = float(os.getenv("AGENT_CHAT_TIMEOUT", "180"))
 # 历史存 var/sessions/（JSON 文件，随 var/* 进 gitignore）
 SESSIONS_DIR = os.getenv("CHAT_SESSIONS_DIR", "var/sessions")
 SESSION_AGENT_ID = "chat"
+
+# 「清除 context」的归档目录：当前对话 → var/chat_history/map{N}/chat_{时间戳}.json
+ARCHIVE_DIR = os.getenv("CHAT_ARCHIVE_DIR", "var/chat_history")
+_ARCHIVE_ID_RE = re.compile(r"chat_\d{8}-\d{6}")  # 归档 id 白名单（防路径穿越）
 
 
 def _session_id(map_id: int) -> str:
@@ -82,6 +87,98 @@ def _history_payload(map_id: int) -> list[dict]:
         if text:
             out.append({"role": role, "text": text})
     return out
+
+
+# ── 「清除 context」：当前对话归档 + 重置 strands 会话 ──────────────────
+
+
+def _archive_current(map_id: int) -> dict | None:
+    """把当前持久化对话写入归档文件，返回归档摘要（无历史时返回 None 不落盘）。
+
+    必须先归档再清 session，保证数据不丢；文件名 = 归档 id（时间戳，可排序）。
+    """
+    from datetime import datetime
+
+    messages = _history_payload(map_id)
+    if not messages:
+        return None
+    archive_id = f"chat_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    doc = {"id": archive_id, "created_at": datetime.now().isoformat(timespec="seconds"), "messages": messages}
+    d = os.path.join(ARCHIVE_DIR, f"map{map_id}")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, f"{archive_id}.json"), "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=1)
+    first_user = next((m["text"] for m in messages if m["role"] == "user"), "")
+    return {
+        "id": archive_id,
+        "created_at": doc["created_at"],
+        "count": len(messages),
+        "preview": first_user[:40] + "…" if len(first_user) > 40 else first_user,
+    }
+
+
+def _clear_session(map_id: int) -> None:
+    """删除该图的 strands 会话目录：Agent 下一轮从全新 context 开始。
+
+    目录不存在（SessionException）视为已清空；FileSessionManager 构造时会自动
+    重建空会话目录，后续 _history_payload / _run_agent 无需特殊处理。
+    """
+    from strands.session import FileSessionManager
+    from strands.types.exceptions import SessionException
+
+    try:
+        FileSessionManager(session_id=_session_id(map_id), storage_dir=SESSIONS_DIR).delete_session(
+            _session_id(map_id)
+        )
+    except SessionException:
+        pass
+
+
+def _archive_list(map_id: int) -> list[dict]:
+    """该图全部归档摘要，按时间倒序（最新在前）。"""
+    d = os.path.join(ARCHIVE_DIR, f"map{map_id}")
+    if not os.path.isdir(d):
+        return []
+    out: list[dict] = []
+    for name in sorted(os.listdir(d), reverse=True):
+        if not (name.startswith("chat_") and name.endswith(".json")):
+            continue
+        with open(os.path.join(d, name), encoding="utf-8") as f:
+            doc = json.load(f)
+        first_user = next((m["text"] for m in doc["messages"] if m["role"] == "user"), "")
+        out.append(
+            {
+                "id": doc["id"],
+                "created_at": doc["created_at"],
+                "count": len(doc["messages"]),
+                "preview": first_user[:40] + "…" if len(first_user) > 40 else first_user,
+            }
+        )
+    return out
+
+
+def _archive_read(map_id: int, archive_id: str) -> dict | None:
+    """读单个归档全文；id 不合法或文件不存在返回 None。"""
+    if not _ARCHIVE_ID_RE.fullmatch(archive_id):
+        return None
+    path = os.path.join(ARCHIVE_DIR, f"map{map_id}", f"{archive_id}.json")
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@router.get("/api/chat/archives")
+async def chat_archives(map_id: int) -> list[dict]:
+    return await asyncio.to_thread(_archive_list, map_id)
+
+
+@router.get("/api/chat/archives/{archive_id}")
+async def chat_archive_detail(archive_id: str, map_id: int) -> dict:
+    doc = await asyncio.to_thread(_archive_read, map_id, archive_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="归档不存在")
+    return doc
 
 SYSTEM_PROMPT = """\
 你在一个人机协同脑图工具中充当 Agent，通过 mindmap MCP 工具操作当前脑图（map_id={map_id}）。
@@ -279,6 +376,19 @@ async def chat(ws: WebSocket, map_id: int):
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
+                continue
+            if msg.get("type") == "clear":
+                # busy 时必须拒绝：in-flight 删除会被工作线程的落盘
+                # makedirs(exist_ok=True) 静默重建目录并写回本轮对话（"复活"）
+                if task is not None and not task.done():
+                    await ws.send_json({"type": "busy", "message": "Agent 正在思考，稍后再清空"})
+                    continue
+                def clear_all() -> dict | None:
+                    archive = _archive_current(map_id)  # 先归档再清，保证不丢
+                    _clear_session(map_id)
+                    return archive
+                archive = await asyncio.to_thread(clear_all)
+                await ws.send_json({"type": "cleared", "archive": archive})
                 continue
             if msg.get("type") != "user":
                 continue

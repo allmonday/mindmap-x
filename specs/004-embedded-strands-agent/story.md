@@ -58,3 +58,14 @@ ChatPanel ──WS /chat/{map_id}──► src/chat.py
   ③ GLM 推理模型的 reasoning_content 在多轮 Chat Completions 下 strands 有
   warning（不回传思考，正常行为）。
   实测：跨 WS 连接「刚才那个节点」正确锚定 #13 改名 ✓。
+- 2026-08-28 **清除 context（归档式）**：每轮全量历史发 LLM，对话越长 token 越爆。
+  面板头部橡皮擦按钮 → WS `{"type":"clear"}`：服务端先把当前对话归档为
+  `var/chat_history/map{N}/chat_{时间戳}.json`（`{"id","created_at","messages"}`），
+  再 `FileSessionManager.delete_session` 删 strands 会话目录——Agent 下一轮从全新
+  context 开始（目录删后构造/落盘自动重建空会话，无需手工处理）。
+  **busy 时必须拒绝**：in-flight 删除会被工作线程落盘的 `makedirs(exist_ok=True)`
+  静默重建目录并写回本轮对话（"复活"）；busy 是 WS 连接局部变量，所以清空入口
+  走 WS 消息而非 REST。
+  历史回看：`GET /api/chat/archives?map_id=` 列表（时间倒序，含 count/preview）、
+  `GET /api/chat/archives/{id}?map_id=` 全文；archive_id 白名单 `chat_\d{8}-\d{6}`
+  防路径穿越。前端面板头部时钟按钮切换「历史对话」只读视图。

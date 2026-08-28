@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { chatApi, type ArchiveDoc, type ArchiveMeta } from './api'
 
 interface ChatMsg {
   role: 'user' | 'agent'
@@ -12,6 +13,34 @@ interface Props {
   onClose: () => void
 }
 
+// 三个视图：当前对话 / 归档列表 / 单个归档详情（只读）
+type View = { kind: 'chat' } | { kind: 'archives' } | { kind: 'archive'; id: string }
+
+// ── 图标（stroke 用 currentColor 继承按钮配色） ────────────────────────
+
+const SendIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m22 2-7 20-4-9-9-4Z" />
+    <path d="M22 2 11 13" />
+  </svg>
+)
+
+const ClearIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+    <path d="M22 21H7" />
+    <path d="m5 11 9 9" />
+  </svg>
+)
+
+const HistoryIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <path d="M3 3v5h5" />
+    <path d="M12 7v5l3 2" />
+  </svg>
+)
+
 // 页内 Agent 对话面板：变更即时反馈由画布的 /ws 通道负责，这里只做对话文本。
 export function ChatPanel({ mapId, onClose }: Props) {
   const [messages, setMessages] = useState<ChatMsg[]>([])
@@ -19,12 +48,26 @@ export function ChatPanel({ mapId, onClose }: Props) {
   const [busy, setBusy] = useState(false)
   const [healthErr, setHealthErr] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
+  const [view, setView] = useState<View>({ kind: 'chat' })
+  const [archives, setArchives] = useState<ArchiveMeta[]>([])
+  const [archiveDoc, setArchiveDoc] = useState<ArchiveDoc | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // 输入框随内容自动增高（上限 120px 后改内部滚动）；发送后 draft 清空自动缩回。
+  // 空态固定 38px：placeholder 在窄面板折两行会虚高 scrollHeight。
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = draft ? `${Math.min(el.scrollHeight, 120)}px` : '38px'
+  }, [draft])
 
   useEffect(() => {
     setMessages([])
     setHealthErr(null)
+    setView({ kind: 'chat' })
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     const ws = new WebSocket(`${proto}://${location.host}/chat/${mapId}`)
     wsRef.current = ws
@@ -45,6 +88,12 @@ export function ChatPanel({ mapId, onClose }: Props) {
             text: m.text,
           })),
         )
+        return
+      }
+      if (msg.type === 'cleared') {
+        // context 已重置：当前对话归档为历史，列表可能多了一条
+        setMessages([])
+        if (view.kind === 'archives') void loadArchives()
         return
       }
       if (msg.type === 'delta') {
@@ -78,12 +127,42 @@ export function ChatPanel({ mapId, onClose }: Props) {
       }
     }
     return () => ws.close()
-  }, [mapId])
+  }, [mapId]) // eslint-disable-line react-hooks/exhaustive-deps -- view/loadArchives 只在 cleared 分支读取，避免重连循环
 
   // 流式追加时自动滚到底
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
   }, [messages])
+
+  // ── 归档视图 ─────────────────────────────────────────────────────────
+  const loadArchives = async () => {
+    try {
+      setArchives(await chatApi.archives(mapId))
+    } catch {
+      /* 网络异常时保留现有列表 */
+    }
+  }
+
+  const openArchive = async (id: string) => {
+    try {
+      setArchiveDoc(await chatApi.archive(mapId, id))
+      setView({ kind: 'archive', id })
+    } catch {
+      /* 单个归档读取失败：留在列表 */
+    }
+  }
+
+  const showArchives = () => {
+    if (view.kind === 'chat') {
+      setArchiveDoc(null)
+      void loadArchives()
+      setView({ kind: 'archives' })
+    } else {
+      setView({ kind: 'chat' })
+    }
+  }
+
+  const clearContext = () => wsRef.current?.send(JSON.stringify({ type: 'clear' }))
 
   const disabled = !!healthErr || busy || !connected
 
@@ -96,58 +175,136 @@ export function ChatPanel({ mapId, onClose }: Props) {
     wsRef.current?.send(JSON.stringify({ type: 'user', text }))
   }
 
+  // 气泡列表（当前对话与归档详情共用渲染）
+  const bubbles = (msgs: ChatMsg[], streaming = true) => (
+    <>
+      {msgs.map((m, i) => (
+        <div key={i} className={`bubble-row ${m.role}`}>
+          <div className={`bubble ${m.role} ${m.error ? 'err' : ''}`}>
+            {m.text}
+            {streaming && m.streaming && <span className="cursor">▍</span>}
+          </div>
+        </div>
+      ))}
+    </>
+  )
+
   return (
     <div className="chat-panel">
       <div className="chat-head">
-        <span className="chat-title">💬 Agent 对话</span>
-        <span className={`ws-dot ${connected ? 'live' : 'dead'}`} />
-        <span className="chat-sub">
-          {healthErr ? '不可用' : busy ? '思考中…' : connected ? '就绪 · 它的操作会实时出现在画布上' : '连接中…'}
-        </span>
+        {view.kind === 'chat' ? (
+          <>
+            <span className="chat-title">💬 Agent 对话</span>
+            <span className={`ws-dot ${connected ? 'live' : 'dead'}`} />
+            <span className="chat-sub">
+              {healthErr ? '不可用' : busy ? '思考中…' : connected ? '就绪 · 它的操作会实时出现在画布上' : '连接中…'}
+            </span>
+          </>
+        ) : (
+          <>
+            <button className="btn icon" onClick={() => setView({ kind: 'chat' })} title="返回对话" aria-label="返回对话">←</button>
+            <span className="chat-title">{view.kind === 'archives' ? '🕘 历史对话' : '🕘 对话记录'}</span>
+            {view.kind === 'archive' && <span className="chat-sub">{archiveDoc?.created_at.replace('T', ' ')}</span>}
+          </>
+        )}
         <div className="spacer" />
-        <button className="btn icon" onClick={onClose} title="收起对话" aria-label="收起对话">▾</button>
+        {view.kind === 'chat' && (
+          <button
+            className="btn icon"
+            disabled={busy || !connected}
+            onClick={clearContext}
+            title="清除 context（当前对话归档为历史，Agent 重新开始）"
+            aria-label="清除 context"
+          >
+            <ClearIcon />
+          </button>
+        )}
+        <button
+          className={`btn icon ${view.kind !== 'chat' ? 'active' : ''}`}
+          onClick={showArchives}
+          title={view.kind === 'chat' ? '查看历史对话' : '回到当前对话'}
+          aria-label="历史对话"
+        >
+          <HistoryIcon />
+        </button>
+        <button className="btn icon" onClick={onClose} title="收起对话" aria-label="收起对话">▸</button>
       </div>
 
-      {healthErr && <div className="chat-banner">{healthErr}</div>}
+      {healthErr && view.kind === 'chat' && <div className="chat-banner">{healthErr}</div>}
 
-      <div className="chat-list" ref={listRef}>
-        {messages.length === 0 && !healthErr && (
-          <div className="chat-empty">
-            例如：「在 #2 下加一个子节点，内容是竞品分析」<br />
-            节点编号见画布角标（#N），每张图从 1 开始。
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} className={`bubble-row ${m.role}`}>
-            <div className={`bubble ${m.role} ${m.error ? 'err' : ''}`}>
-              {m.text}
-              {m.streaming && <span className="cursor">▍</span>}
+      {view.kind === 'chat' && (
+        <div className="chat-list" ref={listRef}>
+          {messages.length === 0 && !healthErr && (
+            <div className="chat-empty">
+              例如：「在 #2 下加一个子节点，内容是竞品分析」<br />
+              节点编号见画布角标（#N），每张图从 1 开始。
             </div>
-          </div>
-        ))}
-        {busy && messages[messages.length - 1]?.role !== 'agent' && (
-          <div className="bubble-row agent">
-            <div className="bubble agent thinking">…</div>
-          </div>
-        )}
-      </div>
+          )}
+          {bubbles(messages)}
+          {busy && messages[messages.length - 1]?.role !== 'agent' && (
+            <div className="bubble-row agent">
+              <div className="bubble agent thinking">…</div>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className="chat-input-row">
-        <textarea
-          className="chat-input"
-          value={draft}
-          placeholder={healthErr ? 'Agent 对话不可用' : '输入指令，Enter 发送，Shift+Enter 换行'}
-          disabled={disabled}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
-        />
-        <button className="btn primary" disabled={disabled} onClick={send}>发送</button>
-      </div>
+      {view.kind === 'archives' && (
+        <div className="chat-list">
+          {archives.length === 0 && (
+            <div className="chat-empty">
+              还没有历史对话<br />
+              点上方橡皮擦，把当前对话归档、让 Agent 重新开始。
+            </div>
+          )}
+          {archives.map((a) => (
+            <button key={a.id} className="archive-item" onClick={() => void openArchive(a.id)}>
+              <span className="archive-preview">{a.preview || '（无预览）'}</span>
+              <span className="archive-meta">
+                {a.created_at.replace('T', ' ')} · {a.count} 条
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {view.kind === 'archive' && (
+        <div className="chat-list">
+          <button className="btn sm archive-back" onClick={() => setView({ kind: 'archives' })}>← 返回列表</button>
+          {archiveDoc &&
+            bubbles(
+              archiveDoc.messages.map((m) => ({
+                role: m.role === 'user' ? ('user' as const) : ('agent' as const),
+                text: m.text,
+              })),
+              false, // 归档是只读记录，不渲染流式光标
+            )}
+        </div>
+      )}
+
+      {view.kind === 'chat' && (
+        <div className="chat-input-row">
+          <textarea
+            className="chat-input"
+            ref={inputRef}
+            rows={1}
+            value={draft}
+            placeholder={healthErr ? 'Agent 对话不可用' : '输入指令，Enter 发送'}
+            title="Enter 发送 · Shift+Enter 换行"
+            disabled={disabled}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                send()
+              }
+            }}
+          />
+          <button className="btn primary chat-send" disabled={disabled} onClick={send} title="发送" aria-label="发送">
+            <SendIcon />
+          </button>
+        </div>
+      )}
     </div>
   )
 }

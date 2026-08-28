@@ -34,3 +34,27 @@ export const api = {
   applyOutline: (map_id: number, outline: string, mode: OutlineMode) =>
     call<MapDetail>('apply_outline', { map_id, outline, mode, actor: 'human' }),
 }
+
+// 聊天归档（清除 context 后可点击回看的只读历史；GET REST，非 RPC）
+export interface ArchiveMeta {
+  id: string
+  created_at: string
+  count: number
+  preview: string
+}
+export interface ArchiveDoc {
+  id: string
+  created_at: string
+  messages: { role: 'user' | 'agent'; text: string }[]
+}
+
+async function get<T>(url: string): Promise<T> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`GET ${url} failed: HTTP ${res.status}`)
+  return res.json() as Promise<T>
+}
+
+export const chatApi = {
+  archives: (mapId: number) => get<ArchiveMeta[]>(`/api/chat/archives?map_id=${mapId}`),
+  archive: (mapId: number, id: string) => get<ArchiveDoc>(`/api/chat/archives/${id}?map_id=${mapId}`),
+}
