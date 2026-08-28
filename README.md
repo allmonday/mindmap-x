@@ -1,5 +1,7 @@
 # MindMap X
 
+[English](README.en.md) | 简体中文
+
 > **任何 Agent 都能操作的思维导图** —— 人和 AI 共编同一棵树。
 
 人在浏览器里编辑脑图，Agent（页内对话、Claude Code、Cursor、CLI 脚本…）通过同一套 API 读写**服务端权威的树**，双方改动经 WebSocket 实时互见；Agent 改动的节点带高亮标记，人手改的部分也会在下一轮注入 Agent 的上下文。
