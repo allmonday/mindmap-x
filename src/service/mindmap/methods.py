@@ -77,7 +77,7 @@ def _parse_outline(outline: str) -> list[tuple[int, int | None, str]]:
             raise ValueError(f"缩进跳级（比上一行深超过 1 层）: {raw!r}")
         m = _LINE_RE.match(raw.strip())
         if not m or not m.group(2).strip():
-            raise ValueError(f"无法解析的行: {raw!r}")
+            raise ValueError(f"无法解析的行: {raw!r}（每行必须形如 '- 内容' 或 '- [id:N] 内容'）")
         display_id = int(m.group(1)) if m.group(1) else None
         entries.append((level, display_id, m.group(2).strip()))
         prev_level = level
@@ -357,6 +357,67 @@ async def expand_all(map_id: int, actor: str = "agent") -> Map:
         publish_change(
             map_id, m.version, "expanded_all", actor,
         )
+        return m
+
+
+async def set_fold_level(map_id: int, level: int, actor: str = "agent") -> Map:
+    """按层级批量收放：保留前 level 层可见（根 = 第 1 层），更深的子树收起。
+
+    声明式语义 —— 每个节点按深度直接取目标态，而非增量操作：
+    - 有孩子且深度 ≥ level → collapsed=True（其子树隐藏）
+    - 有孩子且深度 < level → collapsed=False（展开）
+    - 叶子节点恒 False：collapsed 对叶子无意义，置 True 会留下幽灵状态，
+      且破坏 expand_all 的 no-op 短路（它会捞到 collapsed==True 的叶子）
+    level ≥ 树深时全部节点目标态为 False，等价于 expand_all。
+
+    视图状态语义与 expand_all 一致：不刷新 updated_by/updated_at
+    （否则 Agent 修改角标会误亮），但 version 递增以驱动客户端刷新。
+    无任何节点需要变化时是空操作：version 不动、不广播。get_tree 不感知
+    collapsed，因此不向 Agent 通知（不传 detail）。
+    """
+    if level < 2:
+        raise ValueError(
+            f"level 必须 ≥ 2（level=1 会连根一起折叠，整图只剩标题；"
+            f"想收起根的孩子请用 level=2）"
+        )
+    async with async_session() as session:
+        m = await _get_map(session, map_id)
+        nodes = (
+            await session.exec(select(Node).where(Node.map_id == map_id))
+        ).all()
+
+        # 按 parent_id（全局 id）组 children 映射，从根 DFS 标深度（根 = 第 1 层）
+        by_parent: dict[int | None, list[Node]] = {}
+        for n in nodes:
+            by_parent.setdefault(n.parent_id, []).append(n)
+        if not by_parent.get(None):
+            raise ValueError(f"map {map_id} 缺少根节点，数据异常")
+
+        parent_ids = {n.parent_id for n in nodes if n.parent_id is not None}  # 有孩子的全局 id
+        depth_of: dict[int, int] = {}  # 全局 id → 深度（根 = 1）
+        stack = [(r, 1) for r in by_parent[None]]
+        while stack:
+            node, d = stack.pop()
+            depth_of[node.id] = d
+            for child in by_parent.get(node.id, []):
+                stack.append((child, d + 1))
+
+        changed = False
+        for n in nodes:
+            d = depth_of.get(n.id)
+            if d is None:
+                continue  # 孤儿节点（数据异常，正常流程不该出现）：不动它的视图状态
+            want = n.id in parent_ids and d >= level
+            if n.collapsed != want:
+                n.collapsed = want
+                session.add(n)
+                changed = True
+        if not changed:
+            return m  # 空操作：version 不动、不广播、不入 Agent 通知缓冲
+        m.version += 1
+        session.add(m)
+        await session.commit()
+        publish_change(map_id, m.version, "folded_to_level", actor)
         return m
 
 

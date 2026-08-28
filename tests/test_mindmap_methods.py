@@ -142,6 +142,79 @@ async def test_expand_all(session_factory, seeded_map):
         assert m.version == 4  # 两次折叠 + 一次 expand
 
 
+# ── set_fold_level ────────────────────────────────────────────────────
+
+
+async def test_set_fold_level_folds_by_depth(session_factory, seeded_map):
+    from sqlmodel import select
+
+    await mm.update_node(100, 2, content="a(agent)", actor="agent")  # updated_by → agent
+    q = subscribe(100)
+    try:
+        m = await mm.set_fold_level(100, 2, actor="human")
+        assert m.version == 3  # seed 1 + update_node + fold
+        evt = q.get_nowait()
+        assert evt["action"] == "folded_to_level" and evt["version"] == 3
+        async with session_factory() as s:
+            nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
+            # root(d1) 展开、a(d2, 有孩子) 折叠、a1(d3, 叶子) 不折叠
+            assert {n.display_id: n.collapsed for n in nodes} == {1: False, 2: True, 3: False}
+            a = next(n for n in nodes if n.display_id == 2)
+            assert a.updated_by == "agent"  # 视图操作不刷修改标记
+    finally:
+        unsubscribe(100, q)
+
+
+async def test_set_fold_level_level_eq_depth_expands_all(session_factory, seeded_map):
+    from sqlmodel import select
+
+    await mm.update_node(100, 1, collapsed=True, actor="human")
+    await mm.update_node(100, 2, collapsed=True, actor="human")
+    m = await mm.set_fold_level(100, 3)  # level = 树深 → 等价全展开
+    assert m.version == 4
+    async with session_factory() as s:
+        nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
+        assert all(n.collapsed is False for n in nodes)
+
+
+async def test_set_fold_level_noop(session_factory, seeded_map):
+    m1 = await mm.set_fold_level(100, 2)
+    assert m1.version == 2
+    q = subscribe(100)
+    try:
+        m2 = await mm.set_fold_level(100, 2)  # 已是目标态
+        assert m2.version == 2  # version 不动
+        assert q.empty()  # 不广播
+    finally:
+        unsubscribe(100, q)
+
+
+async def test_set_fold_level_multi_branch_depth(session_factory, seeded_map):
+    from sqlmodel import select
+
+    # 搭不对称树：root(#1)┬ a(#2)└a1(#3)  └ b(#4)└b1(#5)└b2(#6)
+    await mm.add_node(100, 1, "b")  # #4 d2
+    await mm.add_node(100, 4, "b1")  # #5 d3
+    await mm.add_node(100, 5, "b2")  # #6 d4
+    m = await mm.set_fold_level(100, 3)
+    assert m.version == 5  # 3 次 add + 1 次 fold
+    async with session_factory() as s:
+        nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
+        state = {n.display_id: n.collapsed for n in nodes}
+        # d1/d2 全展开；b1(d3, 有孩子) 折叠；a1/b2 叶子恒 False
+        assert state == {1: False, 2: False, 3: False, 4: False, 5: True, 6: False}
+
+
+async def test_set_fold_level_rejects_level_one(session_factory, seeded_map):
+    with pytest.raises(ValueError, match="level 必须 ≥ 2"):
+        await mm.set_fold_level(100, 1)
+
+
+async def test_set_fold_level_missing_map(session_factory):
+    with pytest.raises(ValueError, match="not found"):
+        await mm.set_fold_level(999, 2)
+
+
 # ── apply_outline ─────────────────────────────────────────────────────
 
 

@@ -105,6 +105,22 @@ class MindmapService(UseCaseService):
         return await Resolver().resolve(dto)
 
     @mutation
+    async def set_fold_level(cls, map_id: int, level: int, actor: str = "agent") -> MapDetail:
+        """按层级批量收放视图：保留前 level 层可见，更深的子树收起（根 = 第 1 层）。
+
+        level = 可见层数（off-by-one 注意）：第 level 层节点本身可见但被置为
+        折叠，它的孩子（第 level+1 层起）隐藏；第 1..level-1 层全部展开。
+        例（4 层树）：level=3 → 前三层可见、第 3 层节点收起、第 4 层隐藏；
+        level=2 → 只看根和直接子节点（即"二级以下全部折叠"）。
+        level ≥ 树深 = 全展开（等价 expand_all）；叶子节点不会被折叠。
+        无实际变化时是空操作（version 不递增、不广播）。level 必须 ≥ 2。
+        批量按层折叠/展开请用它，不要逐节点 update_node(collapsed=...)。
+        """
+        m = await methods.set_fold_level(map_id, level, actor=actor)
+        dto = MapDetail.model_validate(m)
+        return await Resolver().resolve(dto)
+
+    @mutation
     async def apply_outline(
         cls,
         map_id: int,
@@ -113,6 +129,17 @@ class MindmapService(UseCaseService):
         actor: str = "agent",
     ) -> MapDetail:
         """Agent 批量写法：按缩进 outline 整树写入。
+
+        outline 格式（与 get_tree 输出同构，行级语法必须遵守）：
+        - 每行以 "- " 开头：`- 内容` 或 `- [id:N] 内容`（N=display_id；
+          有 id 锚定已有节点，无 id 新建）
+        - 缩进每 2 个空格深一级，不能跳级；首行必须是无缩进的根，且只能一行
+
+        示例：
+          - [id:1] 根
+            - [id:2] 已有子节点
+            - 全新子节点
+              - 孙节点（4 空格缩进 = 第二层）
 
         merge：[id:N] 锚定更新 + 无 id 新建 + 未提及保留（不误删）；
         replace：保留根节点，其余全删重建。

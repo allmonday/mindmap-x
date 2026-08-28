@@ -207,6 +207,16 @@ SYSTEM_PROMPT = """\
 - get_tree(map_id) 读整树（outline 文本带 [id:N] 锚点）
 - add_node / update_node / move_node / delete_node 按 (map_id, 节点编号) 精确操作
 - apply_outline 用缩进文本批量重构（merge 不误删未提及节点）
+- set_fold_level(map_id, level) 按层级批量收放（level=可见层数，level=2 即"二级以下全折叠"，需全展开用 expand_all）——批量折叠禁止逐个 update_node
+
+apply_outline 的 outline 格式（与 get_tree 输出同构）：
+- 每行必须以 "- " 开头："- 内容" 或 "- [id:N] 内容"（无 id = 新建节点）
+- 缩进每 2 个空格深一级，不能跳级；首行必须是无缩进的根，且只能一行
+示例：
+- [id:1] 根
+  - [id:2] 已有子节点
+  - 全新子节点
+    - 孙节点
 注意：get_map 返回里的 parent_id 是全局内部键（组树用），不是节点编号，操作时请始终用 display_id；
 拿不准时先 get_tree 核对。
 用户的每轮消息都请实际完成操作，然后用一两句话说明你做了什么。
