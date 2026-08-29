@@ -69,4 +69,5 @@ export interface DiffRow {
   display_id: number
   kind: DiffKind
   content: string
+  oldContent?: string // changed 行携带快照侧旧内容：渲染时高亮差异段
 }

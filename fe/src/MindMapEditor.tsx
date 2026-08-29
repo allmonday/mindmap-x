@@ -62,13 +62,37 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
   // 移入按钮行/悬停桥不算离开（它们是本节点 DOM 的后代，mouseleave 不触发）
   const [hoverSettled, setHoverSettled] = useState(false)
   const hoverTimer = useRef<number | undefined>(undefined)
-  useEffect(() => () => window.clearTimeout(hoverTimer.current), [])
+
+  // 删除两步确认（与 MapList 同款交互语言）：首点只亮起，3s 内再点才执行。
+  // 删除按钮就在 Focus 旁边，误触代价是整个子树——不可无确认直删
+  const [confirmDel, setConfirmDel] = useState(false)
+  const delTimer = useRef<number | undefined>(undefined)
+  useEffect(
+    () => () => {
+      window.clearTimeout(hoverTimer.current)
+      window.clearTimeout(delTimer.current)
+    },
+    [],
+  )
   const showActions = !isEditing && (hoverSettled || selected)
+
+  const clickDelete = () => {
+    if (confirmDel) {
+      window.clearTimeout(delTimer.current)
+      data.onDelete(n.display_id)
+      return
+    }
+    setConfirmDel(true)
+    window.clearTimeout(delTimer.current)
+    delTimer.current = window.setTimeout(() => setConfirmDel(false), 3000)
+  }
 
   return (
     <div
       className={`rf-node ${isRoot ? 'root' : ''} ${selected ? 'sel' : ''}`}
-      style={{ width: lnode.w, height: lnode.h }}
+      // 编辑中放开高度（min-height 保底不缩）：节点随 textarea 内容向下生长，
+      // commit 后由布局重排归位；期间 z-index 抬升盖住下方节点（见 App.css）
+      style={{ width: lnode.w, height: isEditing ? 'auto' : lnode.h, minHeight: isEditing ? lnode.h : undefined }}
       onMouseEnter={() => {
         window.clearTimeout(hoverTimer.current)
         hoverTimer.current = window.setTimeout(() => setHoverSettled(true), 500)
@@ -76,6 +100,8 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       onMouseLeave={() => {
         window.clearTimeout(hoverTimer.current)
         setHoverSettled(false)
+        window.clearTimeout(delTimer.current) // 离开即解除删除确认态，不留悬 armed
+        setConfirmDel(false)
       }}
       onClick={(e) => {
         e.stopPropagation()
@@ -97,11 +123,19 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
           className="rf-editor"
           autoFocus
           defaultValue={n.content}
+          rows={Math.max(1, n.content.split('\n').length)}
           onClick={(e) => e.stopPropagation()}
+          onInput={(e) => {
+            // 高度随内容行数自增（超过节点高后由 max-height + overflow 兜底）
+            const ta = e.currentTarget
+            ta.style.height = 'auto'
+            ta.style.height = `${ta.scrollHeight}px`
+          }}
           onBlur={(e) => data.onCommitEdit(n.display_id, e.target.value)}
           onKeyDown={(e) => {
             e.stopPropagation() // 编辑态按键不冒泡到 window 快捷键（防 Enter 提交后误触发"加同级"）
-            if (e.key === 'Enter') {
+            // Enter 提交、Shift+Enter 换行；输入法组词中的 Enter（含 Shift）是选词不是提交
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
               data.onCommitEdit(n.display_id, (e.target as HTMLTextAreaElement).value)
             }
@@ -180,15 +214,16 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
             )}
             {!isRoot && (
               <button
-                className="btn sm danger"
-                title={t('node.deleteTitle')}
-                aria-label={t('node.deleteAria')}
+                className={`btn sm danger${confirmDel ? ' confirm' : ''}`}
+                title={confirmDel ? t('node.deleteConfirm') : t('node.deleteTitle')}
+                aria-label={confirmDel ? t('node.deleteConfirm') : t('node.deleteAria')}
                 onClick={(e) => {
                   e.stopPropagation()
-                  data.onDelete(n.display_id)
+                  clickDelete()
                 }}
               >
-                <TrashIcon />
+                {/* armed 态换成文字按钮——红底图标不够显眼，用户感知不到首点已生效 */}
+                {confirmDel ? t('node.deleteConfirmBtn') : <TrashIcon />}
               </button>
             )}
           </div>

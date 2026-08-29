@@ -500,12 +500,13 @@ button.crumb:hover { color: var(--ink); }
 
 /* 长文本自动换行多行节点：word-break:break-all 使折行完全由像素决定，
    与 measure 的 canvas 实测同源；行高 20px 与 layout.ts LINE_H 严格一致；
+   pre-line 保留内容中的显式换行（Shift+Enter），自动折行照常；
    多行左对齐（单行节点宽度裹内容，text-align 不影响）；label 左右各 8px
    额外留白（layout.ts PAD_X 已同步计入）；4 行后省略，全文 hover title 兜底 */
 .rf-label {
   max-width: 100%;
   overflow: hidden;
-  white-space: normal;
+  white-space: pre-line;
   word-break: break-all;
   line-height: 20px;
   display: -webkit-box; /* line-clamp 标准载体：box + vertical + clamp */
@@ -516,20 +517,26 @@ button.crumb:hover { color: var(--ink); }
   padding: 0 8px;
 }
 
+/* 编辑态与 .rf-label 像素级对齐（同字号/行高/对齐/内距）：进入编辑不发生
+   "字体变小、文字偏上"的跳变；高度随内容自增（onInput 里调），不受节点
+   定高钳制——编辑中的节点本身放开高度（见 MindNodeView），commit 后布局重排 */
 .rf-editor {
   width: 100%;
-  height: 100%;
+  height: auto;
   border: none;
-  outline: 2px solid #0ea5e9;
+  outline: none; /* 编辑态不加内部高亮框：外层节点已有选中态，内框冗余 */
   border-radius: 7px;
   background: #fff;
   color: #0f172a;
   font: inherit;
-  font-size: 13px;
-  text-align: center;
+  font-size: 14px;
+  line-height: 20px;
+  font-family: inherit;
+  text-align: left;
   resize: none;
-  padding: 0;
-  overflow-y: auto; /* 编辑内容超节点高时区内滚动（高度 commit 后才重排） */
+  padding: 0 8px;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .id-badge {
@@ -583,15 +590,26 @@ button.crumb:hover { color: var(--ink); }
   top: calc(100% + 9px);
   left: 0;
   display: flex;
-  gap: 6px;
+  gap: 8px;
   background: #fff;
-  padding: 6px;
+  padding: 3px;
   border-radius: 10px;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
   z-index: 5;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.08s ease, visibility 0.08s ease;
+}
+/* 删除是破坏性操作且紧邻 Focus：额外左距拉开与 Focus 的间隔（8+4=12px），
+   降低误触；armed 态（两步确认已点亮）红色实心提示"再点即删" */
+.node-actions .danger { margin-left: 4px; }
+.node-actions .danger.confirm {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  white-space: nowrap;
+  width: auto; /* 解除图标态的 30px 定宽，文字按钮按内容撑开 */
+  padding: 0 10px;
 }
 /* 显示态由 React 驱动（.show = hoverSettled 停留 0.5s 或 selected，见 MindNodeView）；
    adding（加子输入态）常驻：焦点在输入框时鼠标可能已移开 */
@@ -612,8 +630,10 @@ button.crumb:hover { color: var(--ink); }
 }
 /* 堆叠层级：.node-actions 的 z-index 只在节点自身 stacking context 内生效，
    会被 DOM 靠后的兄弟节点盖住——按钮行可见（.show/.adding）时把整个节点
-   wrapper 抬高；!important 用于覆盖 ReactFlow 写在行内 style 的 zIndex */
-.rf-wrap .react-flow__node:has(.node-actions.show, .node-actions.adding) {
+   wrapper 抬高；编辑态同理（节点放开高度向下生长，要盖住下方相邻节点）；
+   !important 用于覆盖 ReactFlow 写在行内 style 的 zIndex */
+.rf-wrap .react-flow__node:has(.node-actions.show, .node-actions.adding),
+.rf-wrap .react-flow__node:has(.rf-editor) {
   z-index: 1000 !important;
 }
 .node-actions .btn {
@@ -624,6 +644,9 @@ button.crumb:hover { color: var(--ink); }
   justify-content: center;
   padding: 0;
   box-shadow: none;
+  /* 外层 pill 已有白底+投影，按钮再描边显得冗余——静息态边框透明，
+     hover 反馈（底色/描边）不受影响；armed 态红框由 .danger.confirm 更高特异性保证 */
+  border-color: transparent;
 }
 
 /* 加子模式：+ 操作条变为 输入框 + 保存 */
@@ -757,6 +780,15 @@ button.crumb:hover { color: var(--ink); }
 .rev-badge.mov, .rev-badge.fold { background: var(--bg-hover); color: var(--ink-2); }
 .rev-node { flex-shrink: 0; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--ink-3); }
 .rev-node-content { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* changed 行的差异高亮：mid 是真正变化的部分，两侧 ctx 是截断的公共语境 */
+.rev-node-content .chg-hl {
+  background: rgba(35, 131, 226, 0.14);
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-weight: 600;
+}
+.rev-node-content .ctx { color: var(--ink-3); }
 .rev-empty { color: var(--ink-3); font-size: 12.5px; padding: 12px 4px; }
 
 /* 版本面板右栏：Tab 头 + 只读快照预览 */

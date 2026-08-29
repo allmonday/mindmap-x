@@ -36,7 +36,8 @@ function diffSnapshotVsCurrent(
     if (a && !b) rows.push({ display_id: id, kind: 'removed', content: a.content }) // 回滚将恢复
     else if (!a && b) rows.push({ display_id: id, kind: 'added', content: b.content }) // 回滚将删除
     else if (a && b) {
-      if (a.content !== b.content) rows.push({ display_id: id, kind: 'changed', content: b.content })
+      if (a.content !== b.content)
+        rows.push({ display_id: id, kind: 'changed', content: b.content, oldContent: a.content })
       else if (a.parent !== b.parent) rows.push({ display_id: id, kind: 'moved', content: b.content })
       else if (a.collapsed !== b.collapsed) rows.push({ display_id: id, kind: 'folded', content: b.content })
     }
@@ -51,6 +52,39 @@ const KIND_CLASS: Record<DiffKind, string> = {
   changed: 'chg',
   moved: 'mov',
   folded: 'fold',
+}
+
+/** 展示态：换行在单行 diff 行里不可见（nowrap 折叠成空格），用 ⏎ 标记 */
+const vis = (s: string) => s.replaceAll('\n', '⏎')
+const CUT = 16
+/** 长前/后缀截断（保留靠近变更处的一段），差异段全量展示（超长才截） */
+const cutPre = (s: string) => (s.length > CUT ? `…${vis(s.slice(-(CUT - 2)))}` : vis(s))
+const cutSuf = (s: string) => (s.length > CUT ? `${vis(s.slice(0, CUT - 2))}…` : vis(s))
+
+/** 剥离公共前后缀，得到新内容的 差异段 + 两侧语境（行内高亮"哪里变了"） */
+function changedView(oldS: string, newS: string) {
+  let i = 0
+  while (i < oldS.length && i < newS.length && oldS[i] === newS[i]) i++
+  let j = 0
+  while (j < oldS.length - i && j < newS.length - i && oldS.at(-1 - j) === newS.at(-1 - j)) j++
+  const mid = newS.slice(i, newS.length - j)
+  return {
+    pre: cutPre(newS.slice(0, i)),
+    mid: mid.length > 60 ? `${vis(mid.slice(0, 57))}…` : vis(mid),
+    suf: cutSuf(newS.slice(newS.length - j)),
+  }
+}
+
+/** changed 行内容：高亮差异段，两侧公共前后缀截断为语境（"哪里变了"一眼可见） */
+function ChangedContent({ oldS, newS }: { oldS: string; newS: string }) {
+  const { pre, mid, suf } = changedView(oldS, newS)
+  return (
+    <span className="rev-node-content">
+      <span className="ctx">{pre}</span>
+      <mark className="chg-hl">{mid}</mark>
+      <span className="ctx">{suf}</span>
+    </span>
+  )
 }
 
 /** 快照 → MapDetail 形状（layoutMap 的输入）：parent 由 display_id 数组还原成关系对象。 */
@@ -269,7 +303,11 @@ export function RevisionPanel({ mapId, current, layoutMode, onClose }: Props) {
                           {r.kind === 'added' ? t('rev.willDelete') : r.kind === 'removed' ? t('rev.willRestore') : t(`rev.${r.kind}` as I18nKey)}
                         </span>
                         <span className="rev-node">#{r.display_id}</span>
-                        <span className="rev-node-content">{r.content}</span>
+                        {r.kind === 'changed' && r.oldContent != null ? (
+                          <ChangedContent oldS={r.oldContent} newS={r.content} />
+                        ) : (
+                          <span className="rev-node-content">{vis(r.content)}</span>
+                        )}
                       </div>
                     ))}
                     {diff && diff.rows.length > 200 && (

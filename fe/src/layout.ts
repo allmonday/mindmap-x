@@ -47,19 +47,25 @@ function textWidth(text: string, bold: boolean): number {
 }
 
 export function measure(text: string, bold = false): { w: number; h: number; truncated: boolean } {
-  const width = textWidth(text, bold)
-  const oneLine = Math.ceil(width) + PAD_X // 单行所需宽（含左右留白）
-  if (oneLine <= MAX_W) return { w: Math.max(48, oneLine), h: NODE_H, truncated: false }
-  // 放不进一行：定宽 MAX_W 换行。word-break:break-all 下每字符都是断点，
-  // 折行完全由像素决定——canvas 实测宽度 / 每行可用像素 = 精确行数
-  const perLine = MAX_W - PAD_X // =278px
-  const lines = Math.min(MAX_LINES, Math.ceil(width / perLine))
+  // 多行内容（Shift+Enter 的显式 \n）：按段独立折行——节点宽 = 最宽段所需宽，
+  // 总行数 = 各段行数累加（空段也占一行）；与 .rf-label 的 pre-line 渲染一致
+  const perLine = MAX_W - PAD_X // =278px，word-break:break-all 下折行完全由像素决定
+  let widthMax = 0 // 最宽单行（像素，不含 PAD_X）
+  let lines = 0
+  for (const seg of text.split('\n')) {
+    const w = textWidth(seg, bold)
+    widthMax = Math.max(widthMax, w)
+    lines += w <= perLine ? 1 : Math.ceil(w / perLine)
+  }
+  const oneLine = Math.ceil(widthMax) + PAD_X // 单行所需宽（含左右留白）
+  if (oneLine <= MAX_W && lines <= 1) return { w: Math.max(48, oneLine), h: NODE_H, truncated: false }
+  const shown = Math.min(MAX_LINES, lines)
   // 单行沿用 NODE_H 不动存量视觉；每多一行 +LINE_H，再 +12 上下呼吸留白
   // （2/3/4 行 = 68/88/108；内容盒高 ≥ 行数×20 且余 16.8px）
   return {
-    w: MAX_W,
-    h: NODE_H + (lines - 1) * LINE_H + 12,
-    truncated: width > perLine * MAX_LINES,
+    w: Math.min(MAX_W, Math.max(48, oneLine)),
+    h: NODE_H + (shown - 1) * LINE_H + 12,
+    truncated: lines > MAX_LINES,
   }
 }
 
