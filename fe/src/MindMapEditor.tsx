@@ -11,7 +11,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { api } from './api'
+import { api, chatApi } from './api'
 import { ChatPanel } from './ChatPanel'
 import { useI18n, type I18nKey } from './i18n'
 import { LangSwitch } from './LangSwitch'
@@ -297,6 +297,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
   const [chatOpen, setChatOpen] = useState(false)
+  // Agent 入口守门：模型网关未配置（无 env）时不渲染对话按钮，面板也就打不开、
+  // 相关错误无从触发（状态检查首步即 env 完整性，未配置时快速失败、无外呼）
+  const [agentOk, setAgentOk] = useState(false)
+  useEffect(() => {
+    void chatApi.status().then((s) => setAgentOk(s.ok)).catch(() => setAgentOk(false))
+  }, [])
   // 聚焦（下钻）：作为画布布局根的节点 display_id；null = 全图。
   // 会话级视图态——不进 localStorage，换图即清空
   const [focusId, setFocusId] = useState<number | null>(null)
@@ -642,14 +648,16 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           {t(`ws.${wsState}` as I18nKey)}
         </span>
         <div className="spacer" />
-        <button
-          className={`btn icon ${chatOpen ? 'active' : ''}`}
-          onClick={() => setChatOpen((v) => !v)}
-          title={t('editor.agentChat')}
-          aria-label={t('editor.agentChat')}
-        >
-          <ChatIcon />
-        </button>
+        {agentOk && (
+          <button
+            className={`btn icon ${chatOpen ? 'active' : ''}`}
+            onClick={() => setChatOpen((v) => !v)}
+            title={t('editor.agentChat')}
+            aria-label={t('editor.agentChat')}
+          >
+            <ChatIcon />
+          </button>
+        )}
         <button className="btn icon" onClick={openOutline} title={t('editor.outlineEdit')} aria-label={t('editor.outlineEdit')}>
           <PencilIcon />
         </button>
@@ -776,7 +784,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           </ReactFlow>
         </div>
 
-        {chatOpen && (
+        {chatOpen && agentOk && (
           <ChatPanel mapId={mapId} width={chatWidth} onResize={setChatWidth} onClose={() => setChatOpen(false)} />
         )}
       </div>

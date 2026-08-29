@@ -153,7 +153,7 @@ OPENAI_API_KEY=<zhipu API key>
 AGENT_MODEL=glm-5.3-flash
 ```
 
-Without configuration the panel shows an explicit error banner (health check: env completeness → gateway probe → MCP handshake).
+When no model gateway is configured, the agent chat entry point (button and panel) is not rendered at all, so its errors can never surface; entry visibility is decided by the health check endpoint (env completeness → gateway probe → MCP handshake), and a gateway failure mid-session shows an explicit banner inside the panel.
 
 ## Project Structure
 

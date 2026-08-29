@@ -65,4 +65,6 @@ async function get<T>(url: string): Promise<T> {
 export const chatApi = {
   archives: (mapId: number) => get<ArchiveMeta[]>(`/api/chat/archives?map_id=${mapId}`),
   archive: (mapId: number, id: string) => get<ArchiveDoc>(`/api/chat/archives/${id}?map_id=${mapId}`),
+  // Agent 可用性：env 完整性 → 网关探活 → MCP 握手（无配置时首步即快速失败，无外呼）
+  status: () => get<{ ok: boolean; reason: string | null }>('/api/chat/status'),
 }
