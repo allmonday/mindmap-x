@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import { chatApi, type ArchiveDoc, type ArchiveMeta } from './api'
+import { useI18n } from './i18n'
 
 interface ChatMsg {
   role: 'user' | 'agent'
@@ -47,6 +48,7 @@ const HistoryIcon = () => (
 
 // 页内 Agent 对话面板：变更即时反馈由画布的 /ws 通道负责，这里只做对话文本。
 export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
+  const { t, locale } = useI18n()
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -105,7 +107,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
     function onMessage(e: MessageEvent) {
       const msg = JSON.parse(e.data)
       if (msg.type === 'status') {
-        setHealthErr(msg.ok ? null : (msg.reason ?? 'Agent 对话不可用'))
+        setHealthErr(msg.ok ? null : (msg.reason ?? t('chat.unavailable')))
         return
       }
       if (msg.type === 'history') {
@@ -230,7 +232,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
           <div className={`bubble ${m.role} ${m.error ? 'err' : ''}`}>
             {m.thinking && (
               <details className="thinking" open={streaming && m.streaming && !m.text}>
-                <summary>💭 思考过程</summary>
+                <summary>{t('chat.thinkingProcess')}</summary>
                 <div className="thinking-body">
                   {m.thinking}
                   {streaming && m.streaming && !m.text && <span className="cursor">▍</span>}
@@ -276,17 +278,21 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
       <div className="chat-head">
         {view.kind === 'chat' ? (
           <>
-            <span className="chat-title">💬 Agent 对话</span>
+            <span className="chat-title">{t('chat.title')}</span>
             <span className={`ws-dot ${connected ? 'live' : 'dead'}`} />
             <span className="chat-sub">
-              {healthErr ? '不可用' : busy ? '思考中…' : connected ? '就绪 · 它的操作会实时出现在画布上' : '连接中…'}
+              {healthErr ? t('chat.statusUnavailable') : busy ? t('chat.thinking') : connected ? t('chat.ready') : t('chat.connecting')}
             </span>
           </>
         ) : (
           <>
-            <button className="btn icon" onClick={() => setView({ kind: 'chat' })} title="返回对话" aria-label="返回对话">←</button>
-            <span className="chat-title">{view.kind === 'archives' ? '🕘 历史对话' : '🕘 对话记录'}</span>
-            {view.kind === 'archive' && <span className="chat-sub">{archiveDoc?.created_at.replace('T', ' ')}</span>}
+            <button className="btn icon" onClick={() => setView({ kind: 'chat' })} title={t('chat.backToChat')} aria-label={t('chat.backToChat')}>←</button>
+            <span className="chat-title">{view.kind === 'archives' ? t('chat.history') : t('chat.records')}</span>
+            {view.kind === 'archive' && (
+              <span className="chat-sub">
+                {archiveDoc ? new Date(archiveDoc.created_at).toLocaleString(locale, { hour12: false }) : ''}
+              </span>
+            )}
           </>
         )}
         <div className="spacer" />
@@ -295,8 +301,8 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             className="btn icon"
             disabled={busy || !connected}
             onClick={clearContext}
-            title="清除 context（当前对话归档为历史，Agent 重新开始）"
-            aria-label="清除 context"
+            title={t('chat.clearContext')}
+            aria-label={t('chat.clearContextAria')}
           >
             <ClearIcon />
           </button>
@@ -304,12 +310,12 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
         <button
           className={`btn icon ${view.kind !== 'chat' ? 'active' : ''}`}
           onClick={showArchives}
-          title={view.kind === 'chat' ? '查看历史对话' : '回到当前对话'}
-          aria-label="历史对话"
+          title={view.kind === 'chat' ? t('chat.viewHistory') : t('chat.backToCurrent')}
+          aria-label={t('chat.historyAria')}
         >
           <HistoryIcon />
         </button>
-        <button className="btn icon" onClick={onClose} title="收起对话" aria-label="收起对话">▸</button>
+        <button className="btn icon" onClick={onClose} title={t('chat.close')} aria-label={t('chat.close')}>▸</button>
       </div>
 
       {healthErr && view.kind === 'chat' && <div className="chat-banner">{healthErr}</div>}
@@ -318,8 +324,8 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
         <div className="chat-list" ref={listRef}>
           {messages.length === 0 && !healthErr && (
             <div className="chat-empty">
-              例如：「在 #2 下加一个子节点，内容是竞品分析」<br />
-              节点编号见画布角标（#N），每张图从 1 开始。
+              {t('chat.empty1')}<br />
+              {t('chat.empty2')}
             </div>
           )}
           {bubbles(messages)}
@@ -335,15 +341,18 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
         <div className="chat-list">
           {archives.length === 0 && (
             <div className="chat-empty">
-              还没有历史对话<br />
-              点上方橡皮擦，把当前对话归档、让 Agent 重新开始。
+              {t('chat.archiveEmpty1')}<br />
+              {t('chat.archiveEmpty2')}
             </div>
           )}
           {archives.map((a) => (
             <button key={a.id} className="archive-item" onClick={() => void openArchive(a.id)}>
-              <span className="archive-preview" title={a.preview || undefined}>{a.preview || '（无预览）'}</span>
+              <span className="archive-preview" title={a.preview || undefined}>{a.preview || t('chat.noPreview')}</span>
               <span className="archive-meta">
-                {a.created_at.replace('T', ' ')} · {a.count} 条
+                {t('chat.archiveMeta', {
+                  time: new Date(a.created_at).toLocaleString(locale, { hour12: false }),
+                  count: a.count,
+                })}
               </span>
             </button>
           ))}
@@ -352,7 +361,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
 
       {view.kind === 'archive' && (
         <div className="chat-list">
-          <button className="btn sm archive-back" onClick={() => setView({ kind: 'archives' })}>← 返回列表</button>
+          <button className="btn sm archive-back" onClick={() => setView({ kind: 'archives' })}>← {t('common.backToList')}</button>
           {archiveDoc &&
             bubbles(
               archiveDoc.messages.map((m) => ({
@@ -372,8 +381,8 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             ref={inputRef}
             rows={1}
             value={draft}
-            placeholder={healthErr ? 'Agent 对话不可用' : '输入指令，Enter 发送'}
-            title="Enter 发送 · Shift+Enter 换行"
+            placeholder={healthErr ? t('chat.unavailable') : t('chat.inputPlaceholder')}
+            title={t('chat.sendTitle')}
             disabled={disabled}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -383,7 +392,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
               }
             }}
           />
-          <button className="btn chat-send" disabled={disabled} onClick={send} title="发送" aria-label="发送">
+          <button className="btn chat-send" disabled={disabled} onClick={send} title={t('chat.send')} aria-label={t('chat.send')}>
             <SendIcon />
           </button>
         </div>

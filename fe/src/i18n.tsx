@@ -1,0 +1,213 @@
+// 自包含轻量 i18n：LangContext + Provider + useI18n。
+// 不引依赖（69 key × 2 语言，react-i18next 过重）。
+// key 按语义分组（ws.* / node.* / fold.* …）；t(key, params?) 支持 {name} 插值。
+// zh 用 as const 提供 key 字面量联合，en 声明为 Record<I18nKey, string>：
+// 缺 key / 多 key 都是编译错误（tsc 即校验，天然防漏译）。
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+
+export type Lang = 'zh' | 'en'
+const STORAGE_KEY = 'lang'
+
+const zh = {
+  // ── common ──
+  'common.loading': '加载中…',
+  'common.back': '返回',
+  'common.backToList': '返回列表',
+  'common.apply': '应用',
+  'common.cancel': '取消',
+  // ── 列表页 ──
+  'map.placeholder': '新脑图标题…',
+  'map.create': '创建',
+  'map.deleteConfirm': '确认删除',
+  'map.deleteThis': '删除此脑图',
+  'map.deleteAria': '删除 {title}',
+  'map.empty': '还没有脑图，先创建一张。',
+  // ── ws 状态 ──
+  'ws.sync': '实时同步: {state}',
+  'ws.live': '实时',
+  'ws.connecting': '连接中',
+  'ws.dead': '已断开',
+  // ── 编辑器 ──
+  'editor.agentChat': 'Agent 对话',
+  'editor.outlineEdit': 'outline 编辑',
+  'editor.backToFull': '返回全图',
+  'editor.focusTo': '聚焦到「{content}」',
+  'editor.expandAll': '展开所有节点',
+  'editor.switching': '视图切换中…',
+  // ── 布局切换 ──
+  'layout.balanced.title': '当前：左右对称，点击切换为一律靠右',
+  'layout.balanced.aria': '布局：左右对称',
+  'layout.right.title': '当前：一律靠右，点击切换为左右对称',
+  'layout.right.aria': '布局：一律靠右',
+  // ── 折叠下拉 ──
+  'fold.hint': '折叠到指定层级：保留前 N 层可见，更深层收起',
+  'fold.aria': '折叠至第 N 层',
+  'fold.placeholder': '折叠至…',
+  'fold.toLevel': '折叠至 {lv} 层',
+  // ── outline 弹层 ──
+  'outline.title': 'outline 编辑（与 Agent 同协议：`- [id:N] 内容`，2 空格缩进一级）',
+  'outline.merge': 'merge（锚定更新 + 新建，未提及保留）',
+  'outline.replace': 'replace（保留根，其余全删重建）',
+  // ── 节点（MindNodeView 内 + addChild 默认名）──
+  'node.saveTitle': '保存（Enter）',
+  'node.saveAria': '保存',
+  'node.addTitle': '加子级（Tab 用默认名快速加）',
+  'node.addAria': '加子级',
+  'node.focusTitle': '聚焦：只看此节点的子树（Esc / 点面包屑根节点退出）',
+  'node.focusAria': '聚焦',
+  'node.deleteTitle': '删除（Delete）',
+  'node.deleteAria': '删除',
+  'node.expand': '展开',
+  'node.collapse': '折叠',
+  'node.addPlaceholder': '子节点内容…',
+  'node.defaultName': '新节点', // 会写入后端数据——按当前 UI 语言落库
+  // ── 聊天面板 ──
+  'chat.title': '💬 Agent 对话',
+  'chat.unavailable': 'Agent 对话不可用',
+  'chat.statusUnavailable': '不可用',
+  'chat.thinking': '思考中…',
+  'chat.ready': '就绪 · 它的操作会实时出现在画布上',
+  'chat.connecting': '连接中…',
+  'chat.thinkingProcess': '💭 思考过程',
+  'chat.backToChat': '返回对话',
+  'chat.history': '🕘 历史对话',
+  'chat.records': '🕘 对话记录',
+  'chat.clearContext': '清除 context（当前对话归档为历史，Agent 重新开始）',
+  'chat.clearContextAria': '清除 context',
+  'chat.viewHistory': '查看历史对话',
+  'chat.backToCurrent': '回到当前对话',
+  'chat.historyAria': '历史对话',
+  'chat.close': '收起对话',
+  'chat.empty1': '例如：「在 #2 下加一个子节点，内容是竞品分析」',
+  'chat.empty2': '节点编号见画布角标（#N），每张图从 1 开始。',
+  'chat.archiveEmpty1': '还没有历史对话',
+  'chat.archiveEmpty2': '点上方橡皮擦，把当前对话归档、让 Agent 重新开始。',
+  'chat.noPreview': '（无预览）',
+  'chat.archiveMeta': '{time} · {count} 条',
+  'chat.inputPlaceholder': '输入指令，Enter 发送',
+  'chat.sendTitle': 'Enter 发送 · Shift+Enter 换行',
+  'chat.send': '发送',
+} as const
+
+export type I18nKey = keyof typeof zh
+
+const en: Record<I18nKey, string> = {
+  'common.loading': 'Loading…',
+  'common.back': 'Back',
+  'common.backToList': 'Back to list',
+  'common.apply': 'Apply',
+  'common.cancel': 'Cancel',
+  'map.placeholder': 'New map title…',
+  'map.create': 'Create',
+  'map.deleteConfirm': 'Confirm delete',
+  'map.deleteThis': 'Delete this map',
+  'map.deleteAria': 'Delete {title}',
+  'map.empty': 'No maps yet — create one.',
+  'ws.sync': 'Live sync: {state}',
+  'ws.live': 'Live',
+  'ws.connecting': 'Connecting',
+  'ws.dead': 'Disconnected',
+  'editor.agentChat': 'Agent chat',
+  'editor.outlineEdit': 'Outline edit',
+  'editor.backToFull': 'Back to full map',
+  'editor.focusTo': 'Focus on "{content}"',
+  'editor.expandAll': 'Expand all nodes',
+  'editor.switching': 'Switching view…',
+  'layout.balanced.title': 'Current: balanced — click for right-aligned',
+  'layout.balanced.aria': 'Layout: balanced',
+  'layout.right.title': 'Current: right-aligned — click for balanced',
+  'layout.right.aria': 'Layout: right-aligned',
+  'fold.hint': 'Fold to level: keep the first N levels visible, deeper collapsed',
+  'fold.aria': 'Fold to level N',
+  'fold.placeholder': 'Fold to…',
+  'fold.toLevel': 'Fold to level {lv}',
+  'outline.title': 'Outline edit (same protocol as Agent: `- [id:N] content`, 2-space indent per level)',
+  'outline.merge': 'merge (anchor updates + creates, unmentioned kept)',
+  'outline.replace': 'replace (keep root, delete & rebuild the rest)',
+  'node.saveTitle': 'Save (Enter)',
+  'node.saveAria': 'Save',
+  'node.addTitle': 'Add child (Tab adds with default name)',
+  'node.addAria': 'Add child',
+  'node.focusTitle': 'Focus: view this subtree only (Esc or breadcrumb root to exit)',
+  'node.focusAria': 'Focus',
+  'node.deleteTitle': 'Delete (Delete key)',
+  'node.deleteAria': 'Delete',
+  'node.expand': 'Expand',
+  'node.collapse': 'Collapse',
+  'node.addPlaceholder': 'Child content…',
+  'node.defaultName': 'New node',
+  'chat.title': '💬 Agent chat',
+  'chat.unavailable': 'Agent chat unavailable',
+  'chat.statusUnavailable': 'Unavailable',
+  'chat.thinking': 'Thinking…',
+  'chat.ready': 'Ready · its changes appear on the canvas live',
+  'chat.connecting': 'Connecting…',
+  'chat.thinkingProcess': '💭 Thinking',
+  'chat.backToChat': 'Back to chat',
+  'chat.history': '🕘 History',
+  'chat.records': '🕘 Conversation',
+  'chat.clearContext': 'Clear context (archives current chat, agent restarts)',
+  'chat.clearContextAria': 'Clear context',
+  'chat.viewHistory': 'View chat history',
+  'chat.backToCurrent': 'Back to current chat',
+  'chat.historyAria': 'Chat history',
+  'chat.close': 'Hide chat',
+  'chat.empty1': 'e.g. "Add a child under #2 with content: competitive analysis"',
+  'chat.empty2': 'Node IDs are the canvas badges (#N), starting from 1 per map.',
+  'chat.archiveEmpty1': 'No chat history yet',
+  'chat.archiveEmpty2': 'Click the eraser above to archive the current chat and restart the agent.',
+  'chat.noPreview': '(no preview)',
+  'chat.archiveMeta': '{time} · {count} msgs',
+  'chat.inputPlaceholder': 'Type a command, Enter to send',
+  'chat.sendTitle': 'Enter to send · Shift+Enter for newline',
+  'chat.send': 'Send',
+}
+
+const dicts: Record<Lang, Record<I18nKey, string>> = { zh, en }
+
+// 仅用于日期格式化（toLocaleString）；文案不走 Intl
+const LOCALES: Record<Lang, string> = { zh: 'zh-CN', en: 'en-US' }
+
+// localStorage（显式选择优先）→ navigator.language（zh* → zh，en* → en）→ 'zh' 兜底
+const detectLang = (): Lang => {
+  const saved = localStorage.getItem(STORAGE_KEY)
+  if (saved === 'zh' || saved === 'en') return saved
+  const nav = navigator.language?.toLowerCase() ?? ''
+  return nav.startsWith('zh') ? 'zh' : nav.startsWith('en') ? 'en' : 'zh'
+}
+
+interface I18n {
+  lang: Lang
+  setLang: (l: Lang) => void
+  locale: string
+  t: (key: I18nKey, params?: Record<string, string | number>) => string
+}
+
+const I18nContext = createContext<I18n | null>(null)
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const [lang, setLang] = useState<Lang>(detectLang)
+
+  // 持久化 + <html lang> 同步（挂载时也执行一次，覆盖 index.html 的静态值）
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, lang)
+    document.documentElement.lang = lang
+  }, [lang])
+
+  const t = useCallback(
+    (key: I18nKey, params?: Record<string, string | number>) => {
+      let s = dicts[lang][key] ?? key // 未知 key 原样显示，肉眼可辨
+      if (params) for (const [k, v] of Object.entries(params)) s = s.replaceAll(`{${k}}`, String(v))
+      return s
+    },
+    [lang],
+  )
+
+  return <I18nContext.Provider value={{ lang, setLang, locale: LOCALES[lang], t }}>{children}</I18nContext.Provider>
+}
+
+export function useI18n(): I18n {
+  const ctx = useContext(I18nContext)
+  if (!ctx) throw new Error('useI18n must be used within <I18nProvider>') // 忘接 Provider 直接炸，不静默
+  return ctx
+}

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
+import { useI18n } from './i18n'
+import { LangSwitch } from './LangSwitch'
 import type { MapSummary } from './types'
 
 // 与 MindMapEditor 的 TrashIcon 同款（lucide trash）
@@ -10,6 +12,7 @@ const TrashIcon = () => (
 )
 
 export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
+  const { t, locale } = useI18n()
   const [maps, setMaps] = useState<MapSummary[] | null>(null)
   const [title, setTitle] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -24,11 +27,11 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
   }, [])
 
   const create = async () => {
-    const t = title.trim()
-    if (!t) return
+    const value = title.trim()
+    if (!value) return
     setCreating(true)
     try {
-      const d = await api.createMap(t)
+      const d = await api.createMap(value)
       onOpen(d.id)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -56,16 +59,17 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
 
   return (
     <div className="map-list">
+      <LangSwitch />
       <h1>MindMap X</h1>
       <div className="create-row">
         <input
           value={title}
-          placeholder="新脑图标题…"
+          placeholder={t('map.placeholder')}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && create()}
         />
         <button className="btn primary" disabled={creating || !title.trim()} onClick={create}>
-          创建
+          {t('map.create')}
         </button>
       </div>
       {error && <div className="toast">{error}</div>}
@@ -74,17 +78,17 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
           <div key={m.id} className="card" onClick={() => confirmId === null && onOpen(m.id)}>
             <div className="card-title">{m.title}</div>
             <div className="card-meta">
-              v{m.version} · {new Date(m.created_at).toLocaleString()}
+              v{m.version} · {new Date(m.created_at).toLocaleString(locale, { hour12: false })}
             </div>
             {confirmId === m.id ? (
               <button className="card-del confirm" onClick={(e) => { e.stopPropagation(); void del(m.id) }}>
-                确认删除
+                {t('map.deleteConfirm')}
               </button>
             ) : (
               <button
                 className="card-del"
-                title="删除此脑图"
-                aria-label={`删除 ${m.title}`}
+                title={t('map.deleteThis')}
+                aria-label={t('map.deleteAria', { title: m.title })}
                 onClick={(e) => { e.stopPropagation(); askDelete(m.id) }}
               >
                 <TrashIcon />
@@ -92,7 +96,7 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
             )}
           </div>
         ))}
-        {maps != null && maps.length === 0 && <p>还没有脑图，先创建一张。</p>}
+        {maps != null && maps.length === 0 && <p>{t('map.empty')}</p>}
       </div>
     </div>
   )

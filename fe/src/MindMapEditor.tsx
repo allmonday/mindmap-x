@@ -13,6 +13,8 @@ import {
 import '@xyflow/react/dist/style.css'
 import { api } from './api'
 import { ChatPanel } from './ChatPanel'
+import { useI18n, type I18nKey } from './i18n'
+import { LangSwitch } from './LangSwitch'
 import { layoutMap, type LNode, type LayoutMode } from './layout'
 import type { MapDetail, NodeDTO, OutlineMode } from './types'
 
@@ -48,6 +50,9 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
   const { lnode, isEditing, isAdding, hasChildren } = data
   const n = lnode.node
   const isRoot = data.isLayoutRoot // 布局根 = 真根或聚焦节点；非聚焦时与真根判定完全一致
+  // 文案经 context 直取（ReactFlow 的 memo 不拦截 context 更新）——
+  // 切语言时本组件自渲染，rfNodes memo 不需要重建
+  const { t } = useI18n()
 
   // hover 意图延迟：指针停留 0.5s 才亮操作按钮（快速扫过不闪）。
   // 不用 CSS transition-delay——hover 开始时排定的延迟过渡无法被"中途选中"
@@ -118,7 +123,7 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
             <input
               className="add-input"
               autoFocus
-              placeholder="子节点内容…"
+              placeholder={t('node.addPlaceholder')}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
                 e.stopPropagation() // 输入态按键不冒泡（防 Enter 触发全局"加同级"）
@@ -133,8 +138,8 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
             />
             <button
               className="btn sm primary save-add"
-              title="保存（Enter）"
-              aria-label="保存"
+              title={t('node.saveTitle')}
+              aria-label={t('node.saveAria')}
               // 阻止 mousedown 抢焦点 → 不触发 input blur（blur 也会提交，避免双写）
               onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
@@ -149,8 +154,8 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
           <div className={`node-actions${showActions ? ' show' : ''}`}>
             <button
               className="btn sm"
-              title="加子级（Tab 用默认名快速加）"
-              aria-label="加子级"
+              title={t('node.addTitle')}
+              aria-label={t('node.addAria')}
               onClick={(e) => {
                 e.stopPropagation()
                 data.onStartAdd(n.display_id)
@@ -161,8 +166,8 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
             {!isRoot && hasChildren && (
               <button
                 className="btn sm"
-                title="聚焦：只看此节点的子树（Esc / 点面包屑根节点退出）"
-                aria-label="聚焦"
+                title={t('node.focusTitle')}
+                aria-label={t('node.focusAria')}
                 onClick={(e) => {
                   e.stopPropagation()
                   data.onFocus(n.display_id)
@@ -174,8 +179,8 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
             {!isRoot && (
               <button
                 className="btn sm danger"
-                title="删除（Delete）"
-                aria-label="删除"
+                title={t('node.deleteTitle')}
+                aria-label={t('node.deleteAria')}
                 onClick={(e) => {
                   e.stopPropagation()
                   data.onDelete(n.display_id)
@@ -191,7 +196,7 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       {hasChildren && !isRoot && (
         <button
           className={`fold ${lnode.side === -1 ? 'left' : ''} ${n.collapsed ? 'folded' : ''}`}
-          title={n.collapsed ? '展开' : '折叠'}
+          title={n.collapsed ? t('node.expand') : t('node.collapse')}
           onClick={(e) => {
             e.stopPropagation()
             data.onToggleCollapse(lnode)
@@ -275,6 +280,7 @@ const FocusIcon = () => (
 // ── editor ────────────────────────────────────────────────────────────
 
 export function MindMapEditor({ mapId, onBack }: Props) {
+  const { t } = useI18n()
   const [detail, setDetail] = useState<MapDetail | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -404,24 +410,25 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const commitEdit = useCallback(
     (id: number, text: string) => {
       setEditingId(null)
-      const t = text.trim()
-      if (!t) return
-      void guard(() => api.updateNode(mapId, id, t))
+      const value = text.trim() // 局部命名避开 i18n 的 t
+      if (!value) return
+      void guard(() => api.updateNode(mapId, id, value))
     },
     [mapId],
   )
   const addChild = useCallback(
-    (parentId: number) => void guard(() => api.addNode(mapId, parentId, '新节点')),
-    [mapId],
+    // 快捷键加子用默认名，按当前 UI 语言落库（'新节点'/'New node'）
+    (parentId: number) => void guard(() => api.addNode(mapId, parentId, t('node.defaultName'))),
+    [mapId, t],
   )
   // + 按钮的两段式加子：先转输入框，确认内容后才真正创建（空文本 = 取消）
   const startAdd = useCallback((parentId: number) => setAddingId(parentId), [])
   const commitAdd = useCallback(
     (parentId: number, text: string) => {
       setAddingId(null)
-      const t = text.trim()
-      if (!t) return
-      void guard(() => api.addNode(mapId, parentId, t))
+      const value = text.trim() // 局部命名避开 i18n 的 t
+      if (!value) return
+      void guard(() => api.addNode(mapId, parentId, value))
     },
     [mapId],
   )
@@ -606,8 +613,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   if (!detail || !layout || !layout.root) {
     return (
       <div className="editor-loading">
-        {error ? <div className="toast">{error}</div> : '加载中…'}
-        <button className="btn" onClick={onBack}>← 返回</button>
+        {error ? <div className="toast">{error}</div> : t('common.loading')}
+        <button className="btn" onClick={onBack}>← {t('common.back')}</button>
       </div>
     )
   }
@@ -615,23 +622,24 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   return (
     <div className="editor">
       <header className="toolbar">
-        <button className="btn icon" onClick={onBack} title="返回列表" aria-label="返回列表">☰</button>
-        <span className={`ws-dot ${wsState}`} title={`实时同步: ${wsState}`} />
+        <button className="btn icon" onClick={onBack} title={t('common.backToList')} aria-label={t('common.backToList')}>☰</button>
+        <span className={`ws-dot ${wsState}`} title={t('ws.sync', { state: t(`ws.${wsState}` as I18nKey) })} />
         <span className={`ws-label ${wsState}`}>
-          {wsState === 'live' ? '实时' : wsState === 'connecting' ? '连接中' : '已断开'}
+          {t(`ws.${wsState}` as I18nKey)}
         </span>
         <div className="spacer" />
         <button
           className={`btn icon ${chatOpen ? 'active' : ''}`}
           onClick={() => setChatOpen((v) => !v)}
-          title="Agent 对话"
-          aria-label="Agent 对话"
+          title={t('editor.agentChat')}
+          aria-label={t('editor.agentChat')}
         >
           <ChatIcon />
         </button>
-        <button className="btn icon" onClick={openOutline} title="outline 编辑" aria-label="outline 编辑">
+        <button className="btn icon" onClick={openOutline} title={t('editor.outlineEdit')} aria-label={t('editor.outlineEdit')}>
           <PencilIcon />
         </button>
+        <LangSwitch />
       </header>
 
       {error && <div className="toast editor-toast">{error}</div>}
@@ -658,7 +666,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
                       ) : (
                         <button
                           className="crumb"
-                          title={i === 0 ? '返回全图' : `聚焦到「${n.content}」`}
+                          title={i === 0 ? t('editor.backToFull') : t('editor.focusTo', { content: n.content })}
                           onClick={() => (i === 0 ? switchFocus(null) : switchFocus(n.display_id))}
                         >
                           {n.content}
@@ -676,16 +684,16 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               className="btn"
               disabled={switching}
               onClick={toggleLayout}
-              title={layoutMode === 'balanced' ? '当前：左右对称，点击切换为一律靠右' : '当前：一律靠右，点击切换为左右对称'}
-              aria-label={layoutMode === 'balanced' ? '布局：左右对称' : '布局：一律靠右'}
+              title={layoutMode === 'balanced' ? t('layout.balanced.title') : t('layout.right.title')}
+              aria-label={layoutMode === 'balanced' ? t('layout.balanced.aria') : t('layout.right.aria')}
             >
               {layoutMode === 'balanced' ? <LayoutBalancedIcon /> : <LayoutRightIcon />}
             </button>
             <button
               className="btn"
               onClick={() => void guard(() => api.expandAll(mapId))}
-              title="展开所有节点"
-              aria-label="展开所有节点"
+              title={t('editor.expandAll')}
+              aria-label={t('editor.expandAll')}
             >
               <ExpandIcon />
             </button>
@@ -693,8 +701,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               <select
                 className="btn fold-select"
                 value=""
-                title="折叠到指定层级：保留前 N 层可见，更深层收起"
-                aria-label="折叠至第 N 层"
+                title={t('fold.hint')}
+                aria-label={t('fold.aria')}
                 onChange={(e) => {
                   const lv = Number(e.target.value)
                   // 受控 value="" 恒为占位符：命令型控件，执行后不驻留所选值
@@ -702,12 +710,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
                 }}
               >
                 <option value="" disabled>
-                  折叠至…
+                  {t('fold.placeholder')}
                 </option>
                 {/* level=maxDepth 是纯展开，与相邻「全部展开」按钮重复，砍掉 */}
                 {Array.from({ length: maxDepth - 2 }, (_, i) => i + 2).map((lv) => (
                   <option key={lv} value={lv}>
-                    折叠至 {lv} 层
+                    {t('fold.toLevel', { lv })}
                   </option>
                 ))}
               </select>
@@ -751,7 +759,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           {switching && (
             <div className="rf-loading">
               <span className="rf-loading-spinner" />
-              <span>视图切换中…</span>
+              <span>{t('editor.switching')}</span>
             </div>
           )}
         </div>
@@ -764,7 +772,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       {outlineOpen && (
         <div className="modal" onClick={() => setOutlineOpen(false)}>
           <div className="modal-body" onClick={(e) => e.stopPropagation()}>
-            <h3>outline 编辑（与 Agent 同协议：`- [id:N] 内容`，2 空格缩进一级）</h3>
+            <h3>{t('outline.title')}</h3>
             <textarea
               className="outline-editor"
               value={outlineText}
@@ -773,11 +781,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             />
             <div className="modal-actions">
               <select value={outlineMode} onChange={(e) => setOutlineMode(e.target.value as OutlineMode)}>
-                <option value="merge">merge（锚定更新 + 新建，未提及保留）</option>
-                <option value="replace">replace（保留根，其余全删重建）</option>
+                <option value="merge">{t('outline.merge')}</option>
+                <option value="replace">{t('outline.replace')}</option>
               </select>
-              <button className="btn" onClick={applyOutline}>应用</button>
-              <button className="btn" onClick={() => setOutlineOpen(false)}>取消</button>
+              <button className="btn" onClick={applyOutline}>{t('common.apply')}</button>
+              <button className="btn" onClick={() => setOutlineOpen(false)}>{t('common.cancel')}</button>
             </div>
           </div>
         </div>
