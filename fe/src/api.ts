@@ -1,5 +1,6 @@
 // REST 封装：浏览器端所有操作显式声明 actor='human'（Agent 端默认 'agent'）
 // 节点 ID 参数均为 map 内 display_id（每图从 1 起）
+import type { I18nKey } from './i18n'
 import type { MapDetail, MapSummary, NodeDTO, OutlineMode, RevisionDetail, RevisionSummary } from './types'
 
 const BASE = '/api/mindmap_service'
@@ -62,9 +63,34 @@ async function get<T>(url: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// Agent 可用性：env 完整性 → 网关探活 → MCP 握手（无配置时首步即快速失败，无外呼）。
+// 失败原因结构化（code + 插值参数），文案由前端按 UI 语言渲染（弹窗 / 错误横幅共用）
+export interface ChatGateStatus {
+  ok: boolean
+  reason_code: string | null
+  reason_detail: Record<string, string | number> | null
+}
+
+const GATE_REASON_KEYS: Record<string, I18nKey> = {
+  env_missing: 'chat.gate.envMissing',
+  gateway_http: 'chat.gate.gatewayHttp',
+  gateway_unreachable: 'chat.gate.gatewayUnreachable',
+  mcp_http: 'chat.gate.mcpHttp',
+  mcp_unreachable: 'chat.gate.mcpUnreachable',
+}
+
+// 未知 code（前后端版本错位等）兜底通用文案；detail 直接透传 t() 插值
+export function gateReasonText(
+  t: (key: I18nKey, params?: Record<string, string | number>) => string,
+  code: string,
+  detail: Record<string, string | number> | null,
+): string {
+  const key = GATE_REASON_KEYS[code]
+  return key ? t(key, detail ?? undefined) : t('chat.unavailable')
+}
+
 export const chatApi = {
   archives: (mapId: number) => get<ArchiveMeta[]>(`/api/chat/archives?map_id=${mapId}`),
   archive: (mapId: number, id: string) => get<ArchiveDoc>(`/api/chat/archives/${id}?map_id=${mapId}`),
-  // Agent 可用性：env 完整性 → 网关探活 → MCP 握手（无配置时首步即快速失败，无外呼）
-  status: () => get<{ ok: boolean; reason: string | null }>('/api/chat/status'),
+  status: () => get<ChatGateStatus>('/api/chat/status'),
 }

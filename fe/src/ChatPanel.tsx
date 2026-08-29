@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
-import { chatApi, type ArchiveDoc, type ArchiveMeta } from './api'
+import { chatApi, gateReasonText, type ArchiveDoc, type ArchiveMeta } from './api'
 import { fmtTime, useI18n } from './i18n'
 
 interface ChatMsg {
@@ -107,7 +107,13 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
     function onMessage(e: MessageEvent) {
       const msg = JSON.parse(e.data)
       if (msg.type === 'status') {
-        setHealthErr(msg.ok ? null : (msg.reason ?? t('chat.unavailable')))
+        setHealthErr(
+          msg.ok
+            ? null
+            : msg.reason_code
+              ? gateReasonText(t, msg.reason_code, msg.reason_detail)
+              : t('chat.unavailable'),
+        )
         return
       }
       if (msg.type === 'history') {

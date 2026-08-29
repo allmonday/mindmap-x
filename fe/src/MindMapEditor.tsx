@@ -11,7 +11,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { api, chatApi } from './api'
+import { api, chatApi, gateReasonText, type ChatGateStatus } from './api'
 import { ChatPanel } from './ChatPanel'
 import { useI18n, type I18nKey } from './i18n'
 import { LangSwitch } from './LangSwitch'
@@ -335,13 +335,13 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   // Agent 入口守门：模型网关未配置时按钮保留但置灰（aria-disabled，真 disabled
   // 收不到 click），点击弹窗说明缺什么配置；null = 检查中暂不渲染（防闪跳）。
   // 状态检查首步即 env 完整性，未配置时快速失败、无外呼
-  const [agentStatus, setAgentStatus] = useState<{ ok: boolean; reason: string | null } | null>(null)
+  const [agentStatus, setAgentStatus] = useState<ChatGateStatus | null>(null)
   const [chatGateOpen, setChatGateOpen] = useState(false)
   useEffect(() => {
     void chatApi
       .status()
-      .then((s) => setAgentStatus({ ok: s.ok, reason: s.reason }))
-      .catch(() => setAgentStatus({ ok: false, reason: null }))
+      .then(setAgentStatus)
+      .catch(() => setAgentStatus({ ok: false, reason_code: null, reason_detail: null }))
   }, [])
   const agentOk = agentStatus?.ok ?? false
   // 聚焦（下钻）：作为画布布局根的节点 display_id；null = 全图。
@@ -867,14 +867,18 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         </div>
       )}
 
-      {/* 未配置模型网关：点置灰的对话按钮弹出配置指引（服务端 reason 一并展示） */}
+      {/* 未配置模型网关：点置灰的对话按钮弹出配置指引（服务端 reason_code 本地化渲染） */}
       {chatGateOpen && (
         <div className="modal" onClick={() => setChatGateOpen(false)}>
           <div className="modal-body gate" onClick={(e) => e.stopPropagation()}>
             <h3>{t('chat.gatedTitle')}</h3>
             <div className="gate-body">
               <p>{t('chat.gatedBody')}</p>
-              {agentStatus?.reason && <p className="gate-reason">{agentStatus.reason}</p>}
+              {agentStatus?.reason_code && (
+                <p className="gate-reason">
+                  {gateReasonText(t, agentStatus.reason_code, agentStatus.reason_detail)}
+                </p>
+              )}
             </div>
             <div className="modal-actions">
               <div className="spacer" />

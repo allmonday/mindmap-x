@@ -266,7 +266,10 @@ async def health_check() -> dict:
     """面板打开时前端先调——在用户发消息之前暴露问题。
 
     三级检查：环境变量完整性 → 模型网关探活 → MCP 握手。
+    失败原因结构化返回（reason_code + reason_detail 插值参数），
+    文案由前端按 UI 语言渲染——服务端不感知界面语言。
     """
+
     missing = [
         name
         for name, value in (
@@ -277,7 +280,8 @@ async def health_check() -> dict:
         if not value
     ]
     checks: dict[str, bool] = {"gateway": False, "mcp": False}
-    reason: str | None = None
+    reason_code: str | None = None
+    reason_detail: dict[str, str | int] = {}
 
     if not missing:
         base = os.getenv("OPENAI_BASE_URL", "").rstrip("/")
@@ -289,11 +293,14 @@ async def health_check() -> dict:
                 )
             checks["gateway"] = resp.status_code < 400
             if not checks["gateway"]:
-                reason = f"模型网关返回 HTTP {resp.status_code}（检查 OPENAI_BASE_URL / OPENAI_API_KEY）"
+                reason_code, reason_detail = "gateway_http", {"status": resp.status_code}
         except Exception as e:
-            reason = f"模型网关不可达（{type(e).__name__}）——检查 OPENAI_BASE_URL: {base}"
+            reason_code, reason_detail = "gateway_unreachable", {
+                "error": type(e).__name__,
+                "base": base,
+            }
     else:
-        reason = f"未配置模型网关环境变量: {', '.join(missing)}（OpenAI 兼容网关三项，见 README）"
+        reason_code, reason_detail = "env_missing", {"missing": ", ".join(missing)}
 
     try:
         async with httpx.AsyncClient(timeout=3) as client:
@@ -312,14 +319,19 @@ async def health_check() -> dict:
                 headers={"Accept": "application/json, text/event-stream"},
             )
             checks["mcp"] = resp.status_code == 200
-            if not checks["mcp"] and reason is None:
-                reason = f"MCP 端点返回 HTTP {resp.status_code}"
+            if not checks["mcp"] and reason_code is None:
+                reason_code, reason_detail = "mcp_http", {"status": resp.status_code}
     except Exception as e:
         checks["mcp"] = False
-        if reason is None:
-            reason = f"MCP 服务不可达: {type(e).__name__}"
+        if reason_code is None:
+            reason_code, reason_detail = "mcp_unreachable", {"error": type(e).__name__}
 
-    return {"ok": all(checks.values()) and not missing, "checks": checks, "reason": reason}
+    return {
+        "ok": all(checks.values()) and not missing,
+        "checks": checks,
+        "reason_code": reason_code,
+        "reason_detail": reason_detail or None,
+    }
 
 
 @router.get("/api/chat/status")
