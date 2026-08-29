@@ -317,3 +317,23 @@ async def test_publish_subscribe_roundtrip(session_factory):
         unsubscribe(100, q)
     publish_change(100, version=8, action="node_added", actor="agent")
     assert q.empty()  # 退订后不再收到
+
+
+async def test_outline_multiline_content_roundtrip(session_factory, seeded_map):
+    """多行内容（Shift+Enter）经 outline 行协议往返不破协议、内容无损。
+
+    outline 一行一节点：内容里的换行必须转义为 \\n、反斜杠转义为 \\\\，
+    get_tree → apply_outline(merge) 闭环后原样还原。
+    """
+    await mm.update_node(100, 2, content="第一行\n第二行反斜杠\\路径")  # noqa: W605
+    tree = await mm.get_tree(100)
+    # 3 节点 = 3 行：换行被转义后没有多出来的行（协议未破）
+    assert len(tree.splitlines()) == 3
+    assert "\\n" in tree and "\\\\" in tree  # 转义形态在 outline 文本里可见
+    await mm.apply_outline(100, tree, mode="merge")
+    from sqlmodel import select
+
+    async with session_factory() as s:
+        nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
+    n2 = next(n for n in nodes if n.display_id == 2)
+    assert n2.content == "第一行\n第二行反斜杠\\路径"  # noqa: W605

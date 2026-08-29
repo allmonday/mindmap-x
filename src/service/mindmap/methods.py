@@ -42,6 +42,17 @@ def _now() -> datetime:
 # ── helpers ───────────────────────────────────────────────────────────
 
 
+def _esc_outline(s: str) -> str:
+    """outline 是行协议（一行一节点）：内容里的换行与反斜杠转义为 \\n / \\\\，
+    保证 get_tree 输出可直接喂回 apply_outline（多行内容往返不破协议）。"""
+    return s.replace("\\", "\\\\").replace("\n", "\\n")
+
+
+def _unesc_outline(s: str) -> str:
+    """_esc_outline 的逆：\\n → 换行，\\\\ → 反斜杠；其余 \\x 原样保留（宽容解析）。"""
+    return re.sub(r"\\(.)", lambda m: "\n" if m.group(1) == "n" else m.group(1), s)
+
+
 def _render_outline(nodes: list[Node]) -> str:
     """把节点集合渲染为缩进 outline 文本（[id:N] 为 display_id）。"""
     by_parent: dict[int | None, list[Node]] = {}
@@ -51,7 +62,7 @@ def _render_outline(nodes: list[Node]) -> str:
     lines: list[str] = []
 
     def walk(node: Node, depth: int) -> None:
-        lines.append("  " * depth + f"- [id:{node.display_id}] {node.content}")
+        lines.append("  " * depth + f"- [id:{node.display_id}] {_esc_outline(node.content)}")
         for child in by_parent.get(node.id, []):
             walk(child, depth + 1)
 
@@ -80,7 +91,7 @@ def _parse_outline(outline: str) -> list[tuple[int, int | None, str]]:
         if not m or not m.group(2).strip():
             raise ValueError(f"无法解析的行: {raw!r}（每行必须形如 '- 内容' 或 '- [id:N] 内容'）")
         display_id = int(m.group(1)) if m.group(1) else None
-        entries.append((level, display_id, m.group(2).strip()))
+        entries.append((level, display_id, _unesc_outline(m.group(2).strip())))
         prev_level = level
     if not entries:
         raise ValueError("outline 为空")
