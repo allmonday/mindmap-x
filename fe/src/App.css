@@ -17,6 +17,32 @@
 .btn.danger:hover { background: rgba(235, 87, 87, 0.08); border-color: var(--danger); }
 .btn.icon { padding: 6px 10px; font-size: 16px; line-height: 1; }
 .btn.icon.active { background: var(--bg-hover); border-color: #d3d1cb; }
+/* 置灰的 Agent 入口：视觉禁用但保留点击（弹配置指引），故用 aria-disabled 而非真 disabled */
+.btn.icon.gated {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: var(--ink-3);
+}
+.btn.icon.gated:hover { background: var(--bg); }
+
+/* 未配置弹窗 */
+.modal-body.gate { width: min(480px, 92vw); }
+.gate-body { font-size: 13.5px; color: var(--ink-2); line-height: 1.7; }
+.gate-body code {
+  background: var(--bg-hover);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12.5px;
+}
+.gate-reason {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: rgba(35, 131, 226, 0.06);
+  border-radius: 0 6px 6px 0;
+  font-size: 12.5px;
+}
 
 /* ── Agent 对话面板（悬浮于画布右侧，不压缩画布） ──────── */
 .chat-panel {

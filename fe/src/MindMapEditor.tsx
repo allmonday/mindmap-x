@@ -332,12 +332,18 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
   const [chatOpen, setChatOpen] = useState(false)
-  // Agent 入口守门：模型网关未配置（无 env）时不渲染对话按钮，面板也就打不开、
-  // 相关错误无从触发（状态检查首步即 env 完整性，未配置时快速失败、无外呼）
-  const [agentOk, setAgentOk] = useState(false)
+  // Agent 入口守门：模型网关未配置时按钮保留但置灰（aria-disabled，真 disabled
+  // 收不到 click），点击弹窗说明缺什么配置；null = 检查中暂不渲染（防闪跳）。
+  // 状态检查首步即 env 完整性，未配置时快速失败、无外呼
+  const [agentStatus, setAgentStatus] = useState<{ ok: boolean; reason: string | null } | null>(null)
+  const [chatGateOpen, setChatGateOpen] = useState(false)
   useEffect(() => {
-    void chatApi.status().then((s) => setAgentOk(s.ok)).catch(() => setAgentOk(false))
+    void chatApi
+      .status()
+      .then((s) => setAgentStatus({ ok: s.ok, reason: s.reason }))
+      .catch(() => setAgentStatus({ ok: false, reason: null }))
   }, [])
+  const agentOk = agentStatus?.ok ?? false
   // 聚焦（下钻）：作为画布布局根的节点 display_id；null = 全图。
   // 会话级视图态——不进 localStorage，换图即清空
   const [focusId, setFocusId] = useState<number | null>(null)
@@ -501,10 +507,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           setRevOpen(false)
           return
         }
+        if (!typing && chatGateOpen) {
+          setChatGateOpen(false)
+          return
+        }
         if (focusId != null && !typing) switchFocus(null)
         return
       }
-      if (editingId != null || outlineOpen || revOpen || selectedId == null || !detail) return
+      if (editingId != null || outlineOpen || revOpen || chatGateOpen || selectedId == null || !detail) return
       // 焦点在任何输入元素上时快捷键一律失效（编辑框/聊天面板/outline 弹层）
       const el = document.activeElement
       if (
@@ -533,7 +543,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, editingId, outlineOpen, revOpen, detail, mapId, focusId, switchFocus])
+  }, [selectedId, editingId, outlineOpen, revOpen, chatGateOpen, detail, mapId, focusId, switchFocus])
 
   // ── layout → React Flow nodes/edges ────────────────────────────────
   const layout = useMemo(
@@ -683,16 +693,27 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           {t(`ws.${wsState}` as I18nKey)}
         </span>
         <div className="spacer" />
-        {agentOk && (
-          <button
-            className={`btn icon ${chatOpen ? 'active' : ''}`}
-            onClick={() => setChatOpen((v) => !v)}
-            title={t('editor.agentChat')}
-            aria-label={t('editor.agentChat')}
-          >
-            <ChatIcon />
-          </button>
-        )}
+        {agentStatus != null &&
+          (agentOk ? (
+            <button
+              className={`btn icon ${chatOpen ? 'active' : ''}`}
+              onClick={() => setChatOpen((v) => !v)}
+              title={t('editor.agentChat')}
+              aria-label={t('editor.agentChat')}
+            >
+              <ChatIcon />
+            </button>
+          ) : (
+            <button
+              className="btn icon gated"
+              aria-disabled="true"
+              onClick={() => setChatGateOpen(true)}
+              title={t('chat.gatedTitle')}
+              aria-label={t('chat.gatedTitle')}
+            >
+              <ChatIcon />
+            </button>
+          ))}
         <button className="btn icon" onClick={openOutline} title={t('editor.outlineEdit')} aria-label={t('editor.outlineEdit')}>
           <PencilIcon />
         </button>
@@ -841,6 +862,25 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               </select>
               <button className="btn" onClick={applyOutline}>{t('common.apply')}</button>
               <button className="btn" onClick={() => setOutlineOpen(false)}>{t('common.cancel')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 未配置模型网关：点置灰的对话按钮弹出配置指引（服务端 reason 一并展示） */}
+      {chatGateOpen && (
+        <div className="modal" onClick={() => setChatGateOpen(false)}>
+          <div className="modal-body gate" onClick={(e) => e.stopPropagation()}>
+            <h3>{t('chat.gatedTitle')}</h3>
+            <div className="gate-body">
+              <p>{t('chat.gatedBody')}</p>
+              {agentStatus?.reason && <p className="gate-reason">{agentStatus.reason}</p>}
+            </div>
+            <div className="modal-actions">
+              <div className="spacer" />
+              <button className="btn" onClick={() => setChatGateOpen(false)}>
+                {t('common.cancel')}
+              </button>
             </div>
           </div>
         </div>

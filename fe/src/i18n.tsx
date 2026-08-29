@@ -65,6 +65,8 @@ const zh = {
   // ── 聊天面板 ──
   'chat.title': '💬 Agent 对话',
   'chat.unavailable': 'Agent 对话不可用',
+  'chat.gatedTitle': 'Agent 对话未配置',
+  'chat.gatedBody': '配置模型网关后即可使用：在 .env（或容器环境变量）中设置下面三个变量后重启服务，示例见 .env.example。',
   'chat.statusUnavailable': '不可用',
   'chat.thinking': '思考中…',
   'chat.ready': '就绪 · 它的操作会实时出现在画布上',
@@ -170,6 +172,8 @@ const en: Record<I18nKey, string> = {
   'node.defaultName': 'New node',
   'chat.title': '💬 Agent chat',
   'chat.unavailable': 'Agent chat unavailable',
+  'chat.gatedTitle': 'Agent chat not configured',
+  'chat.gatedBody': 'Set these three variables in .env (or container environment) and restart the service — see .env.example:',
   'chat.statusUnavailable': 'Unavailable',
   'chat.thinking': 'Thinking…',
   'chat.ready': 'Ready · its changes appear on the canvas live',

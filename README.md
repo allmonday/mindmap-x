@@ -148,7 +148,7 @@ OPENAI_API_KEY=<智谱 API Key>
 AGENT_MODEL=glm-5.3-flash
 ```
 
-未配置模型网关时，Agent 对话入口（按钮与面板）整体不渲染，相关错误无从触发；入口可见性由健康检查接口决定（env 完整性 → 网关探活 → MCP 握手），会话中网关异常则面板内显示明确的错误横幅。
+未配置模型网关时，Agent 对话按钮置灰保留：点击会弹窗说明需要配置的环境变量（`OPENAI_BASE_URL` / `OPENAI_API_KEY` / `AGENT_MODEL`，见 `.env.example`），面板不会打开；会话中网关异常则面板内显示明确的错误横幅。
 
 ## 项目结构
 

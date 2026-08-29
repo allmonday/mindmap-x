@@ -6,19 +6,13 @@
 
 You edit the mind map in the browser; agents (the built-in chat, Claude Code, Cursor, CLI scripts…) read and write the **server-authoritative tree** through the same API. Changes from either side propagate in real time over WebSocket: agent edits are highlighted on the canvas, and your manual edits are injected into the agent's context on its next turn.
 
-<img width="1596" height="1024" alt="image" src="https://github.com/user-attachments/assets/b5f91c02-f49a-4825-86f1-8f0744a6833e" />
+<img width="1579" height="969" alt="image" src="https://github.com/user-attachments/assets/80cfba49-2fe6-4401-b113-c929bd94e5d8" />
 
 ----
 
 Focus drill-down (breadcrumb navigation)
 
-<img width="1158" height="724" alt="image" src="https://github.com/user-attachments/assets/35ad01a0-b429-4ead-9f44-82601a47ae45" />
-
-----
-
-In-page agent chat
-
-<img width="1595" height="810" alt="image" src="https://github.com/user-attachments/assets/73511cfb-2526-4665-b393-66433b6b60c3" />
+<img width="1029" height="437" alt="image" src="https://github.com/user-attachments/assets/9aef41fe-4883-4e0b-963d-16a5f0a8720d" />
 
 ## Why
 
@@ -153,7 +147,7 @@ OPENAI_API_KEY=<zhipu API key>
 AGENT_MODEL=glm-5.3-flash
 ```
 
-When no model gateway is configured, the agent chat entry point (button and panel) is not rendered at all, so its errors can never surface; entry visibility is decided by the health check endpoint (env completeness → gateway probe → MCP handshake), and a gateway failure mid-session shows an explicit banner inside the panel.
+When no model gateway is configured, the agent chat button stays visible but grayed out: clicking it pops a dialog listing the environment variables to configure (`OPENAI_BASE_URL` / `OPENAI_API_KEY` / `AGENT_MODEL`, see `.env.example`), and the panel never opens; a gateway failure mid-session shows an explicit banner inside the panel.
 
 ## Project Structure
 
