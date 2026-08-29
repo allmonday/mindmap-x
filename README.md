@@ -6,18 +6,14 @@
 
 人在浏览器里编辑脑图，Agent（页内对话、Claude Code、Cursor、CLI 脚本…）通过同一套 API 读写**服务端权威的树**，双方改动经 WebSocket 实时互见；Agent 改动的节点带高亮标记，人手改的部分也会在下一轮注入 Agent 的上下文。
 
-<img width="1596" height="1024" alt="image" src="https://github.com/user-attachments/assets/b5f91c02-f49a-4825-86f1-8f0744a6833e" />
+<img width="1579" height="969" alt="image" src="https://github.com/user-attachments/assets/80cfba49-2fe6-4401-b113-c929bd94e5d8" />
 
 ----
 
 聚焦下钻（面包屑切换）
 
-<img width="1158" height="724" alt="image" src="https://github.com/user-attachments/assets/35ad01a0-b429-4ead-9f44-82601a47ae45" />
+<img width="1029" height="437" alt="image" src="https://github.com/user-attachments/assets/9aef41fe-4883-4e0b-963d-16a5f0a8720d" />
 
-----
-页内 Agent 对话
-
-<img width="1595" height="810" alt="image" src="https://github.com/user-attachments/assets/73511cfb-2526-4665-b393-66433b6b60c3" />
 
 ## 为什么
 
