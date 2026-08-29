@@ -253,8 +253,19 @@ body.chat-resizing {
 }
 
 /* ── 列表页 ───────────────────────────────────────────── */
-.map-list { max-width: 760px; margin: 48px auto; padding: 0 20px; }
+.map-list { position: relative; max-width: 760px; margin: 48px auto; padding: 0 20px; }
 .map-list h1 { margin: 0 0 24px; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+/* 语言切换：悬浮于列右上角，与 h1 同行 */
+.map-list .lang-switch { position: absolute; top: 6px; right: 20px; }
+
+/* ── 语言切换（双 pill 拼合，复用 .btn 体系）───────────── */
+.lang-switch { display: inline-flex; }
+/* 与相邻的 .btn.icon 同高：同 6px 上下 padding + 内容行高对齐 16px 图标行 */
+.lang-switch .btn { padding: 6px 9px; font-size: 12px; line-height: 16px; }
+.lang-switch .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.lang-switch .btn + .btn { border-left: none; border-radius: 0 var(--radius) var(--radius) 0; }
+.lang-switch .btn.active { background: var(--bg-hover); font-weight: 600; }
+
 
 .create-row { display: flex; gap: 10px; margin-bottom: 24px; }
 .create-row input {
@@ -343,7 +354,8 @@ body.chat-resizing {
 
 .rf-wrap { flex: 1; position: relative; }
 
-/* 画板左上角悬浮标题（独立于顶部工具栏）：无边框，靠半透明白底保证可读性 */
+/* 画板左上角悬浮标题（独立于顶部工具栏）：无边框，靠半透明白底保证可读性。
+   不设最大宽度——约束会把面包屑里的祖先项压到 0 宽"消失"（曾致二级聚焦时真根缺失） */
 .map-title {
   position: absolute;
   top: 14px;
@@ -355,26 +367,20 @@ body.chat-resizing {
   pointer-events: none; /* 不挡画布拖拽/缩放 */
   background: rgba(255, 255, 255, 0.9);
   padding: 5px 6px;
-  max-width: 40vw;
 }
 .map-title .name {
   font-weight: 600;
   font-size: 15px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .map-title .ver { color: var(--ink-3); font-size: 12px; }
 
 /* 聚焦面包屑：map-title 整体 pointer-events:none，此处局部恢复可点。
-   超长省略策略：中间祖先优先压缩（flex-shrink:1 + ellipsis），头（返回全图入口）
-   与尾（当前目标）保留完整，hover 有 title 全文 */
+   容器不设上限、每项 flex-shrink:0 不收缩——完整显示全部路径，不截断不消失 */
 .crumbs {
   display: flex;
   align-items: baseline;
   gap: 5px;
-  min-width: 0; /* 允许在 map-title(max-width:40vw) 内被压缩 */
-  overflow: hidden;
   pointer-events: auto;
   font-size: 13px; /* 比 Title(15px) 小一档，当前项不比可点项大 */
 }
@@ -387,10 +393,7 @@ button.crumb {
   color: var(--ink-2);
   cursor: pointer;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 1;
-  max-width: 180px;
+  flex-shrink: 0;
 }
 button.crumb:hover { color: var(--ink); }
 .crumb.cur {
@@ -398,8 +401,6 @@ button.crumb:hover { color: var(--ink); }
   font-weight: 400; /* 不加粗，与可点项同权重 */
   flex-shrink: 0;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis; /* 极端情况下兜底 */
 }
 
 /* 画布左上角工具列：标题正下方，纵向排列（布局切换 / 全部展开） */
