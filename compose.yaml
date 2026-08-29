@@ -1,0 +1,31 @@
+# MindMap X 一键部署：
+#   cp .env.example .env   # 可选：配置页内 Agent 的模型，不配则画布功能完整
+#   docker compose up -d   # → http://localhost:8740
+# 数据（SQLite / 聊天归档 / Agent 会话）都在 named volume：down 不丢，down -v 才清空
+services:
+  mindmap:
+    build:
+      context: .
+      # 默认官方源；国内网络可设环境变量换镜像站后重建，例如：
+      #   NODE_IMAGE=docker.m.daocloud.io/library/node:22-alpine \
+      #   UV_IMAGE=ghcr.m.daocloud.io/astral-sh/uv:python3.12-bookworm-slim \
+      #   BASE_IMAGE=docker.m.daocloud.io/library/python:3.12-slim \
+      #   docker compose build
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:python3.12-bookworm-slim}
+        BASE_IMAGE: ${BASE_IMAGE:-python:3.12-slim}
+    image: mindmap-x
+    ports:
+      - "8740:8740"
+    # .env 可选：compose 会把其中变量注入容器环境（无文件不报错）
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - mindmap-var:/app/var
+      # 想直接翻数据文件（db / 聊天归档）可改 bind mount：- ./var:/app/var
+    restart: unless-stopped
+
+volumes:
+  mindmap-var:

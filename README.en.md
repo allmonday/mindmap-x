@@ -83,6 +83,25 @@ Folding is **server-persisted view state**: it never touches the node's modified
 
 ## Quick Start
 
+### Docker (recommended)
+
+```bash
+cp .env.example .env   # optional: model config for the in-page agent; skip to use canvas-only
+docker compose up -d   # → http://localhost:8740
+```
+
+- All state (SQLite / chat archives / agent sessions) lives in the `mindmap-var` named volume: `down` keeps it, `down -v` wipes it;
+- The image builds the frontend and runs DB migrations on startup — pull a newer image, restart, and the schema upgrades itself;
+- If pulling base images times out (e.g. on restricted networks), build via a mirror:
+
+```bash
+NODE_IMAGE=docker.m.daocloud.io/library/node:22-alpine \
+BASE_IMAGE=ghcr.m.daocloud.io/astral-sh/uv:python3.12-bookworm-slim \
+docker compose build
+```
+
+### From source
+
 Requirements: Python ≥ 3.12, Node ^20.19 || ≥22.12 (to build the frontend).
 
 ```bash
@@ -155,12 +174,11 @@ tests/                    # pytest (in-memory SQLite, isolated per test)
 - Single-user by design; no multi-user real-time collaboration
 - SQLite single-process storage (`var/mindmap.db`)
 - No XMind / OPML import-export — the outline text protocol is the only exchange format today
-- No Docker / containerized deployment
 
 ## Roadmap
 
 - [ ] Import/export: XMind / OPML / FreeMind
-- [ ] One-command Docker deployment
+- [x] One-command Docker deployment (`docker compose up -d`)
 - [ ] Multi-user collaboration (tree-level OT / CRDT)
 - [ ] Agent awareness of user view state (e.g. the currently focused subtree) — co-editing granularity refined from "tree" to "attention"
 

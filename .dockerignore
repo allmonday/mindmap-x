@@ -1,0 +1,10 @@
+# 压缩 build context + 防本地产物/密钥混入镜像
+.git
+.venv
+var/
+fe/node_modules
+src/static
+.env
+tests/
+scripts/
+docs/

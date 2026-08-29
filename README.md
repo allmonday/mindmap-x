@@ -82,6 +82,25 @@ Agent 改树 ──MCP/GraphQL──▶ 同一条服务端链路，节点带 act
 
 ## 快速开始
 
+### Docker（推荐）
+
+```bash
+cp .env.example .env   # 可选：配置页内 Agent 的模型；不配则画布功能完整
+docker compose up -d   # → http://localhost:8740
+```
+
+- 数据（SQLite / 聊天归档 / Agent 会话）都在 named volume `mindmap-var`：`down` 不丢，`down -v` 才清空；
+- 镜像内置前端构建与数据库迁移：升级镜像后重启即自动演进 schema；
+- 国内网络拉取基础镜像超时的话，经镜像站构建：
+
+```bash
+NODE_IMAGE=docker.m.daocloud.io/library/node:22-alpine \
+BASE_IMAGE=ghcr.m.daocloud.io/astral-sh/uv:python3.12-bookworm-slim \
+docker compose build
+```
+
+### 从源码运行
+
 环境要求：Python ≥ 3.12，Node ^20.19 || ≥22.12（构建前端）。
 
 ```bash
@@ -154,12 +173,11 @@ tests/                    # pytest（in-memory SQLite，每测独立库）
 - 单用户设计，无多人实时协同
 - SQLite 单进程存储（`var/mindmap.db`）
 - 无 XMind / OPML 导入导出——outline 文本协议是当前唯一的交换格式
-- 无 Docker / 容器化部署
 
 ## Roadmap
 
 - [ ] 导入导出：XMind / OPML / FreeMind
-- [ ] Docker 一键部署
+- [x] Docker 一键部署（`docker compose up -d`）
 - [ ] 多人协同（树级 OT / CRDT）
 - [ ] Agent 感知用户视图态（如当前聚焦的子树），协同粒度从"树"细化到"注意力"
 
