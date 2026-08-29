@@ -169,7 +169,7 @@ async def test_expand_all(session_factory, seeded_map):
         assert all(n.collapsed is False for n in nodes)  # 全部展开
         # 视图操作不改变修改标记与时间戳
         assert all(n.updated_by == "human" for n in nodes if n.display_id == 1)
-        assert m.version == 4  # 两次折叠 + 一次 expand
+        assert m.version == 1  # 收放是视图态：不递增 version（两次折叠 + expand 都不动）
 
 
 # ── set_fold_level ────────────────────────────────────────────────────
@@ -182,9 +182,9 @@ async def test_set_fold_level_folds_by_depth(session_factory, seeded_map):
     q = subscribe(100)
     try:
         m = await mm.set_fold_level(100, 2, actor="human")
-        assert m.version == 3  # seed 1 + update_node + fold
+        assert m.version == 2  # 仅 update_node 计数；fold 是视图态不递增
         evt = q.get_nowait()
-        assert evt["action"] == "folded_to_level" and evt["version"] == 3
+        assert evt["action"] == "folded_to_level" and evt["version"] == 2  # 仍广播（同 version）
         async with session_factory() as s:
             nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
             # root(d1) 展开、a(d2, 有孩子) 折叠、a1(d3, 叶子) 不折叠
@@ -201,7 +201,7 @@ async def test_set_fold_level_level_eq_depth_expands_all(session_factory, seeded
     await mm.update_node(100, 1, collapsed=True, actor="human")
     await mm.update_node(100, 2, collapsed=True, actor="human")
     m = await mm.set_fold_level(100, 3)  # level = 树深 → 等价全展开
-    assert m.version == 4
+    assert m.version == 1  # 折叠与展开都是视图态，version 纹丝不动
     async with session_factory() as s:
         nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
         assert all(n.collapsed is False for n in nodes)
@@ -209,11 +209,11 @@ async def test_set_fold_level_level_eq_depth_expands_all(session_factory, seeded
 
 async def test_set_fold_level_noop(session_factory, seeded_map):
     m1 = await mm.set_fold_level(100, 2)
-    assert m1.version == 2
+    assert m1.version == 1
     q = subscribe(100)
     try:
         m2 = await mm.set_fold_level(100, 2)  # 已是目标态
-        assert m2.version == 2  # version 不动
+        assert m2.version == 1  # version 不动
         assert q.empty()  # 不广播
     finally:
         unsubscribe(100, q)
@@ -227,7 +227,7 @@ async def test_set_fold_level_multi_branch_depth(session_factory, seeded_map):
     await mm.add_node(100, 4, "b1")  # #5 d3
     await mm.add_node(100, 5, "b2")  # #6 d4
     m = await mm.set_fold_level(100, 3)
-    assert m.version == 5  # 3 次 add + 1 次 fold
+    assert m.version == 4  # 仅 3 次 add 计数；fold 是视图态不递增
     async with session_factory() as s:
         nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
         state = {n.display_id: n.collapsed for n in nodes}

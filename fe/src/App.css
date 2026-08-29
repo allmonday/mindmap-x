@@ -374,6 +374,18 @@ body.chat-resizing {
   white-space: nowrap;
 }
 .map-title .ver { color: var(--ink-3); font-size: 12px; }
+/* v{N} 角标 = 版本历史入口（map-title 整体 pointer-events:none，此处局部恢复，同 crumbs 法） */
+.map-title button.ver {
+  pointer-events: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.map-title button.ver:hover { color: var(--ink); text-decoration: underline; }
 
 /* 聚焦面包屑：map-title 整体 pointer-events:none，此处局部恢复可点。
    容器不设上限、每项 flex-shrink:0 不收缩——完整显示全部路径，不截断不消失 */
@@ -406,11 +418,12 @@ button.crumb:hover { color: var(--ink); }
 /* 画布左上角工具列：标题正下方，纵向排列（布局切换 / 全部展开） */
 .canvas-tools {
   position: absolute;
-  top: 58px;
+  top: 58px; /* 标题行下方 */
   left: 16px;
   z-index: 4;
   display: flex;
-  flex-direction: column;
+  flex-direction: row; /* 左右排布：布局切换 + 全部展开 + 折叠下拉一行 */
+  align-items: center;
   gap: 8px;
 }
 .canvas-tools .btn {
@@ -428,43 +441,34 @@ button.crumb:hover { color: var(--ink); }
   width: auto;
   height: 28px;
   padding: 0 6px;
-  display: block;
+  display: inline-flex;
+  align-items: center;
   font-size: 12px;
   line-height: 1;
   appearance: none;
   -webkit-appearance: none;
 }
 
-/* 布局切换 loading 遮罩 */
-.rf-loading {
-  position: absolute;
-  inset: 0;
-  z-index: 7;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: rgba(247, 247, 245, 0.7);
-  backdrop-filter: blur(2px);
-  color: var(--ink-2);
-  font-size: 13px;
-  animation: rf-fade-in 0.15s ease;
-}
-.rf-loading-spinner {
-  width: 26px;
-  height: 26px;
-  border: 3px solid var(--hairline);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: rf-spin 0.8s linear infinite;
-}
-@keyframes rf-spin { to { transform: rotate(360deg); } }
-@keyframes rf-fade-in { from { opacity: 0; } }
-
 /* ── 以下为 React Flow 画布区（用户要求保持原样，不随 Notion 主题走） ── */
 
 .rf-minimap { background: #f8fafc; }
+
+/* 缩放控件（Controls）：默认按钮 26×26 太难点，放大到 32×32；白底圆角贴 Notion 风。
+   选择器带 .rf-wrap 前缀抬高特异性——同特异性下加载顺序会让 React Flow 自带样式赢 */
+.rf-wrap .react-flow__controls {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+.rf-wrap .react-flow__controls-button {
+  width: 32px;
+  height: 32px;
+  background: #fff;
+  border-bottom: 1px solid var(--hairline);
+}
+.rf-wrap .react-flow__controls-button:hover { background: var(--bg-hover); }
+.rf-wrap .react-flow__controls-button svg { width: 15px; height: 15px; fill: var(--ink-2); }
 
 /* React Flow custom node */
 .rf-node {
@@ -681,3 +685,107 @@ button.crumb:hover { color: var(--ink); }
   font-size: 13px;
   background: var(--bg);
 }
+
+/* ── 版本历史面板（时间线 + diff 两栏）───────────────────── */
+.modal-body.rev { width: min(760px, 94vw); }
+/* 预览 Tab 激活：加宽弹窗给画布（宽树 fit-to-width 的缩放比直接受益） */
+.modal-body.rev.wide { width: min(1080px, 94vw); }
+.rev-cols { display: flex; gap: 14px; min-height: 200px; }
+.rev-list {
+  width: 250px;
+  flex-shrink: 0;
+  max-height: 56vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rev-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  grid-template-areas: 'ver actor action' 'time time time' 'detail detail detail';
+  align-items: center;
+  gap: 2px 6px;
+  text-align: left;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.rev-row:hover { background: var(--bg-hover); }
+.rev-row.sel { border-color: var(--accent); }
+.rev-row.cur { border-style: dashed; } /* 当前版本可选（看 diff/预览），回滚按钮另有禁用 */
+.rev-ver { grid-area: ver; font-weight: 600; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.rev-actor { grid-area: actor; width: 7px; height: 7px; border-radius: 50%; }
+.rev-actor.human { background: #339a6c; }
+.rev-actor.agent { background: var(--accent); }
+.rev-action { grid-area: action; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rev-cur-badge {
+  grid-area: action;
+  justify-self: end;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.rev-time { grid-area: time; color: var(--ink-3); font-size: 11px; }
+.rev-detail {
+  grid-area: detail;
+  color: var(--ink-3);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rev-diff { flex: 1; min-width: 0; max-height: 56vh; overflow-y: auto; }
+.rev-diff-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.rev-row-line { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 12.5px; }
+.rev-row-line.title { color: var(--ink-2); }
+.rev-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.rev-badge.add { background: rgba(235, 87, 87, 0.1); color: var(--danger); }        /* 回滚将删除（警示） */
+.rev-badge.restore { background: rgba(51, 154, 108, 0.12); color: #1f7a55; }        /* 回滚将恢复 */
+.rev-badge.chg { background: rgba(35, 131, 226, 0.1); color: var(--accent); }
+.rev-badge.mov, .rev-badge.fold { background: var(--bg-hover); color: var(--ink-2); }
+.rev-node { flex-shrink: 0; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--ink-3); }
+.rev-node-content { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rev-empty { color: var(--ink-3); font-size: 12.5px; padding: 12px 4px; }
+
+/* 版本面板右栏：Tab 头 + 只读快照预览 */
+.rev-pane-head { margin-bottom: 8px; } /* 只放 Tab Toggle；diff 标题另起一行（见 .rev-diff-title） */
+.rev-tabs { display: inline-flex; }
+.rev-tab {
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.rev-tab:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.rev-tab + .rev-tab { border-left: none; border-radius: 0 var(--radius) var(--radius) 0; }
+.rev-tab.active { background: var(--bg-hover); color: var(--ink); font-weight: 600; }
+.rev-preview {
+  flex: 1;
+  min-height: 320px;
+  max-height: 56vh;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: #fbfbfa;
+}
+.rev-preview-inner { position: relative; }
+.rev-preview-edges { position: absolute; inset: 0; }
+.rev-preview-edges path { stroke: #94a3b8; stroke-width: 2; fill: none; }
+.rev-preview .rf-node { cursor: default; pointer-events: none; }
+.rev-preview .rf-node:hover { box-shadow: none; }
+.rev-preview .rf-label { font-size: 12px; line-height: 17px; }

@@ -1,6 +1,6 @@
 // REST 封装：浏览器端所有操作显式声明 actor='human'（Agent 端默认 'agent'）
 // 节点 ID 参数均为 map 内 display_id（每图从 1 起）
-import type { MapDetail, MapSummary, NodeDTO, OutlineMode } from './types'
+import type { MapDetail, MapSummary, NodeDTO, OutlineMode, RevisionDetail, RevisionSummary } from './types'
 
 const BASE = '/api/mindmap_service'
 
@@ -36,6 +36,11 @@ export const api = {
     call<MapDetail>('set_fold_level', { map_id, level, actor: 'human' }),
   applyOutline: (map_id: number, outline: string, mode: OutlineMode) =>
     call<MapDetail>('apply_outline', { map_id, outline, mode, actor: 'human' }),
+  listRevisions: (map_id: number) => call<RevisionSummary[]>('list_revisions', { map_id }),
+  getRevision: (map_id: number, version: number) =>
+    call<RevisionDetail>('get_revision', { map_id, version }),
+  restoreRevision: (map_id: number, version: number) =>
+    call<MapDetail>('restore_revision', { map_id, version, actor: 'human' }),
 }
 
 // 聊天归档（清除 context 后可点击回看的只读历史；GET REST，非 RPC）

@@ -18,11 +18,22 @@ import asyncio
 import json
 import os
 import re
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from src.service.mindmap.events import drain_pending
+
+
+def _utc_iso(s: str) -> str:
+    """归档时间统一为 UTC aware ISO。
+
+    旧归档的 created_at 是 naive 服务器本地时间（历史约定）——astimezone()
+    按服务器时区视为本地再转 UTC，显示值不变；新归档已带 offset 原样返回。
+    """
+    dt = datetime.fromisoformat(s)
+    return dt.isoformat() if dt.tzinfo else dt.astimezone().isoformat()
 
 
 def _load_dotenv(path: str = ".env") -> None:
@@ -118,13 +129,12 @@ def _archive_current(map_id: int) -> dict | None:
 
     必须先归档再清 session，保证数据不丢；文件名 = 归档 id（时间戳，可排序）。
     """
-    from datetime import datetime
-
     messages = _history_payload(map_id)
     if not messages:
         return None
-    archive_id = f"chat_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    doc = {"id": archive_id, "created_at": datetime.now().isoformat(timespec="seconds"), "messages": messages}
+    now = datetime.now(timezone.utc)  # 归档时间统一 UTC（服务器时区无关）
+    archive_id = f"chat_{now.strftime('%Y%m%d-%H%M%S')}"
+    doc = {"id": archive_id, "created_at": now.isoformat(timespec="seconds"), "messages": messages}
     d = os.path.join(ARCHIVE_DIR, f"map{map_id}")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, f"{archive_id}.json"), "w", encoding="utf-8") as f:
@@ -170,7 +180,7 @@ def _archive_list(map_id: int) -> list[dict]:
         out.append(
             {
                 "id": doc["id"],
-                "created_at": doc["created_at"],
+                "created_at": _utc_iso(doc["created_at"]),
                 "count": len(doc["messages"]),
                 "preview": first_user[:40] + "…" if len(first_user) > 40 else first_user,
             }
@@ -186,7 +196,9 @@ def _archive_read(map_id: int, archive_id: str) -> dict | None:
     if not os.path.isfile(path):
         return None
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        doc = json.load(f)
+    doc["created_at"] = _utc_iso(doc["created_at"])  # 旧归档 naive → UTC，读取口径与列表一致
+    return doc
 
 
 @router.get("/api/chat/archives")

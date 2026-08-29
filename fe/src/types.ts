@@ -35,3 +35,38 @@ export interface MapDetail {
 }
 
 export type OutlineMode = 'merge' | 'replace'
+
+// ── 版本快照（map_revision）──
+export interface RevisionNode {
+  display_id: number
+  parent: number | null // 父节点 display_id（根为 null）
+  content: string
+  position: number
+  collapsed: boolean
+  updated_by: 'human' | 'agent'
+  updated_at: string // ISO
+}
+export interface RevisionSnapshot {
+  title: string
+  nodes: RevisionNode[]
+}
+export interface RevisionSummary {
+  id: number
+  map_id: number
+  version: number
+  action: string
+  actor: 'human' | 'agent'
+  detail: string | null
+  created_at: string
+}
+export interface RevisionDetail extends RevisionSummary {
+  snapshot: RevisionSnapshot
+}
+
+// 前端本地 diff（选中版本 vs 当前树）
+export type DiffKind = 'added' | 'removed' | 'changed' | 'moved' | 'folded'
+export interface DiffRow {
+  display_id: number
+  kind: DiffKind
+  content: string
+}

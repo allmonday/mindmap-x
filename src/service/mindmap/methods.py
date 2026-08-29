@@ -28,7 +28,7 @@ from sqlalchemy import delete
 from sqlmodel import select
 
 from src.db import async_session
-from src.models import Map, Node
+from src.models import Map, MapRevision, Node
 from src.service.mindmap.events import drain_pending, publish_change
 
 _LINE_RE = re.compile(r"^-\s*(?:\[id:(\d+)\]\s*)?(.*)$")
@@ -132,6 +132,92 @@ async def _descendant_ids(session, node: Node) -> set[int]:
     return ids
 
 
+# ── 版本快照（方案 A：快照表） ─────────────────────────────────────────
+
+
+async def _build_snapshot(session, m: Map) -> dict:
+    """在当前事务内读取 post-mutation 整树，序列化为 display_id 语义的 JSON。
+
+    SELECT 会 autoflush 调用方挂起的全部变更（INSERT / UPDATE / ORM
+    DELETE 一并下发），因此读到的一定是本次 mutation 的最终态——这正是
+    apply_outline 中途多次 flush 之后仍正确的机制（本函数永远在全部
+    变更暂存完毕后才被 _commit_with_revision 调用）。
+    parent 用 display_id 引用（restore 重建后全局 id 必变，display_id
+    跨版本稳定，diff/回滚只能用它对齐）；前提：同图节点的 parent_id 都在
+    本图内（所有写路径保证），故直接索引，数据异常时 KeyError 显式失败。
+    updated_at 序列化为 ISO 字符串（JSON 无 datetime）。
+    """
+    nodes = (
+        await session.exec(
+            select(Node).where(Node.map_id == m.id).order_by(Node.display_id)
+        )
+    ).all()
+    display_of = {n.id: n.display_id for n in nodes}
+    return {
+        "title": m.title,
+        "nodes": [
+            {
+                "display_id": n.display_id,
+                "parent": None if n.parent_id is None else display_of[n.parent_id],
+                "content": n.content,
+                "position": n.position,
+                "collapsed": n.collapsed,
+                "updated_by": n.updated_by,
+                # DB 读回的时间被 SQLite 剥掉 tzinfo（naive），in-session 新建的是 aware：
+                # naive 视为 UTC 补 'Z'，保证快照内时间字符串都带明确时区
+                "updated_at": n.updated_at.isoformat() + ("" if n.updated_at.tzinfo else "Z"),
+            }
+            for n in nodes
+        ],
+    }
+
+
+async def _commit_with_revision(
+    session,
+    m: Map,
+    *,
+    action: str,
+    actor: str,
+    detail: str | None = None,
+    version: int | None = None,
+) -> None:
+    """mutation 统一收口：version 前进 → 写整树快照 → 提交 → 广播。
+
+    - 快照 insert 与树变更共用本 session 的一个事务一次 commit——外部观察者
+      只见"全部可见"或"全部不可见"，不存在 version 跳了快照缺行的中间态
+      （WS 兜底轮询独立连接按事务原子性同样安全）
+    - publish_change 在 commit 之后调用（订阅者重拉必见已提交状态）
+    - version 传值则直接赋值（仅 create_map 传 1），否则 +1
+    - refresh 不在此做——各调用方需要的对象不同（node / m / 不需要），
+      且 expire_on_commit=False 使 commit 后实体本就可读
+    - 任何一步抛异常 → 不 commit → 树变更一并回滚（快照不会成为半吊子）
+    """
+    m.version = version if version is not None else m.version + 1
+    snapshot = await _build_snapshot(session, m)  # SELECT 触发 autoflush → 最终态
+    session.add(
+        MapRevision(
+            map_id=m.id, version=m.version, action=action,
+            actor=actor, detail=detail, snapshot=snapshot,
+        )
+    )
+    session.add(m)
+    await session.commit()
+    publish_change(m.id, m.version, action, actor, detail=detail)
+
+
+async def _commit_view_state(session, m: Map, *, action: str, actor: str) -> None:
+    """收放类视图态提交：不递增 version、不落快照、不入 Agent 通知缓冲，仅 WS 广播。
+
+    折叠不改变任何内容信息（README：视图状态），高频且不可回滚价值——进版本
+    历史只会灌水（实测约 3/4 的快照是收放产生的）。广播仍发：多端（另一个
+    浏览器页签 / 外部 Agent 客户端）需要感知视图态变化并重拉。不传 detail：
+    视图态不值得注入页内 Agent 的上下文（与 expand_all 既有语义一致）。
+    """
+    session.add(m)
+    await session.commit()
+    publish_change(m.id, m.version, action, actor)
+
+
 # ── queries ───────────────────────────────────────────────────────────
 
 
@@ -177,10 +263,8 @@ async def create_map(title: str, actor: str = "agent") -> Map:
                 updated_by=actor,
             )
         )
-        m.version = 1
-        await session.commit()
+        await _commit_with_revision(session, m, version=1, action="map_created", actor=actor)
         await session.refresh(m)
-        publish_change(m.id, m.version, "map_created", actor)
         return m
 
 
@@ -215,14 +299,11 @@ async def add_node(
             updated_by=actor,
         )
         session.add(node)
-        m.version += 1
-        session.add(m)
-        await session.commit()
-        await session.refresh(node)
-        publish_change(
-            map_id, m.version, "node_added", actor,
+        await _commit_with_revision(
+            session, m, action="node_added", actor=actor,
             detail=f"add_node #{node.display_id}「{content}」（父 #{parent_id}）",
         )
+        await session.refresh(node)
         return node
 
 
@@ -233,33 +314,40 @@ async def update_node(
     collapsed: bool | None = None,
     actor: str = "agent",
 ) -> Node:
-    """部分更新节点（content / collapsed），刷新 updated_by 与 updated_at。
+    """部分更新节点（content / collapsed）。
 
     node_id 语义为 map 内 display_id。
+    - content 变更：内容修改——刷新 updated_by/updated_at，进版本历史（快照）
+    - 仅 collapsed：视图状态——不递增 version、不落快照、不入 Agent 通知缓冲，
+      也不刷新 updated_by/updated_at（与 expand_all / set_fold_level 语义一致；
+      之前此处会刷新，导致"Agent 修改高亮"误亮，与 README 声明不符）
+    - 两者都传：按内容变更处理（一次快照反映最终态），折叠随快照落盘
+    - 空操作（collapsed 与当前一致且未传 content）：version 不动、不广播
     """
     async with async_session() as session:
         node = await _get_node(session, map_id, node_id)
         m = await _get_map(session, map_id)
+        content_changed = content is not None
+        fold_changed = collapsed is not None and collapsed != node.collapsed
+        if not content_changed and not fold_changed:
+            return node  # 空操作：version/广播/快照全不动
         if content is not None:
             node.content = content
         if collapsed is not None:
             node.collapsed = collapsed
-        node.updated_by = actor
-        node.updated_at = _now()
-        m.version += 1
-        session.add(node)
-        session.add(m)
-        await session.commit()
+        if content_changed:
+            node.updated_by = actor
+            node.updated_at = _now()
+            changes: list[str] = [f"内容→「{content}」"]
+            if collapsed is not None:
+                changes.append("折叠" if collapsed else "展开")
+            await _commit_with_revision(
+                session, m, action="node_updated", actor=actor,
+                detail=f"update_node #{node_id} {'，'.join(changes)}",
+            )
+        else:
+            await _commit_view_state(session, m, action="node_updated", actor=actor)
         await session.refresh(node)
-        changes: list[str] = []
-        if content is not None:
-            changes.append(f"内容→「{content}」")
-        if collapsed is not None:
-            changes.append("折叠" if collapsed else "展开")
-        publish_change(
-            m.id, m.version, "node_updated", actor,
-            detail=f"update_node #{node_id} {'，'.join(changes)}",
-        )
         return node
 
 
@@ -295,15 +383,11 @@ async def move_node(
         node.position = position
         node.updated_by = actor
         node.updated_at = _now()
-        m.version += 1
-        session.add(node)
-        session.add(m)
-        await session.commit()
-        await session.refresh(node)
-        publish_change(
-            m.id, m.version, "node_moved", actor,
+        await _commit_with_revision(
+            session, m, action="node_moved", actor=actor,
             detail=f"move_node #{node_id} → 父 #{new_parent_id}",
         )
+        await session.refresh(node)
         return node
 
 
@@ -322,11 +406,8 @@ async def delete_node(map_id: int, node_id: int, actor: str = "agent") -> bool:
             n = await session.get(Node, nid)
             if n is not None:
                 await session.delete(n)
-        m.version += 1
-        session.add(m)
-        await session.commit()
-        publish_change(
-            m.id, m.version, "node_deleted", actor,
+        await _commit_with_revision(
+            session, m, action="node_deleted", actor=actor,
             detail=f"delete_node #{node_id}（含 {len(ids) - 1} 个后代）",
         )
         return True
@@ -343,6 +424,8 @@ async def delete_map(map_id: int, actor: str = "agent") -> bool:
         m = await _get_map(session, map_id)
         next_version = m.version + 1  # 图即将不存在，version 仅用于事件单调
         await session.execute(delete(Node).where(Node.map_id == map_id))
+        # 快照随图清空：离开 map 的快照只是一堆无主 JSON（与聊天归档"留作历史"不同）
+        await session.execute(delete(MapRevision).where(MapRevision.map_id == map_id))
         await session.delete(m)
         await session.commit()
     # 先 commit 再广播：订阅者收到事件后重拉 get_map 应当看到 404
@@ -355,9 +438,10 @@ async def expand_all(map_id: int, actor: str = "agent") -> Map:
     """展开全部节点（collapsed=False），单事务批量更新。
 
     语义注意：折叠是视图状态而非内容修改 —— 不刷新 updated_by/updated_at
-    （否则 Agent 修改角标会误亮），但 version 递增以驱动客户端刷新。
-    全图已展开时是空操作：不递增 version（version 是变更信号，无变更不 bump，
-    否则标题 v{N} 白跳）。get_tree 不感知 collapsed，因此不向 Agent 通知。
+    （否则 Agent 修改角标会误亮），也不递增 version、不落快照（收放不进
+    版本历史，实测约 3/4 快照是收放灌的水），仅 WS 广播驱动多端重拉。
+    全图已展开时是空操作：version 不动、不广播。get_tree 不感知
+    collapsed，因此不向 Agent 通知。
     """
     async with async_session() as session:
         m = await _get_map(session, map_id)
@@ -367,16 +451,11 @@ async def expand_all(map_id: int, actor: str = "agent") -> Map:
             )
         ).all()
         if not folded:
-            return m  # 空操作：version 不动、不广播、不入 Agent 通知缓冲
+            return m  # 空操作：version 不动、不落快照、不广播、不入 Agent 通知缓冲
         for n in folded:
             n.collapsed = False
             session.add(n)
-        m.version += 1
-        session.add(m)
-        await session.commit()
-        publish_change(
-            map_id, m.version, "expanded_all", actor,
-        )
+        await _commit_view_state(session, m, action="expanded_all", actor=actor)
         return m
 
 
@@ -391,7 +470,8 @@ async def set_fold_level(map_id: int, level: int, actor: str = "agent") -> Map:
     level ≥ 树深时全部节点目标态为 False，等价于 expand_all。
 
     视图状态语义与 expand_all 一致：不刷新 updated_by/updated_at
-    （否则 Agent 修改角标会误亮），但 version 递增以驱动客户端刷新。
+    （否则 Agent 修改角标会误亮），也不递增 version、不落快照（收放不进
+    版本历史），仅 WS 广播驱动多端重拉。
     无任何节点需要变化时是空操作：version 不动、不广播。get_tree 不感知
     collapsed，因此不向 Agent 通知（不传 detail）。
     """
@@ -433,11 +513,8 @@ async def set_fold_level(map_id: int, level: int, actor: str = "agent") -> Map:
                 session.add(n)
                 changed = True
         if not changed:
-            return m  # 空操作：version 不动、不广播、不入 Agent 通知缓冲
-        m.version += 1
-        session.add(m)
-        await session.commit()
-        publish_change(map_id, m.version, "folded_to_level", actor)
+            return m  # 空操作：version 不动、不落快照、不广播、不入 Agent 通知缓冲
+        await _commit_view_state(session, m, action="folded_to_level", actor=actor)
         return m
 
 
@@ -538,12 +615,140 @@ async def apply_outline(
             pos_counter[node.parent_id] = base + 1
             session.add(node)
 
-        m.version += 1
-        session.add(m)
-        await session.commit()
-        await session.refresh(m)
-        publish_change(
-            map_id, m.version, "outline_applied", actor,
+        await _commit_with_revision(
+            session, m, action="outline_applied", actor=actor,
             detail=f"apply_outline（mode={mode}，涉及 {len(entries)} 行）",
         )
+        await session.refresh(m)
+        return m
+
+
+# ── 版本快照：查询与回滚 ───────────────────────────────────────────────
+
+
+async def list_revisions(map_id: int) -> list[MapRevision]:
+    """版本时间线：该图全部快照，version 降序（最新在前）。"""
+    async with async_session() as session:
+        await _get_map(session, map_id)
+        rows = (
+            await session.exec(
+                select(MapRevision)
+                .where(MapRevision.map_id == map_id)
+                .order_by(MapRevision.version.desc())
+            )
+        ).all()
+        return list(rows)
+
+
+async def get_revision(map_id: int, version: int) -> MapRevision:
+    """取某版本的整树快照。"""
+    async with async_session() as session:
+        await _get_map(session, map_id)
+        rev = (
+            await session.exec(
+                select(MapRevision).where(
+                    MapRevision.map_id == map_id, MapRevision.version == version
+                )
+            )
+        ).first()
+        if rev is None:
+            raise ValueError(f"map {map_id} 没有版本 v{version} 的快照")
+        return rev
+
+
+def _validate_snapshot(map_id: int, version: int, snap: dict) -> list[dict]:
+    """快照结构校验：nodes 非空、display_id 唯一、恰一个根、父引用存在、无环/无孤岛。
+
+    快照由 _build_snapshot 产生时天然满足；校验是防手改 DB / 未来格式演化的
+    廉价护栏（坏数据宁可 400 也不静默建出一棵畸形树）。
+    """
+    nodes = snap.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        raise ValueError(f"map {map_id} v{version} 快照数据异常：nodes 为空")
+    ids = [n["display_id"] for n in nodes]
+    if len(set(ids)) != len(ids):
+        raise ValueError(f"map {map_id} v{version} 快照数据异常：display_id 重复")
+    by = {n["display_id"]: n for n in nodes}
+    roots = [n for n in nodes if n["parent"] is None]
+    if len(roots) != 1:
+        raise ValueError(f"map {map_id} v{version} 快照数据异常：根节点数 ≠ 1")
+    children: dict[int, list[int]] = {}
+    for n in nodes:
+        if n["parent"] is None:
+            continue
+        if n["parent"] not in by:
+            raise ValueError(
+                f"map {map_id} v{version} 快照数据异常：#{n['display_id']} 的父 #{n['parent']} 不存在"
+            )
+        children.setdefault(n["parent"], []).append(n["display_id"])
+    seen: set[int] = set()
+    stack = [roots[0]["display_id"]]  # 自根可达必须覆盖全部（防环/孤岛）
+    while stack:
+        cur = stack.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        stack.extend(children.get(cur, ()))
+    if len(seen) != len(nodes):
+        raise ValueError(f"map {map_id} v{version} 快照数据异常：存在环或游离节点")
+    return nodes
+
+
+async def restore_revision(map_id: int, version: int, actor: str = "agent") -> Map:
+    """回滚到指定版本的快照：整树重建为该版本状态（节点编号 display_id 保留）。
+
+    语义：回滚本身是一次新 mutation —— version 继续前进、追加一个
+    action='revision_restored' 的新快照，历史快照全部保留（因此可以再
+    "回滚"到更晚的版本 = 前滚；撤销回滚 = 回到回滚前的版本即可）。
+    title 随快照恢复；节点 updated_by/updated_at 记为本次回滚的 actor 与
+    当前时间（快照里的历史值仅作展示——写入时间戳必须反映真实写入时刻，
+    且不回写可使前端 diff 忽略这两字段后"回滚后 == vN"严格成立）。
+    """
+    async with async_session() as session:
+        m = await _get_map(session, map_id)
+        rev = (
+            await session.exec(
+                select(MapRevision).where(
+                    MapRevision.map_id == map_id, MapRevision.version == version
+                )
+            )
+        ).first()
+        if rev is None:
+            raise ValueError(f"map {map_id} 没有版本 v{version} 的快照")
+        snap = rev.snapshot or {}
+        snap_nodes = _validate_snapshot(map_id, version, snap)
+
+        # 清空现有节点（core 批量，与 delete_map 同款）。同事务内先删后建：
+        # INSERT 执行时旧行已在本事务删除，UNIQUE(map_id, display_id) 无冲突。
+        await session.execute(delete(Node).where(Node.map_id == map_id))
+
+        # 两遍重建（免拓扑排序）：先全部落库（parent_id=None）flush 拿新全局
+        # id，再按 display_id→全局 id 映射接父子。
+        by_display: dict[int, Node] = {}
+        for sn in sorted(snap_nodes, key=lambda x: x["display_id"]):
+            node = Node(
+                map_id=map_id,
+                display_id=sn["display_id"],
+                parent_id=None,
+                content=sn["content"],
+                position=sn["position"],
+                collapsed=sn["collapsed"],
+                updated_by=actor,
+            )
+            session.add(node)
+            by_display[sn["display_id"]] = node
+        await session.flush()  # 分配新全局 id
+        for sn in snap_nodes:
+            if sn["parent"] is not None:
+                node = by_display[sn["display_id"]]
+                node.parent_id = by_display[sn["parent"]].id
+                session.add(node)
+
+        if snap.get("title"):
+            m.title = snap["title"]
+        await _commit_with_revision(
+            session, m, action="revision_restored", actor=actor,
+            detail=f"回滚到 v{version}（{rev.action}）",
+        )
+        await session.refresh(m)
         return m

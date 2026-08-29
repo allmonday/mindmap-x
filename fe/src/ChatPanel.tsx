@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import { chatApi, type ArchiveDoc, type ArchiveMeta } from './api'
-import { useI18n } from './i18n'
+import { fmtTime, useI18n } from './i18n'
 
 interface ChatMsg {
   role: 'user' | 'agent'
@@ -290,7 +290,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             <span className="chat-title">{view.kind === 'archives' ? t('chat.history') : t('chat.records')}</span>
             {view.kind === 'archive' && (
               <span className="chat-sub">
-                {archiveDoc ? new Date(archiveDoc.created_at).toLocaleString(locale, { hour12: false }) : ''}
+                {archiveDoc ? fmtTime(archiveDoc.created_at, locale) : ''}
               </span>
             )}
           </>
@@ -350,7 +350,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
               <span className="archive-preview" title={a.preview || undefined}>{a.preview || t('chat.noPreview')}</span>
               <span className="archive-meta">
                 {t('chat.archiveMeta', {
-                  time: new Date(a.created_at).toLocaleString(locale, { hour12: false }),
+                  time: fmtTime(a.created_at, locale),
                   count: a.count,
                 })}
               </span>

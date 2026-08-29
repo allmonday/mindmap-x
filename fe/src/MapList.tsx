@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
-import { useI18n } from './i18n'
+import { fmtTime, useI18n } from './i18n'
 import { LangSwitch } from './LangSwitch'
 import type { MapSummary } from './types'
 
@@ -78,7 +78,7 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
           <div key={m.id} className="card" onClick={() => confirmId === null && onOpen(m.id)}>
             <div className="card-title">{m.title}</div>
             <div className="card-meta">
-              v{m.version} · {new Date(m.created_at).toLocaleString(locale, { hour12: false })}
+              v{m.version} · {fmtTime(m.created_at, locale)}
             </div>
             {confirmId === m.id ? (
               <button className="card-del confirm" onClick={(e) => { e.stopPropagation(); void del(m.id) }}>

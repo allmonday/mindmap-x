@@ -16,7 +16,9 @@ import { ChatPanel } from './ChatPanel'
 import { useI18n, type I18nKey } from './i18n'
 import { LangSwitch } from './LangSwitch'
 import { layoutMap, type LNode, type LayoutMode } from './layout'
+import { RevisionPanel } from './RevisionPanel'
 import type { MapDetail, NodeDTO, OutlineMode } from './types'
+import { useAnimatedLayout } from './useAnimatedLayout'
 
 interface Props {
   mapId: number
@@ -199,6 +201,9 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
           title={n.collapsed ? t('node.expand') : t('node.collapse')}
           onClick={(e) => {
             e.stopPropagation()
+            // 折叠是视图操作，不算"要操作这个节点"的意图：取消进行中的 hover 计时，
+            // 点完后指针多半仍停在节点上，否则 0.5s 后操作按钮会自己弹出来
+            window.clearTimeout(hoverTimer.current)
             data.onToggleCollapse(lnode)
           }}
         >
@@ -288,6 +293,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [wsState, setWsState] = useState<'connecting' | 'live' | 'dead'>('connecting')
   const [error, setError] = useState<string | null>(null)
   const [outlineOpen, setOutlineOpen] = useState(false)
+  const [revOpen, setRevOpen] = useState(false)
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
   const [chatOpen, setChatOpen] = useState(false)
@@ -303,27 +309,20 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   }, [layoutMode])
   const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
 
-  // 切换布局形态 / 聚焦切换后节点坐标剧变，重新 fitView 才不会跑出视口
+  // 切换布局形态 / 聚焦切换后节点坐标剧变，重新 fitView 才不会跑出视口。
+  // 节点重排带 300ms 动画（useAnimatedLayout），fitView 等动画落定后再平滑飞过去
   useEffect(() => {
-    const t = setTimeout(() => rfRef.current?.fitView({ padding: 0.25, maxZoom: 1 }), 60)
+    const t = setTimeout(() => rfRef.current?.fitView({ padding: 0.25, maxZoom: 1, duration: 250 }), 320)
     return () => clearTimeout(t)
   }, [layoutMode, focusId])
 
-  // 切换是同步重排，节点瞬移会很突兀——用短暂遮罩盖住重排与 fitView 的过程
-  const [switching, setSwitching] = useState(false)
-  const toggleLayout = () => {
-    setSwitching(true)
-    setLayoutMode((m) => (m === 'balanced' ? 'right' : 'balanced'))
-    window.setTimeout(() => setSwitching(false), 300)
-  }
+  // 切换布局形态 / 聚焦：布局变化走动画，不再需要遮罩盖瞬移
+  const toggleLayout = () => setLayoutMode((m) => (m === 'balanced' ? 'right' : 'balanced'))
 
-  // 聚焦/切换/退出：与布局形态切换同款处理——遮罩盖住同步重排 + fitView
   const switchFocus = useCallback(
     (id: number | null) => {
       if (id === focusId) return
-      setSwitching(true)
       setFocusId(id)
-      window.setTimeout(() => setSwitching(false), 300)
     },
     [focusId],
   )
@@ -446,16 +445,25 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Esc 退聚焦）──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Esc 退出聚焦：不依赖节点选中（在通用守卫之外先行处理），但输入态/弹层打开时让位
+      // Esc 逐层退出：先关弹层（outline/版本面板），再退聚焦；
+      // 输入态（弹层内的编辑框等）让位给局部 Esc 处理
       if (e.key === 'Escape') {
         const el = document.activeElement
         const typing =
           el instanceof HTMLElement &&
           (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
-        if (focusId != null && !typing && !outlineOpen) switchFocus(null)
+        if (!typing && outlineOpen) {
+          setOutlineOpen(false)
+          return
+        }
+        if (!typing && revOpen) {
+          setRevOpen(false)
+          return
+        }
+        if (focusId != null && !typing) switchFocus(null)
         return
       }
-      if (editingId != null || outlineOpen || selectedId == null || !detail) return
+      if (editingId != null || outlineOpen || revOpen || selectedId == null || !detail) return
       // 焦点在任何输入元素上时快捷键一律失效（编辑框/聊天面板/outline 弹层）
       const el = document.activeElement
       if (
@@ -484,13 +492,16 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, editingId, outlineOpen, detail, mapId, focusId, switchFocus])
+  }, [selectedId, editingId, outlineOpen, revOpen, detail, mapId, focusId, switchFocus])
 
   // ── layout → React Flow nodes/edges ────────────────────────────────
   const layout = useMemo(
     () => (detail ? layoutMap(detail, layoutMode, focusId) : null),
     [detail, layoutMode, focusId],
   )
+  // 重排动画：动画期间逐帧给出节点位置（null = 静止，直接用布局终值）；
+  // 边由 React Flow 按节点位置实时重算，滑行中始终与节点贴合
+  const animPos = useAnimatedLayout(layout)
 
   const childCount = useMemo(() => {
     // 键为父节点 display_id（parent_id 是全局内部键，不能与 display_id 混用）
@@ -557,24 +568,27 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
   const rfNodes: MindNode[] = useMemo(() => {
     if (!layout) return []
-    return layout.all.map((lnode) => ({
-      id: String(lnode.node.display_id),
-      type: 'mind' as const,
-      position: { x: lnode.x, y: lnode.y - lnode.h / 2 },
-      width: lnode.w, // 供 MiniMap 等在 DOM 测量前使用（nodeHasDimensions）
-      height: lnode.h,
-      style: { width: lnode.w, height: lnode.h },
-      selected: lnode.node.display_id === selectedId,
-      data: {
-        lnode,
-        isLayoutRoot: lnode === layout.root, // 引用相等：all 里的根对象就是 layout.root
-        isEditing: lnode.node.display_id === editingId,
-        isAdding: lnode.node.display_id === addingId,
-        hasChildren: (childCount.get(lnode.node.display_id) ?? 0) > 0,
-        ...callbacks,
-      },
-    }))
-  }, [layout, selectedId, editingId, addingId, childCount, callbacks])
+    return layout.all.map((lnode) => {
+      const p = animPos?.get(lnode.node.display_id)
+      return {
+        id: String(lnode.node.display_id),
+        type: 'mind' as const,
+        position: { x: p?.x ?? lnode.x, y: (p?.y ?? lnode.y) - lnode.h / 2 },
+        width: lnode.w, // 供 MiniMap 等在 DOM 测量前使用（nodeHasDimensions）
+        height: lnode.h,
+        style: { width: lnode.w, height: lnode.h, opacity: p ? p.op : 1 },
+        selected: lnode.node.display_id === selectedId,
+        data: {
+          lnode,
+          isLayoutRoot: lnode === layout.root, // 引用相等：all 里的根对象就是 layout.root
+          isEditing: lnode.node.display_id === editingId,
+          isAdding: lnode.node.display_id === addingId,
+          hasChildren: (childCount.get(lnode.node.display_id) ?? 0) > 0,
+          ...callbacks,
+        },
+      }
+    })
+  }, [layout, animPos, selectedId, editingId, addingId, childCount, callbacks])
 
   const rfEdges: Edge[] = useMemo(() => {
     if (!layout) return []
@@ -651,7 +665,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               （面包屑在 .crumbs 上局部恢复 pointer-events:auto） */}
           <div className="map-title">
             <span className="name" title={detail.title}>{detail.title}</span>
-            <span className="ver">v{detail.version}</span>
+            <button
+              className="ver"
+              title={t('rev.open')}
+              aria-label={t('rev.open')}
+              onClick={() => setRevOpen(true)}
+            >
+              v{detail.version}
+            </button>
             {focusPath.length > 0 && (
               <span className="crumbs">
                 {focusPath.map((n, i) => {
@@ -682,7 +703,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           <div className="canvas-tools">
             <button
               className="btn"
-              disabled={switching}
               onClick={toggleLayout}
               title={layoutMode === 'balanced' ? t('layout.balanced.title') : t('layout.right.title')}
               aria-label={layoutMode === 'balanced' ? t('layout.balanced.aria') : t('layout.right.aria')}
@@ -754,14 +774,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               }}
             />
           </ReactFlow>
-
-          {/* 视图切换遮罩（布局形态/聚焦）：盖住同步重排 + fitView，揭开后已是新布局 */}
-          {switching && (
-            <div className="rf-loading">
-              <span className="rf-loading-spinner" />
-              <span>{t('editor.switching')}</span>
-            </div>
-          )}
         </div>
 
         {chatOpen && (
@@ -789,6 +801,15 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {revOpen && (
+        <RevisionPanel
+          mapId={mapId}
+          current={detail}
+          layoutMode={layoutMode}
+          onClose={() => setRevOpen(false)}
+        />
       )}
     </div>
   )

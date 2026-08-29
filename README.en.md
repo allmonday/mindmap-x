@@ -47,6 +47,7 @@ In-page agent chat
 | `create_map` / `add_node` / `update_node` / `move_node` / `delete_node` | Point operations: create / add / update / move / delete (with cycle detection) |
 | `delete_map` | Delete an entire map (all nodes included; broadcasts `map_deleted`, open clients return to the list) |
 | `expand_all` / `set_fold_level` | Batch view state: expand all / fold by level |
+| `list_revisions` / `get_revision` / `restore_revision` | Versioning: every content mutation snapshots the whole tree (folding etc. doesn't snapshot); timeline, diff between versions, one-click restore (restore itself is a new version — history is never lost) |
 | `apply_outline` | Bulk tree write via the outline protocol (below) |
 
 Interactive docs: `/docs` (REST OpenAPI), `/voyager` (GraphQL).
@@ -78,7 +79,7 @@ Human edits ──REST──▶ server (version+1, records detail)
 Agent edits ──MCP/GraphQL──▶ same server pipeline; nodes carry an actor marker
 ```
 
-Folding is **server-persisted view state**: it never touches the node's modified-by/modified-at fields (so agent-edit highlights don't false-fire), and a no-op neither bumps the version nor broadcasts. Focus drill-down is a pure client-side session state and never touches server data.
+Folding is **server-persisted view state**: it never touches the node's modified-by/modified-at fields (so agent-edit highlights don't false-fire), and it **stays out of version history** entirely (no version bump, no snapshot — about 3/4 of snapshot volume used to come from fold ops); it still broadcasts over WS so other clients sync the view. A no-op doesn't broadcast. Focus drill-down is a pure client-side session state and never touches server data.
 
 ## Quick Start
 

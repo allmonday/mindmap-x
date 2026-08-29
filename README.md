@@ -46,6 +46,7 @@
 | `create_map` / `add_node` / `update_node` / `move_node` / `delete_node` | 单点增删改移（含环检测） |
 | `delete_map` | 删除整张图（含全部节点；广播 `map_deleted`，打开中的客户端自动退回列表） |
 | `expand_all` / `set_fold_level` | 批量视图态：全展开 / 按层级收放 |
+| `list_revisions` / `get_revision` / `restore_revision` | 版本管理：每次内容修改落整树快照（收放等视图态不落），时间线查看、版本间 diff、一键回滚（回滚本身是新版本，历史不丢） |
 | `apply_outline` | 整树批量写入（outline 协议，见下） |
 
 交互式文档：`/docs`（REST OpenAPI）、`/voyager`（GraphQL）。
@@ -77,7 +78,7 @@
 Agent 改树 ──MCP/GraphQL──▶ 同一条服务端链路，节点带 actor 标记
 ```
 
-折叠是**服务端持久化的视图状态**：不刷新节点的修改人与时间戳（Agent 修改高亮不误亮），无实际变化时不递增 version、不广播。聚焦下钻则是纯前端会话态，不动服务端数据。
+折叠是**服务端持久化的视图状态**：不刷新节点的修改人与时间戳（Agent 修改高亮不误亮），也**不进版本历史**（不递增 version、不落快照——实测约 3/4 的快照体积曾来自收放操作），仅 WS 广播供多端同步视图；无实际变化时不广播。聚焦下钻则是纯前端会话态，不动服务端数据。
 
 ## 快速开始
 

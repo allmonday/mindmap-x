@@ -7,7 +7,13 @@
 from nexusx import UseCaseService, mutation, query
 from src.models import Resolver
 from src.service.mindmap import methods
-from src.service.mindmap.dtos import MapDetail, MapSummary, NodeDTO
+from src.service.mindmap.dtos import (
+    MapDetail,
+    MapSummary,
+    NodeDTO,
+    RevisionDetail,
+    RevisionSummary,
+)
 
 
 class MindmapService(UseCaseService):
@@ -37,6 +43,21 @@ class MindmapService(UseCaseService):
     async def get_tree(cls, map_id: int) -> str:
         """Agent 读法：整树缩进 outline 文本，节点带 [id:N] 锚点。"""
         return await methods.get_tree(map_id)
+
+    @query
+    async def list_revisions(cls, map_id: int) -> list[RevisionSummary]:
+        """版本时间线：某图全部快照，version 降序（最新在前）。
+        v{N} 角标点开的面板数据源；不含快照体（列表轻量）。
+        Agent 可用它审计"自己/用户上几轮各改了什么"。"""
+        revs = await methods.list_revisions(map_id)
+        return [RevisionSummary.model_validate(r) for r in revs]
+
+    @query
+    async def get_revision(cls, map_id: int, version: int) -> RevisionDetail:
+        """取某版本的整树快照（title + nodes 列表，节点带
+        display_id/parent/content/position/collapsed）。version 不存在时报错。"""
+        rev = await methods.get_revision(map_id, version)
+        return RevisionDetail.model_validate(rev)
 
     # ── mutations ─────────────────────────────────────────────────────
 
@@ -99,11 +120,23 @@ class MindmapService(UseCaseService):
 
     @mutation
     async def delete_map(cls, map_id: int, actor: str = "agent") -> bool:
-        """删除整张脑图（map + 全部节点），不可恢复。
+        """删除整张脑图（map + 全部节点 + 版本快照），不可恢复。
 
         删除后向仍打开该图的客户端广播 map_deleted（浏览器自动退回列表）。
         """
         return await methods.delete_map(map_id, actor=actor)
+
+    @mutation
+    async def restore_revision(cls, map_id: int, version: int, actor: str = "agent") -> MapDetail:
+        """回滚整树到指定版本的快照（节点编号 display_id 保留，title 一并恢复）。
+
+        回滚本身是一次新 mutation：version 继续前进、历史快照全部保留——
+        之后仍可回滚到更晚版本（前滚）。version 不存在时报错。
+        Agent 可用它撤销自己上一轮的误操作。
+        """
+        m = await methods.restore_revision(map_id, version, actor=actor)
+        dto = MapDetail.model_validate(m)
+        return await Resolver().resolve(dto)
 
     @mutation
     async def expand_all(cls, map_id: int, actor: str = "agent") -> MapDetail:

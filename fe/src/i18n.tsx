@@ -33,7 +33,6 @@ const zh = {
   'editor.backToFull': '返回全图',
   'editor.focusTo': '聚焦到「{content}」',
   'editor.expandAll': '展开所有节点',
-  'editor.switching': '视图切换中…',
   // ── 布局切换 ──
   'layout.balanced.title': '当前：左右对称，点击切换为一律靠右',
   'layout.balanced.aria': '布局：左右对称',
@@ -87,6 +86,36 @@ const zh = {
   'chat.inputPlaceholder': '输入指令，Enter 发送',
   'chat.sendTitle': 'Enter 发送 · Shift+Enter 换行',
   'chat.send': '发送',
+  // ── 版本历史（快照/时间线/回滚） ──
+  'rev.open': '查看版本历史（时间线与回滚）',
+  'rev.title': '版本历史',
+  'rev.current': '当前',
+  'rev.loading': '加载版本中…',
+  'rev.empty': '还没有历史版本（下一次修改会产生第一个快照）',
+  'rev.selectHint': '选择左侧版本查看与当前的差异',
+  'rev.restore': '回滚到此版本',
+  'rev.restoreConfirm': '确认回滚？将新建版本，历史不丢失',
+  'rev.restoring': '回滚中…',
+  'rev.cannotRestoreCurrent': '已是当前版本',
+  'rev.diffTitle': 'v{version} 与当前的差异',
+  'rev.diffEmpty': '与当前版本无差异',
+  'rev.willDelete': '回滚将删除',
+  'rev.willRestore': '回滚将恢复',
+  'rev.changed': '内容变更',
+  'rev.moved': '移动/重排',
+  'rev.folded': '折叠状态变更',
+  'rev.titleChanged': '标题变更',
+  'rev.tabDiff': '差异',
+  'rev.tabPreview': '预览',
+  'rev.action.map_created': '创建脑图',
+  'rev.action.node_added': '新增节点',
+  'rev.action.node_updated': '更新节点',
+  'rev.action.node_moved': '移动节点',
+  'rev.action.node_deleted': '删除节点',
+  'rev.action.expanded_all': '全部展开',
+  'rev.action.folded_to_level': '按层折叠',
+  'rev.action.outline_applied': 'outline 写入',
+  'rev.action.revision_restored': '版本回滚',
 } as const
 
 export type I18nKey = keyof typeof zh
@@ -112,7 +141,6 @@ const en: Record<I18nKey, string> = {
   'editor.backToFull': 'Back to full map',
   'editor.focusTo': 'Focus on "{content}"',
   'editor.expandAll': 'Expand all nodes',
-  'editor.switching': 'Switching view…',
   'layout.balanced.title': 'Current: balanced — click for right-aligned',
   'layout.balanced.aria': 'Layout: balanced',
   'layout.right.title': 'Current: right-aligned — click for balanced',
@@ -161,12 +189,50 @@ const en: Record<I18nKey, string> = {
   'chat.inputPlaceholder': 'Type a command, Enter to send',
   'chat.sendTitle': 'Enter to send · Shift+Enter for newline',
   'chat.send': 'Send',
+  'rev.open': 'Version history (timeline & restore)',
+  'rev.title': 'Version history',
+  'rev.current': 'current',
+  'rev.loading': 'Loading revisions…',
+  'rev.empty': 'No revisions yet — the next change creates the first snapshot',
+  'rev.selectHint': 'Select a version to compare with current',
+  'rev.restore': 'Restore this version',
+  'rev.restoreConfirm': 'Confirm restore? Creates a new version; history is kept',
+  'rev.restoring': 'Restoring…',
+  'rev.cannotRestoreCurrent': 'Already the current version',
+  'rev.diffTitle': 'Diff: v{version} vs current',
+  'rev.diffEmpty': 'No differences from current',
+  'rev.willDelete': 'Restore will delete',
+  'rev.willRestore': 'Restore will restore',
+  'rev.changed': 'Changed',
+  'rev.moved': 'Moved/reordered',
+  'rev.folded': 'Fold state changed',
+  'rev.titleChanged': 'Title changed',
+  'rev.tabDiff': 'Diff',
+  'rev.tabPreview': 'Preview',
+  'rev.action.map_created': 'Create map',
+  'rev.action.node_added': 'Add node',
+  'rev.action.node_updated': 'Update node',
+  'rev.action.node_moved': 'Move node',
+  'rev.action.node_deleted': 'Delete node',
+  'rev.action.expanded_all': 'Expand all',
+  'rev.action.folded_to_level': 'Fold to level',
+  'rev.action.outline_applied': 'Outline apply',
+  'rev.action.revision_restored': 'Restore',
 }
 
 const dicts: Record<Lang, Record<I18nKey, string>> = { zh, en }
 
 // 仅用于日期格式化（toLocaleString）；文案不走 Intl
 const LOCALES: Record<Lang, string> = { zh: 'zh-CN', en: 'en-US' }
+
+// 服务端时间一律 UTC，但 SQLite 的 DateTime 读回丢 tzinfo → REST 返回无 offset 的裸 ISO，
+// JS 会把无时区串按本地时间解析（等于把 UTC 当本地直接显示，差一个时区）。
+// 这里统一：无 offset 视为 UTC 补 'Z' 再格式化；带 offset/Z 的原样解析。全 UI 共用。
+export function fmtTime(iso: string, locale: string): string {
+  if (!iso) return ''
+  const s = /[Zz]$|[+-]\d{2}:\d{2}$/.test(iso) ? iso : `${iso}Z`
+  return new Date(s).toLocaleString(locale, { hour12: false })
+}
 
 // localStorage（显式选择优先）→ navigator.language（zh* → zh，en* → en）→ 'zh' 兜底
 const detectLang = (): Lang => {

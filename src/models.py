@@ -13,6 +13,7 @@ Entity graph:
 from datetime import datetime, timezone
 from typing import List, Optional
 
+import sqlalchemy as sa
 from sqlmodel import Field, Relationship, SQLModel
 
 from src.db import async_session
@@ -37,7 +38,7 @@ class Map(BaseEntity, table=True):
     title: str = Field(description="脑图标题")
     version: int = Field(
         default=1,
-        description="树版本号，每次 mutation 递增；客户端重连时对比版本决定是否全量重拉",
+        description="树版本号，每次内容变更递增（收放等视图态不递增）；客户端重连时对比版本决定是否全量重拉",
     )
     created_at: datetime = Field(
         default_factory=_utcnow,
@@ -105,6 +106,47 @@ class Node(BaseEntity, table=True):
     )
 
 
+class MapRevision(BaseEntity, table=True):
+    """一棵脑图在某次 mutation 提交后的整树快照（方案 A：快照表，不做重放）。
+
+    每次 mutation 与树变更同事务写入一行，(map_id, version) 唯一——
+    「每个 version 都有恰好一个快照」是版本时间线面板的依赖不变式。
+    snapshot 为整树 JSON（display_id 语义，parent 用 display_id 引用，
+    见 methods._build_snapshot）。不设 Relationship、不进 Map/Node 的
+    关系图：只按 map_id 直查的附属记录表。
+    存量图（migration 前已存在 / seed 直写）不回填历史——
+    从下一个 mutation 起开始有快照。
+    """
+
+    # SQLModel 自动表名是类名小写（maprevision）非蛇形——与 migration 的
+    # map_revision 对不上，显式指定（Map/Node 无驼峰不受影响）
+    __tablename__ = "map_revision"
+
+    id: Optional[int] = Field(default=None, primary_key=True, description="快照行主键")
+    map_id: int = Field(foreign_key="map.id", description="所属脑图 ID")
+    version: int = Field(description="该快照对应的树版本号（mutation 提交后的 version）")
+    action: str = Field(
+        description="产生该版本的动作：'map_created' / 'node_added' / … / 'revision_restored'"
+    )
+    actor: str = Field(default="agent", description="动作来源：'human'（浏览器）或 'agent'（CLI/MCP/REST）")
+    detail: Optional[str] = Field(
+        default=None, description="人类可读改动摘要（时间线展示用，与 publish_change 的 detail 同文）"
+    )
+    snapshot: dict = Field(
+        sa_column=sa.Column(sa.JSON, nullable=False),
+        description=(
+            "整树快照 JSON：{title, nodes:[{display_id,parent,content,position,"
+            "collapsed,updated_by,updated_at}]}（parent 为父节点 display_id，根为 null；"
+            "updated_at 为 ISO 字符串）"
+        ),
+    )
+    created_at: datetime = Field(default_factory=_utcnow, description="快照产生时间（UTC）")
+
+    __table_args__ = (
+        sa.UniqueConstraint("map_id", "version", name="uq_map_revision_map_version"),
+    )
+
+
 # ── Method mounting (Phase 2) ─────────────────────────────────────────
 
 
@@ -120,9 +162,12 @@ def mount_method():
         delete_map,
         delete_node,
         expand_all,
+        get_revision,
         get_tree,
         list_maps,
+        list_revisions,
         move_node,
+        restore_revision,
         set_fold_level,
         update_node,
     )
@@ -145,13 +190,16 @@ def mount_method():
     _mount(Map, expand_all, mutation)
     _mount(Map, set_fold_level, mutation)
     _mount(Map, apply_outline, mutation)
+    _mount(Map, list_revisions, query)
+    _mount(Map, get_revision, query)
+    _mount(Map, restore_revision, mutation)
 
 
 # ── ErManager + Resolver ──────────────────────────────────────────────
 from nexusx import ErManager  # noqa: E402
 
 er = ErManager(
-    entities=[Map, Node],
+    entities=[Map, Node, MapRevision],
     session_factory=async_session,
 )
 Resolver = er.create_resolver()
