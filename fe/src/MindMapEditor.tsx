@@ -259,19 +259,21 @@ const CheckIcon = () => (
   </svg>
 )
 
-// 布局形态图标（lucide columns-2 / panel-right 同形对比）：外框相同、
-// 分隔线位置不同——居中=左右对称、靠右=一律靠右，一眼可辨
+// 布局形态图标（lucide move-horizontal / arrow-right 同款）：箭头方向即
+// 子树伸展方向——左右双箭头=对称布局、右单箭头=一律靠右；与 Expand 图标
+// 的箭头语言一致
 const LayoutBalancedIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="3" y="3" width="18" height="18" rx="2.5" />
-    <path d="M12 3v18" />
+    <path d="m18 8 4 4-4 4" />
+    <path d="m6 8-4 4 4 4" />
+    <path d="M2 12h20" />
   </svg>
 )
 
 const LayoutRightIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="3" y="3" width="18" height="18" rx="2.5" />
-    <path d="M15 3v18" />
+    <path d="M5 12h14" />
+    <path d="m12 5 7 7-7 7" />
   </svg>
 )
 

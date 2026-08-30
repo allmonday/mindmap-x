@@ -396,10 +396,10 @@ body.chat-resizing {
 }
 .map-title .name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 17px;
   white-space: nowrap;
 }
-.map-title .ver { color: var(--ink-3); font-size: 12px; }
+.map-title .ver { color: var(--ink-3); font-size: 14px; }
 /* v{N} 角标 = 版本历史入口（map-title 整体 pointer-events:none，此处局部恢复，同 crumbs 法） */
 .map-title button.ver {
   pointer-events: auto;
@@ -407,7 +407,7 @@ body.chat-resizing {
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--ink-3);
   cursor: pointer;
 }
@@ -420,7 +420,7 @@ body.chat-resizing {
   align-items: baseline;
   gap: 5px;
   pointer-events: auto;
-  font-size: 13px; /* 比 Title(15px) 小一档，当前项不比可点项大 */
+  font-size: 15px; /* 比 Title(17px) 小一档，当前项不比可点项大 */
 }
 .crumb-sep { color: var(--ink-3); flex-shrink: 0; user-select: none; margin: 0 3px; }
 button.crumb {
@@ -518,6 +518,14 @@ button.crumb:hover { color: var(--ink); }
   color: #0f172a;
   border-color: #475569;
   font-weight: 700;
+  /* 成为布局根的瞬间描边脉冲一次：聚焦切换（点面包屑祖先等）后 fitView
+     把新旧子树居中，画面高度相似（常只多一两个节点框），无此反馈时
+     用户感知"点了没反应"。class 添加即播放，React 复用 DOM 不会重播 */
+  animation: root-pulse 800ms ease-out 1;
+}
+@keyframes root-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(71, 85, 105, 0.5); }
+  100% { box-shadow: 0 0 0 14px rgba(71, 85, 105, 0); }
 }
 .rf-node.sel {
   border-color: #0ea5e9;
