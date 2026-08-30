@@ -1,10 +1,10 @@
 # MindMap X
 
-[English](README.en.md) | 简体中文
+**English** | [简体中文](README.zh-CN.md)
 
-> 你掌舵，它观星——你们看的是同一张海图。
+> You hold the helm; it reads the stars — you share the same chart.
 
-这是 **MindMap X**：自托管的思维导图——你在浏览器里编辑，Agent 通过同一套接口编辑同一张图，双方改动实时互见。
+This is **MindMap X**: a self-hosted mind map — you edit it in the browser, agents edit the same map through one API, and changes are visible to both sides in real time.
 
 Powered by [NexusX](https://github.com/KLR-Pattern/nexusx)
 
@@ -12,30 +12,29 @@ Powered by [NexusX](https://github.com/KLR-Pattern/nexusx)
 
 ----
 
-聚焦下钻（面包屑切换）
+Focus drill-down (breadcrumb navigation)
 
 <img width="1029" height="437" alt="image" src="https://github.com/user-attachments/assets/9aef41fe-4883-4e0b-963d-16a5f0a8720d" />
 
+## Why
 
-## 为什么
+"AI generates a mind map in one click" tools are everywhere — but the AI walks away after generating. This project answers a different question: **what if the mind map were a shared workspace for humans and agents?**
 
-"AI 一键生成思维导图"的工具已经很多，但生成之后 AI 就退场了。这个项目回答另一个问题：**如果思维导图是人和 Agent 的共享工作区呢？**
+- **Two-way sync** — what you edit, the agent sees on its next turn; what the agent edits is highlighted on your canvas right away. Both sides are always looking at the same map, never drifting apart
+- **Bring any agent** — the service itself is an MCP server: Claude Code, Cursor, or any MCP client connects with one command, and the built-in chat uses the same interface
 
-- **双向同步**：你改的内容，Agent 下一轮就看得见；Agent 改的内容，画布上实时高亮——两边看的始终是同一张图，不会越用越不一致
-- **不绑定某个 Agent**：这个服务本身就是一个 MCP server，Claude Code、Cursor 一条命令就能接入，页内聊天用的也是同一套接口
+## Quick Start
 
-## 快速开始
-
-### Docker（推荐）
+### Docker (recommended)
 
 ```bash
-cp .env.example .env   # 可选：配置页内 Agent 的模型；不配则画布功能完整
+cp .env.example .env   # optional: model config for the in-page agent; skip to use canvas-only
 docker compose up -d   # → http://localhost:8740
 ```
 
-- 数据（SQLite / 聊天归档 / Agent 会话）都在 named volume `mindmap-var`：`down` 不丢，`down -v` 才清空；
-- 镜像内置前端构建与数据库迁移：升级镜像后重启即自动演进 schema；
-- 国内网络拉取基础镜像超时的话，经镜像站构建：
+- All state (SQLite / chat archives / agent sessions) lives in the `mindmap-var` named volume: `down` keeps it, `down -v` wipes it;
+- The image builds the frontend and runs DB migrations on startup — pull a newer image, restart, and the schema upgrades itself;
+- If pulling base images times out (e.g. on restricted networks), build via a mirror:
 
 ```bash
 NODE_IMAGE=docker.m.daocloud.io/library/node:22-alpine \
@@ -43,74 +42,78 @@ BASE_IMAGE=ghcr.m.daocloud.io/astral-sh/uv:python3.12-bookworm-slim \
 docker compose build
 ```
 
-### 从源码运行
+### From source
 
-环境要求：Python ≥ 3.12，Node ^20.19 || ≥22.12（构建前端）。
+Requirements: Python ≥ 3.12, Node ^20.19 || ≥22.12 (to build the frontend).
 
 ```bash
-./scripts/start.sh          # 依赖 → 数据库迁移 → 前端构建（缺产物时）→ 启动
-./scripts/start.sh --seed   # 首次可选：灌入示例脑图
+./scripts/start.sh          # deps → DB migration → frontend build (if missing) → start
+./scripts/start.sh --seed   # optional on first run: load sample maps
 ```
 
-`PORT=9000 ./scripts/start.sh` 换端口；Ctrl+C 停止时自动清理端口。前端开发模式（热更新）：
+`PORT=9000 ./scripts/start.sh` changes the port; Ctrl+C stops the server and cleans up the port. Frontend dev mode (hot reload):
 
 ```bash
-cd fe && npm run dev   # 5173 端口，代理 /api /ws /mcp /voyager 到 8740
+cd fe && npm run dev   # port 5173, proxies /api /ws /mcp /voyager to 8740
 ```
 
-## Agent 接入
+## Connecting Agents
 
 ```bash
-# MCP（Claude Code；Cursor 等 MCP 客户端同理）
+# MCP (Claude Code; Cursor and other MCP clients work the same way)
 claude mcp add --transport http mindmap http://localhost:8740/mcp
 
 # CLI
 uv run python -m src.cli mindmap-service get_tree --map-id 1
 uv run python -m src.cli mindmap-service apply_outline --map-id 1 \
-  --outline "- [id:1] 根
-    - [id:2] 分支
-      - 新节点" --mode merge
+  --outline "- [id:1] Root
+    - [id:2] Branch
+      - New node" --mode merge
 
 # REST
 curl -X POST localhost:8740/api/mindmap_service/get_tree \
   -H 'Content-Type: application/json' -d '{"map_id": 1}'
 ```
 
-### 变更感知：内部与外部的差异
+### Change awareness: internal vs. external
 
-**页内 Agent 享有自动变更感知**：其他所有写入方（你在画布上的手动修改、外部 Agent 经 MCP/CLI/REST 的写入）的变更都会在它下一轮回复前以 `<external_changes>` 自动注入其上下文，并按来源分组措辞（"用户在画布上手动修改了" / "外部 Agent 修改了"），多方认知不漂移。
+**The in-page agent gets automatic change awareness**: writes from every other party — your canvas edits *and* external agents working via MCP/CLI/REST — are injected into its context as `<external_changes>` before its next reply, grouped by origin ("the user edited on the canvas" / "an external agent made changes"), so everyone stays on the same map.
 
-页内 Agent 自己的写入不会进入注入清单（toolResult 已自知，注入回去只是回声噪音）。识别机制：它自调 MCP 时携带 `X-Mindmap-Source: page-agent` 请求头，服务端 `context_extractor` 提取后经 nexusx `FromContext` 注入，映射为专属 `actor='page_agent'`，事件层据此豁免。
+The in-page agent's own writes never appear in that list — it already knows them from its tool results, and echoing them back would be noise. It is recognized by an `X-Mindmap-Source: page-agent` header it sends on its loopback MCP calls, which the server maps to a dedicated actor and exempts from the feed.
 
-外部 Agent（MCP / CLI / REST）没有注入通道——MCP 是应答式协议，服务端无法主动把变更推入模型的上下文。因此**人机并行编辑时，外部 Agent 需要在每次写入前主动调用 `get_tree` 重新拉取全量树**，确认结构未变再操作，避免基于过期认知覆盖你的修改。
+External agents (MCP / CLI / REST) have no such channel — MCP is request/response; the server cannot push changes into the model's context. When humans and an external agent edit in parallel, **the external agent should re-pull the full tree (`get_tree`) before every write** and confirm the structure before acting, to avoid overwriting your edits from a stale view.
 
-### 页内 Agent（内嵌 strands agents）
+### In-page agent (embedded strands agents)
 
-浏览器聊天面板的后端是应用内嵌的 [strands agents](https://strandsagents.com/) Agent：它经**本应用自己的 MCP**（loopback streamable-http，与外部 Claude Code 共用同一接口）操作脑图，模型走任意 OpenAI 兼容网关，换 Provider 只改 `.env` 三行（已被 gitignore 保护，启动自动加载，不覆盖已有环境变量）：
+The browser chat panel is backed by an embedded [strands agents](https://strandsagents.com/) agent: it operates the map through **the app's own MCP** (loopback streamable-http, the same interface external Claude Code uses), with any OpenAI-compatible gateway as the model — switching providers is a three-line `.env` change (gitignored, auto-loaded at startup, never overrides existing env vars):
 
 ```bash
-# .env 示例（DeepSeek / 通义 / Kimi / OpenAI 均同构）
-OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-OPENAI_API_KEY=<智谱 API Key>
-AGENT_MODEL=glm-5.3-flash
+# .env example — any OpenAI-compatible gateway works (OpenAI / DeepSeek / Qwen / Kimi / zhipu)
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=<OpenAI API key>
+AGENT_MODEL=<model id, e.g. gpt-4o>
 ```
 
-未配置模型网关时，Agent 对话按钮置灰保留：点击会弹窗说明需要配置的环境变量（`OPENAI_BASE_URL` / `OPENAI_API_KEY` / `AGENT_MODEL`，见 `.env.example`），面板不会打开；会话中网关异常则面板内显示明确的错误横幅。
+When no model gateway is configured, the agent chat button stays visible but grayed out: clicking it pops a dialog listing the environment variables to configure (`OPENAI_BASE_URL` / `OPENAI_API_KEY` / `AGENT_MODEL`, see `.env.example`), and the panel never opens; a gateway failure mid-session shows an explicit banner inside the panel.
 
-## 已知限制
+### Interruptible while running
 
-- 单用户设计，无多人实时协同
-- SQLite 单进程存储（`var/mindmap.db`）
-- 无 XMind / OPML 导入导出——outline 文本协议是当前唯一的交换格式
+While the agent is running, the send button turns into a **stop button**: one click and the agent halts gracefully at the next safe checkpoint (typically sub-second) — completed edits are kept, half-streamed output is discarded, and the session history stays consistent for the next turn. Timeouts and dropped connections cut the running agent at a checkpoint too — no orphan thread keeps editing your map in the background.
+
+## Known Limitations
+
+- Single-user by design; no multi-user real-time collaboration
+- SQLite single-process storage (`var/mindmap.db`)
+- No XMind / OPML import-export — the outline text protocol is the only exchange format today
 
 ## Roadmap
 
-- [ ] 导入导出：XMind / OPML / FreeMind
-- [x] Docker 一键部署（`docker compose up -d`）
-- [ ] 多人协同（树级 OT / CRDT）
+- [ ] Import/export: XMind / OPML / FreeMind
+- [x] One-command Docker deployment (`docker compose up -d`)
+- [ ] Multi-user collaboration (tree-level OT / CRDT)
 
 ## License
 
-[Business Source License 1.1](LICENSE)（BUSL-1.1）：源码可见——学习、修改、公司内部使用免费；将本产品作为产品或服务提供给第三方（托管、转售、集成进商业产品）需商业授权，联系 allmonday@126.com。每个版本发布满 4 年后自动转为 Apache-2.0。
+[Business Source License 1.1](LICENSE) — source-available: free for learning, modification, and internal business use; offering it to third parties as a product, service, or hosted offering requires a commercial license (allmonday@126.com). Each release automatically converts to Apache-2.0 four years after publication.
 
-> 2026-08-30 之前的版本以 MIT 发布，那些版本仍按 MIT 授权。
+> Versions published before 2026-08-30 were released under MIT and remain MIT-licensed.
