@@ -127,7 +127,8 @@ async def test_delete_root_rejected(session_factory, seeded_map):
 # ── delete_map ────────────────────────────────────────────────────────
 
 
-async def test_delete_map_removes_all(session_factory, seeded_map):
+async def test_delete_map_hides_map(session_factory, seeded_map):
+    """软删除：广播照发、行保留（deleted_at 标记）、对外 not found。"""
     from sqlmodel import select
 
     await mm.add_node(100, 1, "x", actor="agent")
@@ -137,8 +138,11 @@ async def test_delete_map_removes_all(session_factory, seeded_map):
         evt = q.get_nowait()
         assert evt["action"] == "map_deleted"
         async with session_factory() as s:
-            assert (await s.exec(select(Node).where(Node.map_id == 100))).all() == []
-            assert await s.get(Map, 100) is None
+            m = await s.get(Map, 100)
+            assert m is not None and m.deleted_at is not None  # 行保留（软删）
+            assert len((await s.exec(select(Node).where(Node.map_id == 100))).all()) > 0
+        with pytest.raises(ValueError, match="not found"):
+            await mm.get_map(100)
     finally:
         unsubscribe(100, q)
 

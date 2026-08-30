@@ -274,12 +274,13 @@ async def test_restore_corrupt_snapshot_rejected(session_factory, seeded_map):
 # ── delete_map 清快照 ──────────────────────────────────────────────────
 
 
-async def test_delete_map_clears_revisions(session_factory):
+async def test_delete_map_keeps_revisions(session_factory):
+    """软删除：快照随图保留（对外经 _get_map 已不可达，恢复时历史完整）。"""
     m = await mm.create_map("待删")
     await mm.add_node(m.id, 1, "x")
     assert len(await _revisions(session_factory, m.id)) == 2
     await mm.delete_map(m.id)
-    assert await _revisions(session_factory, m.id) == []
+    assert len(await _revisions(session_factory, m.id)) == 2  # 保留，不物理删除
 
 
 # ── 快照与广播的事件一致性 ─────────────────────────────────────────────

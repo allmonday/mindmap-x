@@ -105,8 +105,9 @@ def _parse_outline(outline: str) -> list[tuple[int, int | None, str]]:
 
 
 async def _get_map(session, map_id: int) -> Map:
+    """单图查询的唯一入口：软删图（deleted_at 非空）对外等同不存在。"""
     m = await session.get(Map, map_id)
-    if m is None:
+    if m is None or m.deleted_at is not None:
         raise ValueError(f"map {map_id} not found")
     return m
 
@@ -235,9 +236,11 @@ async def _commit_view_state(session, m: Map, *, action: str, actor: str) -> Non
 
 
 async def list_maps() -> list[Map]:
-    """列出所有脑图。"""
+    """列出所有脑图（软删图不出现）。"""
     async with async_session() as session:
-        result = await session.exec(select(Map).order_by(Map.id))
+        result = await session.exec(
+            select(Map).where(Map.deleted_at.is_(None)).order_by(Map.id)
+        )
         return list(result.all())
 
 
@@ -427,19 +430,17 @@ async def delete_node(map_id: int, node_id: int, actor: str = "agent") -> bool:
 
 
 async def delete_map(map_id: int, actor: str = "agent") -> bool:
-    """删除整张脑图（map 行 + 全部节点，单事务，不可恢复）。
+    """软删除整张脑图：打 deleted_at 标记，行/节点/快照保留（可恢复，暂无入口）。
 
-    附带清理：commit 后向仍打开该图的 WS 客户端广播 map_deleted（前端收到后
-    自动退回列表），并清空该图的外部改动待通知缓冲。聊天归档不级联——它按
-    map_id 查询，图不存在即不可达，留作历史记录。
+    对外表现与硬删一致：list_maps 不出现、_get_map not found；WS 客户端收到
+    map_deleted 广播（前端自动退回列表），外部改动待通知缓冲清空。
+    聊天会话/归档不清理——软删哲学是数据保留，且 rowid 不复用（软删行占住
+    max id），新建图永远不会拿到旧 id，残留文件不会被误读。
     """
     async with async_session() as session:
         m = await _get_map(session, map_id)
-        next_version = m.version + 1  # 图即将不存在，version 仅用于事件单调
-        await session.execute(delete(Node).where(Node.map_id == map_id))
-        # 快照随图清空：离开 map 的快照只是一堆无主 JSON（与聊天归档"留作历史"不同）
-        await session.execute(delete(MapRevision).where(MapRevision.map_id == map_id))
-        await session.delete(m)
+        next_version = m.version + 1  # 图即将不可见，version 仅用于事件单调
+        m.deleted_at = datetime.now(timezone.utc)
         await session.commit()
     # 先 commit 再广播：订阅者收到事件后重拉 get_map 应当看到 404
     publish_change(map_id, next_version, "map_deleted", actor)

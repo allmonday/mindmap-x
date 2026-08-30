@@ -185,7 +185,9 @@ class MindmapService(UseCaseService):
         actor: str = "agent",
         source: Annotated[str | None, FromContext()] = None,
     ) -> bool:
-        """删除整张脑图（map + 全部节点 + 版本快照），不可恢复。
+        """删除脑图（软删除）：对外立即不可见（列表不出现、读取 not found），
+        行/节点/快照/聊天会话保留——rowid 不复用，新建图永不拿到旧 id。
+        暂无恢复入口（DB 层可手工恢复：清空 deleted_at 即回）。
 
         删除后向仍打开该图的客户端广播 map_deleted（浏览器自动退回列表）。
         若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。

@@ -158,6 +158,9 @@ def _clear_session(map_id: int) -> None:
 
     目录不存在（SessionException）视为已清空；FileSessionManager 构造时会自动
     重建空会话目录，后续 _history_payload / _run_agent 无需特殊处理。
+
+    注意：delete_map（软删除）不调用本函数——会话/归档随图保留
+    （rowid 不复用，不会被新图误读；恢复时对话还在）。
     """
     from strands.session import FileSessionManager
     from strands.types.exceptions import SessionException

@@ -44,6 +44,12 @@ class Map(BaseEntity, table=True):
         default_factory=_utcnow,
         description="创建时间（UTC）",
     )
+    deleted_at: Optional[datetime] = Field(
+        default=None,
+        description="软删除时间（UTC），null = 活跃。已删图对所有查询不可见但行保留——"
+        "rowid 不被复用，新建图永不拿到旧 id（防残留会话/归档被新图读到）；"
+        "数据可恢复（暂无恢复入口，DB 层手工恢复）",
+    )
 
     # ORM relationships (noload: use explicit queries or Resolver DataLoader)
     nodes: List["Node"] = Relationship(
