@@ -75,6 +75,12 @@ curl -X POST localhost:8740/api/mindmap_service/get_tree \
   -H 'Content-Type: application/json' -d '{"map_id": 1}'
 ```
 
+### Change awareness: internal vs. external
+
+**Only the in-page agent gets automatic change awareness**: your canvas edits are injected into its context as `<external_changes>` before its next reply, so the two sides never drift.
+
+External agents (MCP / CLI / REST) have no such channel — MCP is request/response; the server cannot push changes into the model's context. When humans and an external agent edit in parallel, **the external agent should re-pull the full tree (`get_tree`) before every write** and confirm the structure before acting, to avoid overwriting your edits from a stale view.
+
 ### In-page agent (embedded strands agents)
 
 The browser chat panel is backed by an embedded [strands agents](https://strandsagents.com/) agent: it operates the map through **the app's own MCP** (loopback streamable-http, the same interface external Claude Code uses), with any OpenAI-compatible gateway as the model — switching providers is a three-line `.env` change (gitignored, auto-loaded at startup, never overrides existing env vars):

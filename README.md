@@ -76,6 +76,12 @@ curl -X POST localhost:8740/api/mindmap_service/get_tree \
   -H 'Content-Type: application/json' -d '{"map_id": 1}'
 ```
 
+### 变更感知：内部与外部的差异
+
+**只有页内 Agent 享有自动变更感知**：你在画布上的修改会在它下一轮回复前以 `<external_changes>` 自动注入其上下文，双方认知不漂移。
+
+外部 Agent（MCP / CLI / REST）没有这条通道——MCP 是应答式协议，服务端无法主动把变更推入模型的上下文。因此**人机并行编辑时，外部 Agent 需要在每次写入前主动调用 `get_tree` 重新拉取全量树**，确认结构未变再操作，避免基于过期认知覆盖你的修改。
+
 ### 页内 Agent（内嵌 strands agents）
 
 浏览器聊天面板的后端是应用内嵌的 [strands agents](https://strandsagents.com/) Agent：它经**本应用自己的 MCP**（loopback streamable-http，与外部 Claude Code 共用同一接口）操作脑图，模型走任意 OpenAI 兼容网关，换 Provider 只改 `.env` 三行（已被 gitignore 保护，启动自动加载，不覆盖已有环境变量）：
