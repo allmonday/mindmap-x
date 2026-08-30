@@ -617,6 +617,37 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     [toggleCollapse, commitEdit, addChild, startAdd, commitAdd, cancelAdd, deleteNode, switchFocus],
   )
 
+  // ── 刷新门卫：内容签名 ────────────────────────────────────────────────
+  // WS 每次推送都产生新 detail/layout 对象；若以其身份作 memo 依赖，即使内容
+  // 完全未变，React Flow 也会收到新输入并触发内部锚点重测（ResizeObserver
+  // 异步），重测窗口内连线滞后甚至消失——肉眼即「改个文字边也闪断一次」。
+  // 签名不变 → 复用上一轮对象 → React Flow 拿到全等 props，完全不动作。
+  // 字段与 MindNode 实际消费严格对齐（content/collapsed/side/尺寸/交互态），
+  // 漏一项就是残留旧状态的 bug，改 MindNode 时记得同步这里。
+  const nodesSig = useMemo(() => {
+    if (!layout) return ''
+    return layout.all
+      .map((ln) => {
+        const id = ln.node.display_id
+        const flags =
+          (id === selectedId ? 's' : '') + (id === editingId ? 'e' : '') + (id === addingId ? 'a' : '') + ((childCount.get(id) ?? 0) > 0 ? 'h' : '')
+        return `${id}:${Math.round(ln.x)},${Math.round(ln.y)},${ln.w}x${ln.h}:${ln.side}${ln === layout.root ? 'R' : ''}${ln.node.collapsed ? 'C' : ''}:${flags}:${ln.node.content}`
+      })
+      .join('|')
+  }, [layout, selectedId, editingId, addingId, childCount])
+
+  // 边签名只看结构（谁连谁 + 锚定侧）：文本 / 选中态变化不影响边
+  const edgesSig = useMemo(() => {
+    if (!layout) return ''
+    const parts: string[] = []
+    for (const ln of layout.all)
+      for (const c of ln.children) parts.push(`${ln.node.display_id}-${c.node.display_id}-${c.side}`)
+    return parts.join('|')
+  }, [layout])
+
+  // 依赖是签名而非 layout 身份（内容未变即复用）；animPos 在动画期间逐帧变化，
+  // 照常驱动重建；callbacks 单列——语言切换时 t 变化需重建（defaultName 闭包），
+  // 普通刷新间其身份稳定，不破签名门卫
   const rfNodes: MindNode[] = useMemo(() => {
     if (!layout) return []
     return layout.all.map((lnode) => {
@@ -639,7 +670,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         },
       }
     })
-  }, [layout, animPos, selectedId, editingId, addingId, childCount, callbacks])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 门卫注释见上；layout 由 nodesSig 表达
+  }, [nodesSig, animPos, callbacks])
 
   const rfEdges: Edge[] = useMemo(() => {
     if (!layout) return []
@@ -658,7 +690,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       }
     }
     return edges
-  }, [layout])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 结构由 edgesSig 表达，身份不变即复用
+  }, [edgesSig])
 
   // ── outline 编辑（Human 使用 Agent 同款协议的入口） ─────────────────
   const openOutline = async () => {
