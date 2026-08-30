@@ -6,6 +6,8 @@
 
 这是 **MindMap X**：自托管的思维导图——你在浏览器里编辑，Agent 通过同一套接口编辑同一张图，双方改动实时互见。
 
+Powered by [NexusX](https://github.com/KLR-Pattern/nexusx)
+
 <img width="1579" height="969" alt="image" src="https://github.com/user-attachments/assets/80cfba49-2fe6-4401-b113-c929bd94e5d8" />
 
 ----

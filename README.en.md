@@ -6,6 +6,8 @@
 
 This is **MindMap X**: a self-hosted mind map — you edit it in the browser, agents edit the same map through one API, and changes are visible to both sides in real time.
 
+Powered by [NexusX](https://github.com/KLR-Pattern/nexusx)
+
 <img width="1579" height="969" alt="image" src="https://github.com/user-attachments/assets/80cfba49-2fe6-4401-b113-c929bd94e5d8" />
 
 ----
