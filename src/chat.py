@@ -12,7 +12,7 @@
 环境变量：
 - OPENAI_BASE_URL / OPENAI_API_KEY / AGENT_MODEL  必填（OpenAI 兼容网关）
 - SELF_MCP_URL        默认 http://127.0.0.1:8740/mcp/
-- AGENT_CHAT_TIMEOUT  默认 180 秒
+- AGENT_CHAT_TIMEOUT  默认 180 秒（空闲超时：连续无流式输出才算，输出不断则永不触发）
 """
 import asyncio
 import json
@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import threading
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -384,8 +385,9 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str, ctl: dict) -> None:
     `loop.call_soon_threadsafe` 桥回事件循环转发 WS。
 
     会话延续：FileSessionManager 持久化（构造恢复 / 每轮 sync_agent 落盘）。
-    超时：asyncio.timeout 取消 async 侧等待；工作线程不可强杀，但中断/超时/
-    断开都会经 ctl 递刀，Agent 在下一个取消检查点（通常亚秒级，最坏 = 当前
+    超时：空闲语义——流式输出（delta/reasoning）持续到达就永不触发，仅当
+    连续 AGENT_TIMEOUT_S 无输出才放弃；工作线程不可强杀，但中断/超时/断开
+    都会经 ctl 递刀，Agent 在下一个取消检查点（通常亚秒级，最坏 = 当前
     LLM 请求首字节）优雅停止，不再孤儿化跑完整轮。
     """
     # 局部 import：启动期不依赖 strands（未配 env 时服务其余功能照常）
@@ -461,27 +463,36 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str, ctl: dict) -> None:
             )
 
     work_task = asyncio.create_task(asyncio.to_thread(work))
+    # 空闲超时（非总时长）：只要流式输出在动（delta/reasoning 到达）计时器就
+    # 重置——长任务哪怕跑几十分钟也不会被砍；仅当连续 AGENT_TIMEOUT_S 无任何
+    # 输出（典型：网关挂起、模型停滞）才放弃。静默窗口的正常上界 = MCP 工具
+    # 执行（毫秒级）+ 下一轮 LLM 首字节，远小于 180s。
+    last_activity = time.monotonic()
+    timed_out = False
     try:
-        async with asyncio.timeout(AGENT_TIMEOUT_S):
-            while not work_task.done() or not queue.empty():
-                try:
-                    kind, payload = await asyncio.wait_for(queue.get(), timeout=0.2)
-                except asyncio.TimeoutError:
-                    continue  # 工作线程仍在跑，回来看 task 状态
-                if kind == "delta":
-                    await ws.send_json({"type": "delta", "text": payload})
-                elif kind == "reasoning":
-                    await ws.send_json({"type": "reasoning", "text": payload})
-    except TimeoutError:
-        ctl["request"]()  # 切断工作线程：孤儿窗口从"跑完整轮"缩到下一检查点
-        await ws.send_json(
-            {"type": "error", "message": f"Agent 超时（{AGENT_TIMEOUT_S:.0f}s），已放弃等待"}
-        )
-        return
+        while not work_task.done() or not queue.empty():
+            try:
+                kind, payload = await asyncio.wait_for(queue.get(), timeout=0.2)
+            except asyncio.TimeoutError:
+                if time.monotonic() - last_activity > AGENT_TIMEOUT_S:
+                    timed_out = True
+                    break
+                continue  # 工作线程仍在跑，回来看 task 状态
+            last_activity = time.monotonic()
+            if kind == "delta":
+                await ws.send_json({"type": "delta", "text": payload})
+            elif kind == "reasoning":
+                await ws.send_json({"type": "reasoning", "text": payload})
     except asyncio.CancelledError:
         # 连接关闭：事件循环侧退出，同时给工作线程递刀（不留孤儿继续写库写盘）
         ctl["request"]()
         raise
+    if timed_out:
+        ctl["request"]()  # 切断工作线程：孤儿窗口从"跑完整轮"缩到下一检查点
+        await ws.send_json(
+            {"type": "error", "message": f"Agent 空闲超时（{AGENT_TIMEOUT_S:.0f}s 无输出），已放弃等待"}
+        )
+        return
     interrupted = ctl.get("stop_reason") == "cancelled"
     if (exc := work_task.exception()) is not None:
         if interrupted or ctl["event"].is_set():
@@ -569,7 +580,7 @@ async def chat(ws: WebSocket, map_id: int):
                         + "\n".join(f"- {d}" for d in by_agent)
                     )
                 text += "\n\n<external_changes>\n" + "\n".join(sections) + "\n</external_changes>"
-            # 不 await：主循环继续收消息（busy 拒绝可达）；超时由 runner 内部 asyncio.timeout 处理
+            # 不 await：主循环继续收消息（busy 拒绝可达）；空闲超时由 runner 内部处理
             # ctl 先于 create_task 武装：消灭"发送后瞬间点停止"的丢包窗口
             ctl = _new_interrupt_ctl()
             task = asyncio.create_task(_run_agent(ws, map_id, text, ctl))
