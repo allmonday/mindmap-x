@@ -267,6 +267,13 @@ body.chat-resizing {
   padding: 0;
 }
 
+/* busy 时发送按钮变形为停止（中断当前轮），danger 配色与实心方块图标 */
+.chat-send.stop { color: var(--danger); border-color: var(--danger); }
+.chat-send.stop:hover { background: rgba(235, 87, 87, 0.08); }
+
+/* 气泡内的"已中断"脚注（服务端在取消检查点截断了本轮） */
+.interrupted-note { margin-top: 6px; font-size: 12px; color: var(--ink-3); }
+
 .spacer { flex: 1; }
 
 .toast {

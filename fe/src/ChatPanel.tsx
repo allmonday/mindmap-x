@@ -9,6 +9,7 @@ interface ChatMsg {
   thinking?: string // 推理模型的思考过程（可折叠展示，不回传 LLM）
   streaming?: boolean
   error?: boolean
+  interrupted?: boolean // 本轮被用户中断（done.interrupted），仅前端呈现
 }
 
 interface Props {
@@ -38,6 +39,13 @@ const ClearIcon = () => (
   </svg>
 )
 
+// 实心方块 = 停止（业界惯例，与发送箭头形成强对比）
+const StopIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <rect x="5" y="5" width="14" height="14" rx="2" />
+  </svg>
+)
+
 const HistoryIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
@@ -52,6 +60,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [stopping, setStopping] = useState(false) // 已发 interrupt、等待 done（防重复点击）
   const [healthErr, setHealthErr] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
   const [view, setView] = useState<View>({ kind: 'chat' })
@@ -95,6 +104,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
       ws.onclose = () => {
         setConnected(false)
         setBusy(false) // 旧连接上在跑的一轮已不可达（done 发不到这里），解锁输入
+        setStopping(false)
         if (closed) return
         const delay = Math.min(1000 * 2 ** attempt, 8000)
         attempt += 1
@@ -154,12 +164,20 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
           return [...prev, { role: 'agent', text: msg.text, streaming: true }]
         })
       } else if (msg.type === 'done') {
+        const wasInterrupted = !!msg.interrupted
         setMessages((prev) => {
           const last = prev[prev.length - 1]
-          if (last?.role === 'agent') return [...prev.slice(0, -1), { ...last, streaming: false }]
+          if (last?.role === 'agent')
+            return [
+              ...prev.slice(0, -1),
+              { ...last, streaming: false, interrupted: wasInterrupted || last.interrupted },
+            ]
+          // 首字节前被中断（无流式气泡）：开一个只挂标记的空气泡
+          if (wasInterrupted) return [...prev, { role: 'agent' as const, text: '', interrupted: true }]
           return prev
         })
         setBusy(false)
+        setStopping(false)
       } else if (msg.type === 'busy') {
         setMessages((prev) => [...prev, { role: 'agent', text: msg.message, error: true }])
       } else if (msg.type === 'error') {
@@ -172,6 +190,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
           return [...prev, { role: 'agent', text: msg.message, error: true }]
         })
         setBusy(false)
+        setStopping(false) // 超时/异常与中断竞态时也要复位，防停止按钮卡死
       }
     }
 
@@ -228,6 +247,14 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
     wsRef.current?.send(JSON.stringify({ type: 'user', text }))
   }
 
+  // 停止：服务端在下一取消检查点截断（通常亚秒级，最坏 = 当前 LLM 请求
+  // 首字节），结果由 done.interrupted 表达；这里本地置 stopping 防重复点击
+  const stop = () => {
+    if (!busy || stopping) return
+    setStopping(true)
+    wsRef.current?.send(JSON.stringify({ type: 'interrupt' }))
+  }
+
   // 气泡列表（当前对话与归档详情共用渲染）
   // agent 正常回复是 markdown；思考过程渲染为可折叠区域（流式思考时展开、
   // 正文开始后自动收起）；user 指令与错误消息保持纯文本（防误解析）
@@ -254,6 +281,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
                 m.text
               ))}
             {streaming && m.streaming && m.text && <span className="cursor">▍</span>}
+            {m.interrupted && <div className="interrupted-note">{t('chat.interrupted')}</div>}
           </div>
         </div>
       ))}
@@ -287,7 +315,15 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             <span className="chat-title">{t('chat.title')}</span>
             <span className={`ws-dot ${connected ? 'live' : 'dead'}`} />
             <span className="chat-sub">
-              {healthErr ? t('chat.statusUnavailable') : busy ? t('chat.thinking') : connected ? t('chat.ready') : t('chat.connecting')}
+              {healthErr
+                ? t('chat.statusUnavailable')
+                : busy
+                  ? stopping
+                    ? t('chat.stopping')
+                    : t('chat.thinking')
+                  : connected
+                    ? t('chat.ready')
+                    : t('chat.connecting')}
             </span>
           </>
         ) : (
@@ -398,9 +434,22 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
               }
             }}
           />
-          <button className="btn chat-send" disabled={disabled} onClick={send} title={t('chat.send')} aria-label={t('chat.send')}>
-            <SendIcon />
-          </button>
+          {/* busy 时变形为停止按钮：中断在跑的一轮（interrupt WS 消息） */}
+          {busy ? (
+            <button
+              className="btn chat-send stop"
+              disabled={stopping}
+              onClick={stop}
+              title={stopping ? t('chat.stopping') : t('chat.stop')}
+              aria-label={stopping ? t('chat.stopping') : t('chat.stop')}
+            >
+              <StopIcon />
+            </button>
+          ) : (
+            <button className="btn chat-send" disabled={disabled} onClick={send} title={t('chat.send')} aria-label={t('chat.send')}>
+              <SendIcon />
+            </button>
+          )}
         </div>
       )}
     </div>

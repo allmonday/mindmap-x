@@ -16,14 +16,19 @@
 """
 import asyncio
 import json
+import logging
 import os
 import re
+import threading
 from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from src.service.mindmap.events import drain_pending
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # root 默认 WARNING 会吞掉观测日志（stop_reason 等）
 
 
 def _utc_iso(s: str) -> str:
@@ -342,7 +347,31 @@ async def chat_status() -> dict:
 # ── strands Agent runner（进程内） ─────────────────────────────────────
 
 
-async def _run_agent(ws: WebSocket, map_id: int, text: str) -> None:
+def _new_interrupt_ctl() -> dict:
+    """中断握手：WS 主循环（事件循环线程）→ 工作线程里的 strands Agent。
+
+    基于 strands Agent.cancel()（线程安全 threading.Event、幂等；检查点遍布
+    LLM 流 chunk 间/工具前后/MCP 调用内）。取消后 agent(text) 正常返回
+    AgentResult(stop_reason="cancelled")，流中未完成的消息不入历史。
+
+    无锁双向握手——顺序是正确性约束，覆盖任意真实时序：
+      工作线程：先 ctl["agent"] = agent，再查 ctl["event"]
+      事件循环：先 ctl["event"].set()，再读 ctl["agent"]
+    后发生一侧的检查必然看到对方的写（GIL 下单键 dict 赋值原子可见）。
+    """
+    evt = threading.Event()
+    ctl: dict = {"event": evt, "agent": None, "stop_reason": None}
+
+    def request() -> None:
+        evt.set()
+        if (agent := ctl["agent"]) is not None:
+            agent.cancel()
+
+    ctl["request"] = request
+    return ctl
+
+
+async def _run_agent(ws: WebSocket, map_id: int, text: str, ctl: dict) -> None:
     """一轮对话：strands Agent（工作线程）经 loopback MCP 操作脑图。
 
     并发模型（关键）：strands 的 MCPClient 是同步 API——`__enter__` 起后台线程
@@ -352,7 +381,9 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str) -> None:
     `loop.call_soon_threadsafe` 桥回事件循环转发 WS。
 
     会话延续：FileSessionManager 持久化（构造恢复 / 每轮 sync_agent 落盘）。
-    超时：asyncio.timeout 取消 async 侧；工作线程无法强杀，会自然跑完（无害）。
+    超时：asyncio.timeout 取消 async 侧等待；工作线程不可强杀，但中断/超时/
+    断开都会经 ctl 递刀，Agent 在下一个取消检查点（通常亚秒级，最坏 = 当前
+    LLM 请求首字节）优雅停止，不再孤儿化跑完整轮。
     """
     # 局部 import：启动期不依赖 strands（未配 env 时服务其余功能照常）
     from strands import Agent
@@ -411,7 +442,20 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str) -> None:
                 system_prompt=SYSTEM_PROMPT.format(map_id=map_id),
                 callback_handler=on_event,
             )
-            agent(text)  # 同步执行完整「LLM ↔ 工具」循环；结束自动 sync_agent 落盘
+            # 中断握手：先挂 agent，再查 event（顺序是 _new_interrupt_ctl 的约束）。
+            # 注意：Agent 每轮新建、用完即弃是前提——若跨轮复用实例，残留的
+            # _cancel_signal 会让下一轮在首个 chunk 被静默取消。
+            ctl["agent"] = agent
+            if ctl["event"].is_set():
+                # 创建窗口期到达的中断：首轮 LLM 请求仍会发出（SDK 无更早
+                # 检查点），第一个 chunk 处即截断返回 cancelled
+                agent.cancel()
+            result = agent(text)  # 同步执行完整「LLM ↔ 工具」循环；逐消息自动落盘
+            # stop_reason 紧跟调用、留在 with 块内：__exit__ 抛异常也拿得到
+            ctl["stop_reason"] = result.stop_reason
+            logger.info(
+                "page-agent turn finished: map=%s stop_reason=%s", map_id, result.stop_reason
+            )
 
     work_task = asyncio.create_task(asyncio.to_thread(work))
     try:
@@ -426,16 +470,26 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str) -> None:
                 elif kind == "reasoning":
                     await ws.send_json({"type": "reasoning", "text": payload})
     except TimeoutError:
+        ctl["request"]()  # 切断工作线程：孤儿窗口从"跑完整轮"缩到下一检查点
         await ws.send_json(
             {"type": "error", "message": f"Agent 超时（{AGENT_TIMEOUT_S:.0f}s），已放弃等待"}
         )
         return
     except asyncio.CancelledError:
-        raise  # 连接关闭：事件循环侧退出（工作线程自然结束）
+        # 连接关闭：事件循环侧退出，同时给工作线程递刀（不留孤儿继续写库写盘）
+        ctl["request"]()
+        raise
+    interrupted = ctl.get("stop_reason") == "cancelled"
     if (exc := work_task.exception()) is not None:
-        await ws.send_json({"type": "error", "message": f"Agent 执行失败: {type(exc).__name__}: {exc}"})
+        if interrupted or ctl["event"].is_set():
+            # 中断引发的异常（如取消后的 MCP 会话清理失败）：按已中断汇报，
+            # 不给用户报"执行失败"
+            logger.warning("agent turn ended with exception after interrupt: %r", exc)
+            await ws.send_json({"type": "done", "interrupted": True})
+        else:
+            await ws.send_json({"type": "error", "message": f"Agent 执行失败: {type(exc).__name__}: {exc}"})
     else:
-        await ws.send_json({"type": "done"})
+        await ws.send_json({"type": "done", "interrupted": interrupted})
 
 
 # ── WS 端点 ───────────────────────────────────────────────────────────
@@ -477,6 +531,13 @@ async def chat(ws: WebSocket, map_id: int):
                 archive = await asyncio.to_thread(clear_all)
                 await ws.send_json({"type": "cleared", "archive": archive})
                 continue
+            if msg.get("type") == "interrupt":
+                # 前端"停止"按钮。不回执：前端本地置 stopping 防重复点击，
+                # 权威信号是随后的 done.interrupted。task 已结束（含两轮之间
+                # 的空档）→ 静默忽略；重复 interrupt 幂等无害。
+                if task is not None and not task.done():
+                    ctl["request"]()
+                continue
             if msg.get("type") != "user":
                 continue
             text = str(msg.get("text", "")).strip()
@@ -506,7 +567,9 @@ async def chat(ws: WebSocket, map_id: int):
                     )
                 text += "\n\n<external_changes>\n" + "\n".join(sections) + "\n</external_changes>"
             # 不 await：主循环继续收消息（busy 拒绝可达）；超时由 runner 内部 asyncio.timeout 处理
-            task = asyncio.create_task(_run_agent(ws, map_id, text))
+            # ctl 先于 create_task 武装：消灭"发送后瞬间点停止"的丢包窗口
+            ctl = _new_interrupt_ctl()
+            task = asyncio.create_task(_run_agent(ws, map_id, text, ctl))
     except WebSocketDisconnect:
         pass
     finally:
