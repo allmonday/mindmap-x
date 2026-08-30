@@ -38,11 +38,10 @@ const zh = {
   'layout.balanced.aria': '布局：左右对称',
   'layout.right.title': '当前：一律靠右，点击切换为左右对称',
   'layout.right.aria': '布局：一律靠右',
-  // ── 折叠下拉 ──
+  // ── 层级刻度条（2 3 … N 全）──
   'fold.hint': '折叠到指定层级：保留前 N 层可见，更深层收起',
-  'fold.aria': '折叠至第 N 层',
-  'fold.placeholder': '折叠至…',
   'fold.toLevel': '折叠至 {lv} 层',
+  'fold.allLabel': '全',
   // ── outline 弹层 ──
   'outline.title': 'outline 编辑（与 Agent 同协议：`- [id:N] 内容`，2 空格缩进一级）',
   'outline.merge': 'merge（锚定更新 + 新建，未提及保留）',
@@ -159,9 +158,8 @@ const en: Record<I18nKey, string> = {
   'layout.right.title': 'Current: right-aligned — click for balanced',
   'layout.right.aria': 'Layout: right-aligned',
   'fold.hint': 'Fold to level: keep the first N levels visible, deeper collapsed',
-  'fold.aria': 'Fold to level N',
-  'fold.placeholder': 'Fold to…',
   'fold.toLevel': 'Fold to level {lv}',
+  'fold.allLabel': 'All',
   'outline.title': 'Outline edit (same protocol as Agent: `- [id:N] content`, 2-space indent per level)',
   'outline.merge': 'merge (anchor updates + creates, unmentioned kept)',
   'outline.replace': 'replace (keep root, delete & rebuild the rest)',

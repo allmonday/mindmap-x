@@ -277,13 +277,6 @@ const LayoutRightIcon = () => (
   </svg>
 )
 
-// 全部展开（lucide expand：四角外扩箭头）
-const ExpandIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-  </svg>
-)
-
 // Agent 对话开关（lucide message-circle：带尾气泡）
 const ChatIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -567,25 +560,34 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     return m
   }, [detail])
 
-  // 全树最大深度（无视折叠现算——layout.all 只含可见节点，折叠后会低估）
-  const maxDepth = useMemo(() => {
-    if (!detail) return 1
+  // 全树最大深度 + 当前可见深度（无视折叠现算——layout.all 只含可见节点，折叠后会低估）。
+  // DFS 单次遍历带 vis 标记：折叠节点自身可见，但其子树整支不可见（对 maxDepth 仍要下钻）
+  const { maxDepth, visibleDepth } = useMemo(() => {
+    if (!detail) return { maxDepth: 1, visibleDepth: 1 }
     const byParent = new Map<number, NodeDTO[]>()
     let root: NodeDTO | null = null
     for (const n of detail.nodes) {
       if (n.parent == null) root = n
       else byParent.set(n.parent.display_id, [...(byParent.get(n.parent.display_id) ?? []), n])
     }
-    if (!root) return 1
+    if (!root) return { maxDepth: 1, visibleDepth: 1 }
     let max = 1
-    const stack: [NodeDTO, number][] = [[root, 1]]
+    let visible = 1
+    const stack: [NodeDTO, number, boolean][] = [[root, 1, true]]
     while (stack.length) {
-      const [n, d] = stack.pop()!
+      const [n, d, vis] = stack.pop()!
       max = Math.max(max, d)
-      for (const c of byParent.get(n.display_id) ?? []) stack.push([c, d + 1])
+      if (vis) visible = Math.max(visible, d)
+      const childVis = vis && !n.collapsed
+      for (const c of byParent.get(n.display_id) ?? []) stack.push([c, d + 1, childVis])
     }
-    return max
+    return { maxDepth: max, visibleDepth: visible }
   }, [detail])
+
+  // 层级刻度条当前档：可见层已到树底 = 全展开；否则夹到 ≤ 可见深度的最大档
+  // （手动展开个别节点后可见深度可能落在档位之间，就近取左档）
+  const curLevel: number | 'all' =
+    visibleDepth >= maxDepth ? 'all' : Math.min(Math.max(visibleDepth, 2), maxDepth - 1)
 
   // 聚焦路径（真根 → 各级祖先 → 聚焦节点）：每次从 detail 现算，
   // Agent 移动节点（move_node 改父）后路径自动跟随；1000 步上限防断链/成环死循环
@@ -798,7 +800,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               </span>
             )}
           </div>
-          {/* 画布左上角工具列：标题下方，布局切换 + 全部展开 */}
+          {/* 画布左上角工具列：标题下方，布局切换 + 层级刻度条 */}
           <div className="canvas-tools">
             <button
               className="btn"
@@ -808,36 +810,29 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             >
               {layoutMode === 'balanced' ? <LayoutBalancedIcon /> : <LayoutRightIcon />}
             </button>
-            <button
-              className="btn"
-              onClick={() => void guard(() => api.expandAll(mapId))}
-              title={t('editor.expandAll')}
-              aria-label={t('editor.expandAll')}
-            >
-              <ExpandIcon />
-            </button>
             {maxDepth >= 3 && (
-              <select
-                className="btn fold-select"
-                value=""
-                title={t('fold.hint')}
-                aria-label={t('fold.aria')}
-                onChange={(e) => {
-                  const lv = Number(e.target.value)
-                  // 受控 value="" 恒为占位符：命令型控件，执行后不驻留所选值
-                  if (lv >= 2) void guard(() => api.setFoldLevel(mapId, lv))
-                }}
-              >
-                <option value="" disabled>
-                  {t('fold.placeholder')}
-                </option>
-                {/* level=maxDepth 是纯展开，与相邻「全部展开」按钮重复，砍掉 */}
+              <div className="fold-steps" role="group" aria-label={t('fold.hint')}>
+                {/* 档位 2..maxDepth-1（maxDepth 档与「全」重复，砍掉）；点档折叠到该层，最右「全」= 全部展开 */}
                 {Array.from({ length: maxDepth - 2 }, (_, i) => i + 2).map((lv) => (
-                  <option key={lv} value={lv}>
-                    {t('fold.toLevel', { lv })}
-                  </option>
+                  <button
+                    key={lv}
+                    className={`btn sm${curLevel === lv ? ' active' : ''}`}
+                    aria-pressed={curLevel === lv}
+                    title={t('fold.toLevel', { lv })}
+                    onClick={() => void guard(() => api.setFoldLevel(mapId, lv))}
+                  >
+                    {lv}
+                  </button>
                 ))}
-              </select>
+                <button
+                  className={`btn sm${curLevel === 'all' ? ' active' : ''}`}
+                  aria-pressed={curLevel === 'all'}
+                  title={t('editor.expandAll')}
+                  onClick={() => void guard(() => api.expandAll(mapId))}
+                >
+                  {t('fold.allLabel')}
+                </button>
+              </div>
             )}
           </div>
           <ReactFlow

@@ -450,14 +450,14 @@ button.crumb:hover { color: var(--ink); }
   white-space: nowrap;
 }
 
-/* 画布左上角工具列：标题正下方，纵向排列（布局切换 / 全部展开） */
+/* 画布左上角工具列：标题正下方（布局切换 / 层级刻度条） */
 .canvas-tools {
   position: absolute;
   top: 58px; /* 标题行下方 */
   left: 16px;
   z-index: 4;
   display: flex;
-  flex-direction: row; /* 左右排布：布局切换 + 全部展开 + 折叠下拉一行 */
+  flex-direction: row; /* 左右排布：布局切换 + 层级刻度条一行 */
   align-items: center;
   gap: 8px;
 }
@@ -471,18 +471,22 @@ button.crumb:hover { color: var(--ink); }
   font-size: 15px;
   line-height: 0;
 }
-/* 命令型「折叠至 N 层」下拉：竖排图标列里唯一的文本控件，宽度自适应文案 */
-.canvas-tools .fold-select {
-  width: auto;
-  height: 28px;
-  padding: 0 6px;
-  display: inline-flex;
-  align-items: center;
+/* 层级刻度条：2 3 … N 全 拼合 pill（同 .lang-switch 模式），当前档高亮如滑条 thumb */
+.fold-steps .btn {
+  width: auto; /* 覆盖 .canvas-tools .btn 的 28px 定宽，数字档自适应 */
+  min-width: 25px; /* 22px × 1.15：数字档加宽 15% */
+  padding: 0 5px;
   font-size: 12px;
-  line-height: 1;
-  appearance: none;
-  -webkit-appearance: none;
+  line-height: 26px; /* 28px 高 - 上下边框，文本垂直居中 */
+  border-radius: 0; /* 拼合默认无圆角，两端再单独恢复 */
 }
+.fold-steps .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.fold-steps .btn + .btn { border-left: none; }
+.fold-steps .btn:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0 8px; /* 「全/All」文字档比数字档宽一点 */
+}
+.fold-steps .btn.active { background: var(--bg-hover); font-weight: 600; }
 
 /* ── 以下为 React Flow 画布区（用户要求保持原样，不随 Notion 主题走） ── */
 
