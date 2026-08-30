@@ -5,9 +5,11 @@
 接口约定：
 - **节点 ID 语义 = display_id（map 内编号，每图从 1 起）**。全局主键 node.id
   仅作内部 FK/环检测使用，不对外暴露。所有单节点操作以 (map_id, display_id) 定位。
-- ``actor`` 参数标识修改来源（'human' / 'agent'），写入 node.updated_by，
-  前端据此高亮 Agent 修改的节点。Agent 端（CLI/MCP/REST）默认 'agent'，
-  浏览器前端调用时显式传 'human'。
+- ``actor`` 参数标识修改来源（'human' / 'agent' / 'page_agent'），写入
+  node.updated_by，前端据此高亮 Agent 修改的节点。浏览器前端显式传
+  'human'；外部 Agent（CLI/MCP/REST，如 Claude Code）默认 'agent'；页内
+  Agent 经 X-Mindmap-Source header 被 service 层识别为 'page_agent'
+  （见 service.py _resolve_actor）——events 层据此豁免 External Changes。
 - outline 文本格式（get_tree 输出 / apply_outline 输入）::
 
     - [id:1] Q3 产品规划

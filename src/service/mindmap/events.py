@@ -36,12 +36,13 @@ def publish_change(
 ) -> None:
     """脑图发生 mutation 后广播。action 如 'node_added' / 'outline_applied'。
 
-    detail 为该次改动的人类可读摘要（如 "update_node #9 →「xx」"）。非 agent
-    来源（actor != 'agent'，即浏览器 UI 等外部改动）时落入待通知缓冲，
-    由页内 Agent 在收到下一条用户消息时消费（drain_pending）。
+    detail 为该次改动的人类可读摘要（如 "update_node #9 →「xx」"）。除页内
+    Agent 外的来源（actor != 'page_agent'：浏览器 human 与外部 MCP/CLI/REST
+    agent）都落入待通知缓冲，由页内 Agent 在收到下一条用户消息时消费
+    （drain_pending）。
     """
-    if detail is not None and actor != "agent":
-        record_pending(map_id, detail)
+    if detail is not None and actor != "page_agent":
+        record_pending(map_id, detail, actor)
     event = {
         "type": "changed",
         "map_id": map_id,
@@ -56,21 +57,24 @@ def publish_change(
             pass  # 丢消息安全：客户端按 version 全量重拉
 
 
-# ── 外部改动待通知缓冲（页内 Agent 的"你不在时用户改了什么"清单） ──────
+# ── 外部改动待通知缓冲（页内 Agent 的"你不在时别人改了什么"清单） ──────
 #
 # 设计：进程内存、按 map_id 键控、消费即清空（drain_pending）。
-# Agent 自己的改动（actor='agent'）不进缓冲——它的 toolResult 已自知。
+# 记录范围 = 除页内 Agent 外的一切写入方：human（画布手动编辑）与
+# agent（外部 MCP/CLI/REST，如 Claude Code / Cursor）。页内 Agent 自己
+# （actor='page_agent'，经 X-Mindmap-Source header 识别）不进缓冲——
+# 它的 toolResult 已自知，注入回去只是回声噪音。
 # 取舍：重启即失（窗口极小，接受）；不做上限（UI 手动操作频率有限）。
 
 
-_pending: dict[int, list[str]] = {}
+_pending: dict[int, list[tuple[str, str]]] = {}
 
 
-def record_pending(map_id: int, detail: str) -> None:
-    """记录一条外部改动摘要（事件循环单线程内调用，无竞态）。"""
-    _pending.setdefault(map_id, []).append(detail)
+def record_pending(map_id: int, detail: str, actor: str) -> None:
+    """记录一条外部改动摘要及来源 actor（事件循环单线程内调用，无竞态）。"""
+    _pending.setdefault(map_id, []).append((actor, detail))
 
 
-def drain_pending(map_id: int) -> list[str]:
-    """取走并清空该图的全部待通知改动。"""
+def drain_pending(map_id: int) -> list[tuple[str, str]]:
+    """取走并清空该图的全部待通知改动，元素为 (actor, detail)。"""
     return _pending.pop(map_id, [])

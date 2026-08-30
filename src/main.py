@@ -40,10 +40,37 @@ graphql_handler = GraphQLHandler(
 
 # ── UseCase 接口配置（REST / CLI / MCP / Voyager 共用） ────────────────
 
+
+def _extract_source(request) -> dict[str, str]:
+    """context_extractor：从请求头提取来源标记 X-Mindmap-Source。
+
+    页内 Agent 自调 MCP 时携带它（chat.py 的 MCPClient headers），
+    经 FromContext 注入 MindmapService 方法的 source 参数。两条路径入参
+    不同（nexusx 现状）：REST router 传 FastAPI Request；MCP compose_query
+    传 None——后者用 fastmcp 的 contextvars 取当前请求头。非 HTTP 上下文
+    取不到头时按无标记处理。header 无值/伪造他值均等价于普通外部调用。
+    注意：键必须始终存在（值可为 None）——nexusx REST router 对缺失的
+    context 键直接 400，不支持方法默认值回退（MCP executor 支持，两者
+    行为不一致）；None 值在 _resolve_actor 里等价于"无标记"。
+    """
+    value = None
+    if request is not None:
+        value = request.headers.get("x-mindmap-source")
+    else:
+        try:
+            from fastmcp.server.dependencies import get_http_headers
+
+            value = get_http_headers().get("x-mindmap-source")
+        except Exception:
+            value = None
+    return {"source": value}
+
+
 use_case_config = UseCaseAppConfig(
     name="mindmap",
     services=[MindmapService],
     description="人 + Agent 协同脑图：读写同一棵树",
+    context_extractor=_extract_source,
 )
 
 # ── MCP server（必须在 lifespan 定义之前创建 http_app） ───────────────

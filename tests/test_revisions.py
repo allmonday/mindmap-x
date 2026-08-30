@@ -239,7 +239,7 @@ async def test_restore_notifies_agent_when_human(session_factory, seeded_map):
     await mm.add_node(100, 1, "x")  # v2
     await mm.restore_revision(100, 2, actor="human")  # v3
     pending = drain_pending(100)
-    assert any("回滚到 v2" in p for p in pending)
+    assert any(a == "human" and "回滚到 v2" in d for a, d in pending)
 
 
 async def test_restore_corrupt_snapshot_rejected(session_factory, seeded_map):

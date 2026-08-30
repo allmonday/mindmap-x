@@ -78,9 +78,11 @@ curl -X POST localhost:8740/api/mindmap_service/get_tree \
 
 ### 变更感知：内部与外部的差异
 
-**只有页内 Agent 享有自动变更感知**：你在画布上的修改会在它下一轮回复前以 `<external_changes>` 自动注入其上下文，双方认知不漂移。
+**页内 Agent 享有自动变更感知**：其他所有写入方（你在画布上的手动修改、外部 Agent 经 MCP/CLI/REST 的写入）的变更都会在它下一轮回复前以 `<external_changes>` 自动注入其上下文，并按来源分组措辞（"用户在画布上手动修改了" / "外部 Agent 修改了"），多方认知不漂移。
 
-外部 Agent（MCP / CLI / REST）没有这条通道——MCP 是应答式协议，服务端无法主动把变更推入模型的上下文。因此**人机并行编辑时，外部 Agent 需要在每次写入前主动调用 `get_tree` 重新拉取全量树**，确认结构未变再操作，避免基于过期认知覆盖你的修改。
+页内 Agent 自己的写入不会进入注入清单（toolResult 已自知，注入回去只是回声噪音）。识别机制：它自调 MCP 时携带 `X-Mindmap-Source: page-agent` 请求头，服务端 `context_extractor` 提取后经 nexusx `FromContext` 注入，映射为专属 `actor='page_agent'`，事件层据此豁免。
+
+外部 Agent（MCP / CLI / REST）没有注入通道——MCP 是应答式协议，服务端无法主动把变更推入模型的上下文。因此**人机并行编辑时，外部 Agent 需要在每次写入前主动调用 `get_tree` 重新拉取全量树**，确认结构未变再操作，避免基于过期认知覆盖你的修改。
 
 ### 页内 Agent（内嵌 strands agents）
 

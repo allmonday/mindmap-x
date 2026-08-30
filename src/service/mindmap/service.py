@@ -4,7 +4,10 @@
   list   → [Dto.model_validate(m) for m in models] → Resolver().resolve(dtos)
   单条   → Dto.model_validate(entity)              → Resolver().resolve(dto)
 """
+from typing import Annotated
+
 from nexusx import UseCaseService, mutation, query
+from nexusx.use_case import FromContext
 from src.models import Resolver
 from src.service.mindmap import methods
 from src.service.mindmap.dtos import (
@@ -14,6 +17,22 @@ from src.service.mindmap.dtos import (
     RevisionDetail,
     RevisionSummary,
 )
+
+# 页内 Agent 自调 MCP 时携带的来源标记（chat.py 的 MCPClient headers），
+# 由 main.py 的 context_extractor 从请求头提取注入。
+PAGE_AGENT_SOURCE = "page-agent"
+
+
+def _resolve_actor(actor: str, source: str | None) -> str:
+    """FromContext 来源标记 → actor 值映射。
+
+    页内 Agent 的 MCP 调用带 X-Mindmap-Source: page-agent（chat.py 配置），
+    映射为专属 actor 'page_agent'——events 层据此把它排除在 External
+    Changes 待通知缓冲外（自己的改动 toolResult 已自知，注入回去是回声）。
+    其余调用方（外部 MCP/CLI/REST agent、浏览器 human）不带标记，source
+    为 None，actor 原样返回。
+    """
+    return "page_agent" if source == PAGE_AGENT_SOURCE else actor
 
 
 class MindmapService(UseCaseService):
@@ -28,8 +47,11 @@ class MindmapService(UseCaseService):
     建议委托 sub agent 执行——中间的树读取与逐次返回不占主 agent 上下文，
     只回摘要；单次 apply_outline 直接调用即可，无需委托。
 
-    actor 参数约定：Agent 端（CLI/MCP/REST 默认值）= 'agent'；
-    浏览器前端调用时显式传 'human'——写入 node.updated_by 供前端高亮。
+    actor 参数约定：浏览器前端显式传 'human'（写入 node.updated_by 供前端
+    高亮）；CLI/MCP/REST 默认 'agent'。页内 Agent 的 MCP 调用经
+    X-Mindmap-Source header 自动识别为 'page_agent'（source FromContext
+    参数映射，调用方不感知）——events 层据此豁免 External Changes 记录；
+    其余外部 agent 的写入会进页内 Agent 的 <external_changes> 注入。
     """
 
     # ── queries ───────────────────────────────────────────────────────
@@ -56,7 +78,7 @@ class MindmapService(UseCaseService):
         <external_changes> 自动注入（外部 MCP/CLI/REST 调用方即是——服务端
         不推送变更，无法主动触达模型上下文），人机并行编辑时应在每轮写入前
         先读本接口核对最新全量树，避免基于过期认知覆盖用户修改；享有注入的
-        页内 Agent 无需重复读取。
+        页内 Agent 无需重复读取（你经 MCP 的写入也会进它的注入清单）。
         """
         return await methods.get_tree(map_id)
 
@@ -78,9 +100,14 @@ class MindmapService(UseCaseService):
     # ── mutations ─────────────────────────────────────────────────────
 
     @mutation
-    async def create_map(cls, title: str, actor: str = "agent") -> MapDetail:
+    async def create_map(
+        cls,
+        title: str,
+        actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
+    ) -> MapDetail:
         """创建脑图（自动建根节点），返回含根节点的整树。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。"""
-        m = await methods.create_map(title, actor=actor)
+        m = await methods.create_map(title, actor=_resolve_actor(actor, source))
         dto = MapDetail.model_validate(m)
         return await Resolver().resolve(dto)
 
@@ -92,10 +119,13 @@ class MindmapService(UseCaseService):
         content: str,
         position: int | None = None,
         actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
     ) -> NodeDTO:
         """在 parent 下新增子节点（position=None 追加到末尾）。parent_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
         禁止用别名在一次 mutation 里调多个 add_node（会被静默折叠，只执行最后一个）；批量新增请用 apply_outline。"""
-        node = await methods.add_node(map_id, parent_id, content, position=position, actor=actor)
+        node = await methods.add_node(
+            map_id, parent_id, content, position=position, actor=_resolve_actor(actor, source)
+        )
         dto = NodeDTO.model_validate(node)
         return await Resolver().resolve(dto)
 
@@ -107,9 +137,12 @@ class MindmapService(UseCaseService):
         content: str | None = None,
         collapsed: bool | None = None,
         actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
     ) -> NodeDTO:
         """部分更新节点（content / collapsed）。node_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。"""
-        node = await methods.update_node(map_id, node_id, content=content, collapsed=collapsed, actor=actor)
+        node = await methods.update_node(
+            map_id, node_id, content=content, collapsed=collapsed, actor=_resolve_actor(actor, source)
+        )
         dto = NodeDTO.model_validate(node)
         return await Resolver().resolve(dto)
 
@@ -121,32 +154,52 @@ class MindmapService(UseCaseService):
         new_parent_id: int,
         position: int | None = None,
         actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
     ) -> NodeDTO:
         """移动节点（换父 / 同级重排）；禁止移到自己子树下（防环）。
 
         node_id / new_parent_id 均为 map 内 display_id。
         若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
         """
-        node = await methods.move_node(map_id, node_id, new_parent_id, position=position, actor=actor)
+        node = await methods.move_node(
+            map_id, node_id, new_parent_id, position=position, actor=_resolve_actor(actor, source)
+        )
         dto = NodeDTO.model_validate(node)
         return await Resolver().resolve(dto)
 
     @mutation
-    async def delete_node(cls, map_id: int, node_id: int, actor: str = "agent") -> bool:
+    async def delete_node(
+        cls,
+        map_id: int,
+        node_id: int,
+        actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
+    ) -> bool:
         """删除节点及其子树（根节点不可删除）。node_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。"""
-        return await methods.delete_node(map_id, node_id, actor=actor)
+        return await methods.delete_node(map_id, node_id, actor=_resolve_actor(actor, source))
 
     @mutation
-    async def delete_map(cls, map_id: int, actor: str = "agent") -> bool:
+    async def delete_map(
+        cls,
+        map_id: int,
+        actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
+    ) -> bool:
         """删除整张脑图（map + 全部节点 + 版本快照），不可恢复。
 
         删除后向仍打开该图的客户端广播 map_deleted（浏览器自动退回列表）。
         若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
         """
-        return await methods.delete_map(map_id, actor=actor)
+        return await methods.delete_map(map_id, actor=_resolve_actor(actor, source))
 
     @mutation
-    async def restore_revision(cls, map_id: int, version: int, actor: str = "agent") -> MapDetail:
+    async def restore_revision(
+        cls,
+        map_id: int,
+        version: int,
+        actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
+    ) -> MapDetail:
         """回滚整树到指定版本的快照（节点编号 display_id 保留，title 一并恢复）。
 
         回滚本身是一次新 mutation：version 继续前进、历史快照全部保留——
@@ -154,19 +207,30 @@ class MindmapService(UseCaseService):
         Agent 可用它撤销自己上一轮的误操作。
         若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
         """
-        m = await methods.restore_revision(map_id, version, actor=actor)
+        m = await methods.restore_revision(map_id, version, actor=_resolve_actor(actor, source))
         dto = MapDetail.model_validate(m)
         return await Resolver().resolve(dto)
 
     @mutation
-    async def expand_all(cls, map_id: int, actor: str = "agent") -> MapDetail:
+    async def expand_all(
+        cls,
+        map_id: int,
+        actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
+    ) -> MapDetail:
         """展开全部节点（视图状态，不改变修改标记/时间戳）。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。"""
-        m = await methods.expand_all(map_id, actor=actor)
+        m = await methods.expand_all(map_id, actor=_resolve_actor(actor, source))
         dto = MapDetail.model_validate(m)
         return await Resolver().resolve(dto)
 
     @mutation
-    async def set_fold_level(cls, map_id: int, level: int, actor: str = "agent") -> MapDetail:
+    async def set_fold_level(
+        cls,
+        map_id: int,
+        level: int,
+        actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
+    ) -> MapDetail:
         """按层级批量收放视图：保留前 level 层可见，更深的子树收起（根 = 第 1 层）。
 
         level = 可见层数（off-by-one 注意）：第 level 层节点本身可见但被置为
@@ -178,7 +242,7 @@ class MindmapService(UseCaseService):
         批量按层折叠/展开请用它，不要逐节点 update_node(collapsed=...)。
         若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
         """
-        m = await methods.set_fold_level(map_id, level, actor=actor)
+        m = await methods.set_fold_level(map_id, level, actor=_resolve_actor(actor, source))
         dto = MapDetail.model_validate(m)
         return await Resolver().resolve(dto)
 
@@ -189,6 +253,7 @@ class MindmapService(UseCaseService):
         outline: str,
         mode: str = "merge",
         actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
     ) -> MapDetail:
         """Agent 批量写法：按缩进 outline 整树写入。
 
@@ -207,6 +272,6 @@ class MindmapService(UseCaseService):
         replace：保留根节点，其余全删重建。
         若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树（本方法整树重写，过期认知的破坏面最大）。
         """
-        m = await methods.apply_outline(map_id, outline, mode=mode, actor=actor)
+        m = await methods.apply_outline(map_id, outline, mode=mode, actor=_resolve_actor(actor, source))
         dto = MapDetail.model_validate(m)
         return await Resolver().resolve(dto)

@@ -149,7 +149,7 @@ async def test_delete_map_missing(session_factory):
 
 
 async def test_delete_map_clears_pending(session_factory, seeded_map):
-    record_pending(100, "update_node #2 折叠")
+    record_pending(100, "update_node #2 折叠", "human")
     await mm.delete_map(100)
     assert drain_pending(100) == []
 
@@ -317,6 +317,29 @@ async def test_publish_subscribe_roundtrip(session_factory):
         unsubscribe(100, q)
     publish_change(100, version=8, action="node_added", actor="agent")
     assert q.empty()  # 退订后不再收到
+
+
+# ── External Changes 判定矩阵（按 actor 区分内外 Agent） ──────────────
+
+
+async def test_pending_records_human_and_external_agent_not_page_agent(session_factory):
+    """只有页内 Agent（page_agent）豁免；human 与外部 agent 都进待通知缓冲。"""
+    drain_pending(100)  # 清场：模块级缓冲可能残留其他测试的记录
+    publish_change(100, version=2, action="node_updated", actor="human", detail="h")
+    publish_change(100, version=3, action="node_updated", actor="agent", detail="e")
+    publish_change(100, version=4, action="node_updated", actor="page_agent", detail="p")
+    assert drain_pending(100) == [("human", "h"), ("agent", "e")]
+
+
+def test_resolve_actor_maps_page_agent_source():
+    """source='page-agent'（页内 Agent header）映射为专属 actor；
+    其他值 / None（外部调用方）actor 原样保留。"""
+    from src.service.mindmap.service import _resolve_actor
+
+    assert _resolve_actor("agent", "page-agent") == "page_agent"
+    assert _resolve_actor("agent", None) == "agent"
+    assert _resolve_actor("agent", "other") == "agent"
+    assert _resolve_actor("human", None) == "human"
 
 
 async def test_outline_multiline_content_roundtrip(session_factory, seeded_map):

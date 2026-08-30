@@ -387,7 +387,14 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str) -> None:
         from strands.session import FileSessionManager
 
         sm = FileSessionManager(session_id=_session_id(map_id), storage_dir=SESSIONS_DIR)
-        with MCPClient(url=SELF_MCP_URL) as mcp:
+        # X-Mindmap-Source 标记自己是页内 Agent：服务端 context_extractor 提取
+        # → FromContext 注入 → actor='page_agent' → 不进 <external_changes>
+        # 待通知缓冲（自己的改动 toolResult 已自知，注入回去是回声噪音）。
+        # 外部 Agent（Claude Code / Cursor）不带此头，写入会被记录并注入。
+        with MCPClient(
+            url=SELF_MCP_URL,
+            headers={"X-Mindmap-Source": "page-agent"},
+        ) as mcp:
             agent = Agent(
                 agent_id=SESSION_AGENT_ID,
                 session_manager=sm,
@@ -478,16 +485,26 @@ async def chat(ws: WebSocket, map_id: int):
             if task is not None and not task.done():
                 await ws.send_json({"type": "busy", "message": "Agent 正在处理上一条消息…"})
                 continue
-            # 外部改动通知：用户在你不在时手动改了树 → 拼在本轮 user 消息尾部发给
-            # LLM（消费即清空）。注入在末尾追加区，system prompt 与既有历史不动，
-            # KV-cache 前缀安全。
+            # 外部改动通知：你不在时别人改了树（用户手改 / 外部 Agent 写入）→
+            # 拼在本轮 user 消息尾部发给 LLM（消费即清空）。注入在末尾追加区，
+            # system prompt 与既有历史不动，KV-cache 前缀安全。页内 Agent 自己
+            # 的写入不在此列（actor='page_agent' 豁免，见 events.py）。
             pending = drain_pending(map_id)
             if pending:
-                text += (
-                    "\n\n<external_changes>\n用户在画布上手动修改了：\n"
-                    + "\n".join(f"- {d}" for d in pending)
-                    + "\n</external_changes>"
-                )
+                by_human = [d for a, d in pending if a == "human"]
+                by_agent = [d for a, d in pending if a != "human"]
+                sections = []
+                if by_human:
+                    sections.append(
+                        "用户在画布上手动修改了：\n"
+                        + "\n".join(f"- {d}" for d in by_human)
+                    )
+                if by_agent:
+                    sections.append(
+                        "外部 Agent（MCP/CLI/REST）修改了：\n"
+                        + "\n".join(f"- {d}" for d in by_agent)
+                    )
+                text += "\n\n<external_changes>\n" + "\n".join(sections) + "\n</external_changes>"
             # 不 await：主循环继续收消息（busy 拒绝可达）；超时由 runner 内部 asyncio.timeout 处理
             task = asyncio.create_task(_run_agent(ws, map_id, text))
     except WebSocketDisconnect:
