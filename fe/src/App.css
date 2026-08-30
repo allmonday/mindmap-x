@@ -377,7 +377,9 @@ body.chat-resizing {
   z-index: 5;
 }
 
-.ws-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+/* flex-shrink:0 —— 窄屏（手机）头部空间不足时 flex 默认收缩会把 8×8 圆点
+   压成宽 < 高的椭圆；状态点尺寸不可参与分配 */
+.ws-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .ws-dot.live { background: #339a6c; }
 .ws-dot.connecting { background: #de9436; }
 .ws-dot.dead { background: var(--danger); }
