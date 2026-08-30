@@ -2,6 +2,7 @@
 name = "agent-mindmap"
 version = "0.1.0"
 description = "人 + AI Agent 协同脑图工具：Human 浏览器编辑 / Agent CLI·MCP·REST 读写 / WebSocket 实时互见"
+license = "BUSL-1.1"
 requires-python = ">=3.12"
 dependencies = [
     "nexusx[cli,fastmcp]>=6,<7",
