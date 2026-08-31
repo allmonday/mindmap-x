@@ -22,7 +22,7 @@ export interface LNode {
 }
 
 const NODE_H = 36
-const GAP_Y = 16
+const GAP_Y = 32 // 兄弟节点垂直间隙（原 16，2026-08-31 应需求翻倍）
 const LEVEL_GAP = 86
 const FONT = 14
 const MAX_W = 320
