@@ -903,7 +903,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           <div className="modal-body gate" onClick={(e) => e.stopPropagation()}>
             <h3>{t('chat.gatedTitle')}</h3>
             <div className="gate-body">
-              <p>{t('chat.gatedBody')}</p>
+              <p>{t(agentStatus?.desktop ? 'chat.gatedBodyDesktop' : 'chat.gatedBody')}</p>
               {agentStatus?.reason_code && (
                 <p className="gate-reason">
                   {gateReasonText(t, agentStatus.reason_code, agentStatus.reason_detail)}

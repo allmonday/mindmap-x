@@ -66,6 +66,7 @@ const zh = {
   'chat.unavailable': 'Agent 对话不可用',
   'chat.gatedTitle': 'Agent 对话未配置',
   'chat.gatedBody': '配置模型网关后即可使用：在 .env（或容器环境变量）中设置下面三个变量后重启服务，示例见 .env.example。',
+  'chat.gatedBodyDesktop': '配置模型网关后即可使用：在数据目录创建 .env（~/Library/Application Support/MindMapX/.env），设置下面三个变量后重启应用。',
   // 健康检查失败原因（reason_code → 文案，参数由服务端 reason_detail 插值）
   'chat.gate.envMissing': '未配置模型网关环境变量: {missing}（OpenAI 兼容网关三项，见 README）',
   'chat.gate.gatewayHttp': '模型网关返回 HTTP {status}（检查 OPENAI_BASE_URL / OPENAI_API_KEY）',
@@ -181,6 +182,7 @@ const en: Record<I18nKey, string> = {
   'chat.unavailable': 'Agent chat unavailable',
   'chat.gatedTitle': 'Agent chat not configured',
   'chat.gatedBody': 'Set these three variables in .env (or container environment) and restart the service — see .env.example:',
+  'chat.gatedBodyDesktop': 'Create .env in the app data directory (~/Library/Application Support/MindMapX/.env) with these three variables, then restart the app:',
   'chat.gate.envMissing': 'Model gateway env vars missing: {missing} (the three OpenAI-compatible vars, see README)',
   'chat.gate.gatewayHttp': 'Model gateway returned HTTP {status} (check OPENAI_BASE_URL / OPENAI_API_KEY)',
   'chat.gate.gatewayUnreachable': 'Model gateway unreachable ({error}) — check OPENAI_BASE_URL: {base}',

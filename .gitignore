@@ -7,6 +7,9 @@ wheels/
 *.egg-info/
 *.egg
 
+# 桌面打包产物（pyinstaller 出 dist/，hdiutil 出 dmg）
+*.dmg
+
 # Virtual environments
 .venv/
 venv/

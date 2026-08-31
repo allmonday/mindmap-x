@@ -340,6 +340,8 @@ async def health_check() -> dict:
         "checks": checks,
         "reason_code": reason_code,
         "reason_detail": reason_detail or None,
+        # 桌面入口（src/desktop.py）设置；前端按模式渲染 .env 配置位置指引
+        "desktop": bool(os.getenv("MINDMAPX_DESKTOP")),
     }
 
 

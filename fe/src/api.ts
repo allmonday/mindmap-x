@@ -69,6 +69,7 @@ export interface ChatGateStatus {
   ok: boolean
   reason_code: string | null
   reason_detail: Record<string, string | number> | null
+  desktop?: boolean
 }
 
 const GATE_REASON_KEYS: Record<string, I18nKey> = {

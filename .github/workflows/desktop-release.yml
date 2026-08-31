@@ -1,0 +1,55 @@
+name: Desktop Release
+
+# 桌面版构建与发布：tag v* 触发（也可手动），产物发 GitHub Releases。
+# 仅 macOS arm64；未签名——用户首次打开需 xattr -cr（见 README Desktop 小节）。
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build frontend
+        working-directory: fe
+        run: |
+          npm ci
+          npm run build   # 产出 src/static
+
+      - name: Sync dependencies
+        run: uv sync --frozen --extra desktop
+
+      - name: PyInstaller
+        run: uv run pyinstaller desktop.spec --noconfirm
+
+      - name: Smoke test  # 产物自检：迁移 + 起服 + 探活，失败即中止发布
+        env:
+          MINDMAPX_DATA_DIR: ${{ runner.temp }}/mmx-smoke
+        run: dist/MindMapX.app/Contents/MacOS/MindMapX --smoke
+
+      - name: Package  # DMG（UDZO 压缩）；hdiutil 打 .app 天然保留权限与 symlink
+        run: |
+          hdiutil create -volname "MindMap X" -srcfolder dist/MindMapX.app \
+            -ov -format UDZO MindMapX-macOS-arm64.dmg
+          shasum -a 256 MindMapX-macOS-arm64.dmg > MindMapX-macOS-arm64.dmg.sha256
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            MindMapX-macOS-arm64.dmg
+            MindMapX-macOS-arm64.dmg.sha256

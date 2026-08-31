@@ -57,6 +57,19 @@ Requirements: Python ≥ 3.12, Node ^20.19 || ≥22.12 (to build the frontend).
 cd fe && npm run dev   # port 5173, proxies /api /ws /mcp /voyager to 8740
 ```
 
+### Desktop app (macOS)
+
+Grab the latest `MindMapX-macOS-arm64.dmg` from [Releases](../../releases), open it, drag `MindMapX` into Applications, and strip the quarantine flag (the build is unsigned):
+
+```bash
+xattr -cr /Applications/MindMapX.app   # or right-click → Open the first time
+```
+
+- **Data lives in** `~/Library/Application Support/MindMapX/` — `mindmap.db`, chat sessions/archives, and `desktop.log` (the only log channel for the GUI build)
+- **Model config**: create `.env` in that data directory (same variables as the server mode: `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `AGENT_MODEL`), then restart the app
+- **Agent access**: the app serves MCP on a local port — read it from the window title (`MindMap X — MCP :8740`) and connect with `claude mcp add --transport http mindmap http://127.0.0.1:8740/mcp`. Port 8740 is preferred; if taken, a random free port is used
+- Known limits: macOS arm64 only; unsigned (hence the `xattr` step)
+
 ## Connecting Agents
 
 ```bash

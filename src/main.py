@@ -69,7 +69,7 @@ def _extract_source(request) -> dict[str, str]:
 use_case_config = UseCaseAppConfig(
     name="mindmap",
     services=[MindmapService],
-    description="人 + Agent 协同脑图：读写同一棵树",
+    description="Human + Agent collaborative mind map: read and write one shared tree",
     context_extractor=_extract_source,
 )
 
@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Agent MindMap",
     version="0.1.0",
-    description="人 + AI Agent 协同脑图：Human 浏览器编辑 / Agent CLI·MCP·REST 读写 / 实时互见",
+    description="Human + AI agent collaborative mind map: humans edit in the browser, agents read/write via CLI/MCP/REST, changes visible to both in real time",
     lifespan=lifespan,
 )
 
@@ -251,9 +251,12 @@ app.include_router(chat.router)
 # mount 遮蔽为死代码，路由顺序调整后又反向抢走 /（浏览器看到 JSON 而非页面）。
 # 服务信息可通过 /docs（OpenAPI）查看。
 
-import os  # noqa: E402
+import pathlib  # noqa: E402
 
-if os.path.isdir("src/static"):
+# 基于模块路径定位（不依赖 cwd）：源码运行 = src/static；
+# PyInstaller onedir 下 frozen 模块 __file__ = _MEIPASS/src/main.pyc，与 spec datas 落点对齐
+_static_dir = pathlib.Path(__file__).resolve().parent / "static"
+if _static_dir.is_dir():
     from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-    app.mount("/", StaticFiles(directory="src/static", html=True), name="fe")
+    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="fe")

@@ -58,6 +58,19 @@ docker compose build
 cd fe && npm run dev   # 5173 端口，代理 /api /ws /mcp /voyager 到 8740
 ```
 
+### 桌面版（macOS）
+
+从 [Releases](../../releases) 下载最新的 `MindMapX-macOS-arm64.dmg`，打开后把 `MindMapX` 拖入应用程序，去掉隔离标记（构建未签名）：
+
+```bash
+xattr -cr /Applications/MindMapX.app   # 或首次右键 → 打开
+```
+
+- **数据目录**：`~/Library/Application Support/MindMapX/`——`mindmap.db`、聊天会话/归档、`desktop.log`（GUI 版唯一日志通道）
+- **模型配置**：在数据目录创建 `.env`（与服务模式相同的三个变量：`OPENAI_BASE_URL` / `OPENAI_API_KEY` / `AGENT_MODEL`），重启应用生效
+- **Agent 接入**：应用在本机端口提供 MCP 服务——端口显示在窗口标题栏（`MindMap X — MCP :8740`），用 `claude mcp add --transport http mindmap http://127.0.0.1:8740/mcp` 连接。优先使用 8740，被占用则换随机空闲端口
+- 已知限制：仅 macOS arm64；未签名（因此需要 `xattr` 步骤）
+
 ## Agent 接入
 
 ```bash
