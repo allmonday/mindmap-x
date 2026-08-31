@@ -17,6 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Version guard  # tag 版本必须与 pyproject 一致（版本唯一事实源），防漂移
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG 与 pyproject.toml version $PKG 不一致——先改 pyproject 再打对应 tag"
+            exit 1
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22

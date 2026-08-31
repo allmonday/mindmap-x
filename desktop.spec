@@ -6,7 +6,13 @@ datas 落点与运行时定位对齐：
 - alembic/*   → _MEIPASS/alembic/（src/desktop.py 用 _MEIPASS 定位 script_location；
                 versions/*.py 由 alembic ScriptDirectory 从磁盘读取，作数据文件即可）
 """
+import tomllib
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
+
+# 版本唯一事实源：pyproject.toml 的 project.version（写入 .app 的 Info.plist）
+VERSION = tomllib.loads((Path(SPECPATH) / "pyproject.toml").read_text())["project"]["version"]
 
 datas = [
     ("alembic/env.py", "alembic"),
@@ -18,11 +24,12 @@ datas = [
 datas += collect_data_files("nexusx")
 datas += collect_data_files("strands")
 
-# 运行时 importlib.metadata 查版本的库（fastmcp/fastapi 等在 import 期就查），frozen 环境必须显式携带 dist-info
+# 运行时 importlib.metadata 查版本的库（fastmcp/fastapi 等在 import 期就查），frozen 环境必须显式携带 dist-info；
+# agent-mindmap 是本项目（src/main.py 的 FastAPI version 读它）
 for _pkg in (
-    "fastmcp", "nexusx", "strands-agents", "fastapi", "uvicorn", "starlette",
-    "pydantic", "sqlalchemy", "sqlmodel", "alembic", "aiosqlite", "greenlet",
-    "pywebview", "platformdirs",
+    "agent-mindmap", "fastmcp", "nexusx", "strands-agents", "fastapi", "uvicorn",
+    "starlette", "pydantic", "sqlalchemy", "sqlmodel", "alembic", "aiosqlite",
+    "greenlet", "pywebview", "platformdirs",
 ):
     datas += copy_metadata(_pkg)
 
@@ -57,4 +64,4 @@ exe = EXE(
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="MindMapX")
 
-app = BUNDLE(coll, name="MindMapX.app", console=False)  # icon 后续可加（favicon.svg 转 .icns）
+app = BUNDLE(coll, name="MindMapX.app", version=VERSION, console=False)  # icon 后续可加（favicon.svg 转 .icns）

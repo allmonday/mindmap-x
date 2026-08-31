@@ -5,6 +5,7 @@ Phase 2: + entity-first GraphQL and GraphiQL
 Phase 3: + REST + MCP（UseCase GraphQL）+ Voyager（services 视图）；CLI 见 src/cli.py
 """
 from contextlib import asynccontextmanager
+from importlib import metadata
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -91,7 +92,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Agent MindMap",
-    version="0.1.0",
+    version=metadata.version("agent-mindmap"),  # 唯一事实源：pyproject.toml
     description="Human + AI agent collaborative mind map: humans edit in the browser, agents read/write via CLI/MCP/REST, changes visible to both in real time",
     lifespan=lifespan,
 )
