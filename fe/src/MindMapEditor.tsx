@@ -990,17 +990,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             {focusPath.length > 0 && (
               <span className="crumbs">
                 {focusPath.map((n, i) => {
+                  // 根(i=0)=返回全图、无兄弟不挂菜单；中间项与当前项都挂同层导航
+                  // （当前项最常用：正在看第 4 部，hover 弹出第 5/6 部直接切）
+                  const withMenu = i > 0
                   const isCurrent = i === focusPath.length - 1
-                  // 根(i=0)=返回全图无兄弟；当前项不可点——都直出，只有中间可点项挂同层导航
-                  const withMenu = !isCurrent && i > 0
                   return (
                     <Fragment key={n.display_id}>
                       <span className="crumb-sep">›</span>
-                      {isCurrent ? (
-                        <span className="crumb cur" title={n.content}>
-                          {n.content}
-                        </span>
-                      ) : withMenu ? (
+                      {withMenu ? (
                         <span
                           className="crumb-wrap"
                           onMouseEnter={() => {
@@ -1012,13 +1009,19 @@ export function MindMapEditor({ mapId, onBack }: Props) {
                             setCrumbHoverId((cur) => (cur === n.display_id ? null : cur))
                           }}
                         >
-                          <button
-                            className="crumb"
-                            title={t('editor.focusTo', { content: n.content })}
-                            onClick={() => switchFocus(n.display_id)}
-                          >
-                            {n.content}
-                          </button>
+                          {isCurrent ? (
+                            <span className="crumb cur" title={n.content}>
+                              {n.content}
+                            </span>
+                          ) : (
+                            <button
+                              className="crumb"
+                              title={t('editor.focusTo', { content: n.content })}
+                              onClick={() => switchFocus(n.display_id)}
+                            >
+                              {n.content}
+                            </button>
+                          )}
                           {crumbHoverId === n.display_id && (
                             <CrumbMenu
                               siblings={siblingsOf(n.display_id)}
