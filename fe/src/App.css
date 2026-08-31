@@ -638,6 +638,14 @@ button.crumb:hover { color: var(--ink); }
 .rf-wrap .react-flow__edge-interaction {
   cursor: default !important;
 }
+/* pywebview(WKWebView) 的光标切换会渲染失败，残留旧光标的白色不透明位图：
+   画布空白是 grab、节点是 default，鼠标从画布移到节点上一切换就显形"白色抓手"。
+   对策 = 整块画布光标恒定 default（pane 的 grab/grabbing、controls 的 pointer 一并压平），
+   无切换即无残影；平移/缩放交互不受影响。 */
+.rf-wrap .react-flow__pane,
+.rf-wrap .react-flow__controls-button {
+  cursor: default !important;
+}
 
 /* 节点操作按钮：渲染在节点 DOM 内（随画布平移缩放），节点左下方、左右排列。
    显示时机：hover 或 选中（.sel）常驻；默认 opacity/visibility 隐藏（不可点） */
