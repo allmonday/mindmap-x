@@ -734,7 +734,7 @@ button.crumb:hover { color: var(--ink); }
   width: auto; /* 解除图标态的 30px 定宽，文字按钮按内容撑开 */
   padding: 0 10px;
 }
-/* 显示态由 React 驱动（.show = hoverSettled 停留 0.5s 或 selected，见 MindNodeView）；
+/* 显示态由 React 驱动（.show = 点击选中 selected，见 MindNodeView）；
    adding（加子输入态）常驻：焦点在输入框时鼠标可能已移开 */
 .node-actions.show,
 .node-actions.adding {
@@ -742,8 +742,10 @@ button.crumb:hover { color: var(--ink); }
   visibility: visible;
 }
 /* 悬停桥：节点底边与按钮行之间的 9px 空隙用伪元素覆盖，鼠标下移途中
-   悬停链不断（伪元素是 .node-actions 的一部分，也是 .rf-node 的后代） */
-.node-actions::before {
+   悬停链不断（伪元素是 .node-actions 的一部分，也是 .rf-node 的后代）。
+   输入模式（.adding）不要桥——输入框 autoFocus 即焦点，且 as-child 方位
+   下桥反而悬空拦截点击 */
+.node-actions:not(.adding)::before {
   content: '';
   position: absolute;
   top: -9px;
@@ -772,8 +774,15 @@ button.crumb:hover { color: var(--ink); }
   border-color: transparent;
 }
 
-/* 加子模式：+ 操作条变为 输入框 + 保存 */
+/* 加节点输入模式：+ 操作条变为 输入框 + 保存。
+   方位按语义：sibling = 锚点正下方（下一个兄弟的落位，即默认位置）；
+   child = 锚点右侧（子树生长方向） */
 .node-actions.adding { gap: 5px; }
+.node-actions.adding.as-child {
+  top: 50%;
+  left: calc(100% + 14px);
+  transform: translateY(-50%);
+}
 .add-input {
   width: 150px;
   height: 30px;

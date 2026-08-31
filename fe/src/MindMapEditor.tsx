@@ -32,14 +32,14 @@ type MindNodeData = {
   isLayoutRoot: boolean // 当前布局根 = 真根（非聚焦时）或聚焦节点
   isEditing: boolean
   isAdding: boolean
+  addingDir: 'child' | 'sibling' // 输入框方位与提交语义（child=挂锚点下，sibling=挂锚点父）
   hasChildren: boolean
   onSelect: (id: number) => void
   onStartEdit: (id: number) => void
   onToggleCollapse: (lnode: LNode) => void
   onCommitEdit: (id: number, text: string) => void
   onCancelEdit: () => void
-  onAddChild: (parentId: number) => void
-  onStartAdd: (parentId: number) => void
+  onStartAdd: (parentId: number, dir?: 'child' | 'sibling') => void
   onCommitAdd: (parentId: number, text: string) => void
   onCancelAdd: () => void
   onDelete: (id: number) => void
@@ -49,32 +49,26 @@ type MindNodeData = {
 type MindNode = Node<MindNodeData, 'mind'>
 
 function MindNodeView({ data, selected }: NodeProps<MindNode>) {
-  const { lnode, isEditing, isAdding, hasChildren } = data
+  const { lnode, isEditing, isAdding, addingDir, hasChildren } = data
   const n = lnode.node
   const isRoot = data.isLayoutRoot // 布局根 = 真根或聚焦节点；非聚焦时与真根判定完全一致
   // 文案经 context 直取（ReactFlow 的 memo 不拦截 context 更新）——
   // 切语言时本组件自渲染，rfNodes memo 不需要重建
   const { t } = useI18n()
 
-  // hover 意图延迟：指针停留 0.5s 才亮操作按钮（快速扫过不闪）。
-  // 不用 CSS transition-delay——hover 开始时排定的延迟过渡无法被"中途选中"
-  // 打断，点击选中会跟着等 0.5s；JS 定时器则可即时互斥。
-  // 移入按钮行/悬停桥不算离开（它们是本节点 DOM 的后代，mouseleave 不触发）
-  const [hoverSettled, setHoverSettled] = useState(false)
-  const hoverTimer = useRef<number | undefined>(undefined)
-
-  // 删除两步确认（与 MapList 同款交互语言）：首点只亮起，3s 内再点才执行。
-  // 删除按钮就在 Focus 旁边，误触代价是整个子树——不可无确认直删
+  // 操作按钮行：点击选中才显示、点外部（画布/别的节点）即消失——
+  // 选中态由编辑器 selectedId 驱动（onPaneClick / 点其他节点都会换选），
+  // 组件里无需自管显隐。曾用 hover 停留 0.5s 亮起，扫画布时易误亮，弃用
   const [confirmDel, setConfirmDel] = useState(false)
   const delTimer = useRef<number | undefined>(undefined)
-  useEffect(
-    () => () => {
-      window.clearTimeout(hoverTimer.current)
-      window.clearTimeout(delTimer.current)
-    },
-    [],
-  )
-  const showActions = !isEditing && (hoverSettled || selected)
+  // 删除两步确认（与 MapList 同款交互语言）：首点只亮起，3s 内再点才执行。
+  // 删除按钮就在 Focus 旁边，误触代价是整个子树——不可无确认直删
+  useEffect(() => {
+    window.clearTimeout(delTimer.current)
+    if (!selected) setConfirmDel(false) // 选中丢失即解除 armed 态，不留悬亮红
+  }, [selected])
+  useEffect(() => () => window.clearTimeout(delTimer.current), [])
+  const showActions = !isEditing && selected
 
   const clickDelete = () => {
     if (confirmDel) {
@@ -93,16 +87,6 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       // 编辑中放开高度（min-height 保底不缩）：节点随 textarea 内容向下生长，
       // commit 后由布局重排归位；期间 z-index 抬升盖住下方节点（见 App.css）
       style={{ width: lnode.w, height: isEditing ? 'auto' : lnode.h, minHeight: isEditing ? lnode.h : undefined }}
-      onMouseEnter={() => {
-        window.clearTimeout(hoverTimer.current)
-        hoverTimer.current = window.setTimeout(() => setHoverSettled(true), 500)
-      }}
-      onMouseLeave={() => {
-        window.clearTimeout(hoverTimer.current)
-        setHoverSettled(false)
-        window.clearTimeout(delTimer.current) // 离开即解除删除确认态，不留悬 armed
-        setConfirmDel(false)
-      }}
       onClick={(e) => {
         e.stopPropagation()
         data.onSelect(n.display_id)
@@ -151,26 +135,28 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
       <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
 
-      {/* 节点操作按钮：节点左下方，hover 停留 0.5s 或选中时显示（.show 由
-          hoverSettled/selected 驱动）。加子模式 = 输入框 + 保存，确认后才创建节点 */}
+      {/* 节点操作按钮：节点左下方，点击选中时显示（.show 由 selected 驱动，
+          点画布/其他节点即消失）。加子模式 = 输入框 + 保存，确认后才创建节点 */}
       {!isEditing && (
         isAdding ? (
-          <div className="node-actions adding">
+          <div className={`node-actions adding as-${addingDir}`}>
             <input
               className="add-input"
               autoFocus
-              placeholder={t('node.addPlaceholder')}
+              placeholder={t(addingDir === 'sibling' ? 'node.addSiblingPlaceholder' : 'node.addPlaceholder')}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
-                e.stopPropagation() // 输入态按键不冒泡（防 Enter 触发全局"加同级"）
+                e.stopPropagation() // 输入态按键不冒泡（防 Enter 触发全局快捷键）
                 if (e.key === 'Enter') {
                   e.preventDefault()
-                  data.onCommitAdd(n.display_id, (e.target as HTMLInputElement).value)
+                  data.onCommitAdd(addingDir === 'sibling' && n.parent ? n.parent.display_id : n.display_id, (e.target as HTMLInputElement).value)
                 }
                 if (e.key === 'Escape') data.onCancelAdd()
               }}
               // 与节点编辑（rf-editor）同款语义：失焦即提交，空文本视为取消
-              onBlur={(e) => data.onCommitAdd(n.display_id, e.target.value)}
+              onBlur={(e) =>
+                data.onCommitAdd(addingDir === 'sibling' && n.parent ? n.parent.display_id : n.display_id, e.target.value)
+              }
             />
             <button
               className="btn sm primary save-add"
@@ -180,7 +166,7 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
               onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
                 const input = e.currentTarget.previousElementSibling as HTMLInputElement
-                data.onCommitAdd(n.display_id, input.value)
+                data.onCommitAdd(addingDir === 'sibling' && n.parent ? n.parent.display_id : n.display_id, input.value)
               }}
             >
               <CheckIcon />
@@ -236,13 +222,11 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
           title={n.collapsed ? t('node.expand') : t('node.collapse')}
           onClick={(e) => {
             e.stopPropagation()
-            // 折叠是视图操作，不算"要操作这个节点"的意图：取消进行中的 hover 计时，
-            // 点完后指针多半仍停在节点上，否则 0.5s 后操作按钮会自己弹出来
-            window.clearTimeout(hoverTimer.current)
+            // 折叠是视图操作，不算"要操作这个节点"的意图——不置选中
             data.onToggleCollapse(lnode)
           }}
         >
-          {n.collapsed ? '+' : '−'}
+          {n.collapsed ? <FoldPlusIcon /> : <FoldMinusIcon />}
         </button>
       )}
     </div>
@@ -403,6 +387,20 @@ const PlusIcon = () => (
   </svg>
 )
 
+// 折叠圆点的 +/−：SVG 几何居中——文本字符的字形留白依平台字体而定
+// （macOS 回退 PingFang/雅黑时加号偏左上），画线则与字体无关
+const FoldPlusIcon = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+)
+
+const FoldMinusIcon = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+    <path d="M5 12h14" />
+  </svg>
+)
+
 const TrashIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" />
@@ -424,7 +422,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [detail, setDetail] = useState<MapDetail | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [addingId, setAddingId] = useState<number | null>(null)
+  // 加节点输入态：anchor = 输入框锚定的节点，dir = 方位与提交语义（见 startAdd）
+  const [adding, setAdding] = useState<{ anchor: number; dir: 'child' | 'sibling' } | null>(null)
   const [wsState, setWsState] = useState<'connecting' | 'live' | 'dead'>('connecting')
   const [error, setError] = useState<string | null>(null)
   const [outlineOpen, setOutlineOpen] = useState(false)
@@ -632,23 +631,23 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     },
     [mapId],
   )
-  const addChild = useCallback(
-    // 快捷键加子用默认名，按当前 UI 语言落库（'新节点'/'New node'）
-    (parentId: number) => void guard(() => api.addNode(mapId, parentId, t('node.defaultName'))),
-    [mapId, t],
+  // 两段式加节点：先出输入框，确认内容后才真正创建（空文本 = 取消）。
+  // dir 决定输入框方位与提交语义——child：锚点右侧，创建挂锚点下；
+  // sibling：锚点正下方，创建挂锚点的父（MindNodeView 提交时自算父 id）
+  const startAdd = useCallback(
+    (anchor: number, dir: 'child' | 'sibling' = 'child') => setAdding({ anchor, dir }),
+    [],
   )
-  // + 按钮的两段式加子：先转输入框，确认内容后才真正创建（空文本 = 取消）
-  const startAdd = useCallback((parentId: number) => setAddingId(parentId), [])
   const commitAdd = useCallback(
     (parentId: number, text: string) => {
-      setAddingId(null)
+      setAdding(null)
       const value = text.trim() // 局部命名避开 i18n 的 t
       if (!value) return
       void guard(() => api.addNode(mapId, parentId, value))
     },
     [mapId],
   )
-  const cancelAdd = useCallback(() => setAddingId(null), [])
+  const cancelAdd = useCallback(() => setAdding(null), [])
   const deleteNode = useCallback(
     (id: number) => void guard(() => api.deleteNode(mapId, id)),
     [mapId],
@@ -664,6 +663,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     },
     [mapId, queueFoldMutation],
   )
+
   const setFoldLevel = useCallback(
     (level: number) =>
       queueFoldMutation(
@@ -681,7 +681,71 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     [mapId, queueFoldMutation],
   )
 
-  // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Esc 退聚焦）──
+
+  // ── layout → React Flow nodes/edges ────────────────────────────────
+  const layout = useMemo(
+    () => (detail ? layoutMap(detail, layoutMode, focusId) : null),
+    [detail, layoutMode, focusId],
+  )
+
+  // 方向键导航（层级语义，XMind 同款：→ 进子 / ← 回父 / ↑↓ 兄弟）。
+  // 目标节点必在可见集内：当前可见 ⇒ 父链全展开 ⇒ 兄弟与父可见；
+  // 唯一例外是 → 的子节点——折叠时先乐观展开（与选中同批 setState，
+  // 子节点渲染出来即带选中态）。折叠节点的子数据一直躺在 detail.nodes
+  // 里（折叠只是渲染裁剪），找目标不等展开
+  const navigate = useCallback(
+    (dir: 'child' | 'parent' | 'prev' | 'next') => {
+      if (!detail || selectedId == null) return
+      const cur = detail.nodes.find((n) => n.display_id === selectedId)
+      if (!cur) return
+      let target: number | null = null
+      if (dir === 'child') {
+        const kids = detail.nodes
+          .filter((n) => n.parent != null && n.parent.display_id === cur.display_id)
+          .sort((a, b) => a.position - b.position)
+        if (kids.length === 0) return
+        if (cur.collapsed) {
+          queueFoldMutation(
+            (current) => patchCollapsed(current, cur.display_id, false),
+            (clientRequestId) => api.setNodeCollapsed(mapId, cur.display_id, false, clientRequestId),
+          )
+        }
+        target = kids[0].display_id
+      } else if (dir === 'parent') {
+        // 聚焦根的真父在视野外，回父会选中一个看不见的节点
+        if (cur.parent == null || cur.display_id === focusId) return
+        target = cur.parent.display_id
+      } else {
+        if (cur.parent == null) return
+        const siblings = detail.nodes
+          .filter((n) => n.parent != null && n.parent.display_id === cur.parent!.display_id)
+          .sort((a, b) => a.position - b.position)
+        const idx = siblings.findIndex((n) => n.display_id === cur.display_id)
+        const next = dir === 'prev' ? idx - 1 : idx + 1
+        if (idx < 0 || next < 0 || next >= siblings.length) return // 首/末兄弟：停下
+        target = siblings[next].display_id
+      }
+      setSelectedId(target)
+      // 视口跟随：目标出界（留 60px 边距）才平移到中心，不出界不动画面。
+      // 等 React 渲染出目标 DOM 再判（展开场景新节点要一轮 render 才出现）
+      window.setTimeout(() => {
+        const el = document.querySelector(`.react-flow__node[data-id="${target}"]`)
+        const wrap = document.querySelector('.rf-wrap')
+        if (!el || !wrap || !rfRef.current) return
+        const er = el.getBoundingClientRect()
+        const wr = wrap.getBoundingClientRect()
+        const outside =
+          er.left < wr.left + 60 || er.right > wr.right - 60 || er.top < wr.top + 60 || er.bottom > wr.bottom - 60
+        if (!outside) return
+        const ln = layout?.all.find((l) => l.node.display_id === target)
+        if (!ln) return
+        rfRef.current.setCenter(ln.x + ln.w / 2, ln.y, { duration: 300, zoom: rfRef.current.getZoom() })
+      }, 60)
+    },
+    [detail, selectedId, focusId, mapId, layout, queueFoldMutation],
+  )
+
+  // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Esc 退聚焦 / 方向键导航）──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Esc 逐层退出：先关弹层（outline/版本面板），再退聚焦；
@@ -720,28 +784,58 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         e.preventDefault()
         setEditingId(node.display_id)
       } else if (e.key === 'Tab') {
+        // Tab/Enter 都是两段式：先出输入框（child=右侧 / sibling=下方），
+        // Enter 确认才调 API 创建——不落默认名节点，取消零痕迹
         e.preventDefault()
-        addChild(node.display_id)
+        startAdd(node.display_id, 'child')
       } else if (e.key === 'Enter') {
         // 布局根无兄弟：聚焦根加兄弟会挂到视野外的真父上，成为不可见变更
         if (node.parent == null || node.display_id === focusId) return
         e.preventDefault()
-        addChild(node.parent.display_id)
+        startAdd(node.display_id, 'sibling')
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (node.parent == null || node.display_id === focusId) return // 布局根不可删
         e.preventDefault()
         deleteNode(node.display_id)
+      } else if (e.key === 'ArrowRight' && e.shiftKey) {
+        // Shift+→ 展开当前节点的子树（停在原地），与 Shift+← 折叠对称。
+        // 已展开/叶子无操作——不 toggle，收起语义专属 Shift+←
+        const hasKids = detail.nodes.some((n) => n.parent?.display_id === node.display_id)
+        if (node.collapsed && hasKids) {
+          e.preventDefault()
+          queueFoldMutation(
+            (current) => patchCollapsed(current, node.display_id, false),
+            (clientRequestId) => api.setNodeCollapsed(mapId, node.display_id, false, clientRequestId),
+          )
+        }
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        navigate('child')
+      } else if (e.key === 'ArrowLeft' && e.shiftKey) {
+        // Shift+← 折叠当前节点的子树（停在原地）；展开也可 Shift+→（对称）
+        // 或普通 →（先展开再进子）。已折叠/叶子无操作——不 toggle
+        const hasKids = detail.nodes.some((n) => n.parent?.display_id === node.display_id)
+        if (!node.collapsed && hasKids) {
+          e.preventDefault()
+          queueFoldMutation(
+            (current) => patchCollapsed(current, node.display_id, true),
+            (clientRequestId) => api.setNodeCollapsed(mapId, node.display_id, true, clientRequestId),
+          )
+        }
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        navigate('parent')
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        navigate('prev')
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        navigate('next')
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, editingId, outlineOpen, revOpen, chatGateOpen, detail, mapId, focusId, switchFocus])
-
-  // ── layout → React Flow nodes/edges ────────────────────────────────
-  const layout = useMemo(
-    () => (detail ? layoutMap(detail, layoutMode, focusId) : null),
-    [detail, layoutMode, focusId],
-  )
+  }, [selectedId, editingId, outlineOpen, revOpen, chatGateOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation])
   // 重排动画：动画期间逐帧给出节点位置（null = 静止，直接用布局终值）；
   // 边由 React Flow 按节点位置实时重算，滑行中始终与节点贴合
   const animPos = useAnimatedLayout(layout)
@@ -824,14 +918,13 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       onToggleCollapse: toggleCollapse,
       onCommitEdit: commitEdit,
       onCancelEdit: () => setEditingId(null),
-      onAddChild: addChild,
       onStartAdd: startAdd,
       onCommitAdd: commitAdd,
       onCancelAdd: cancelAdd,
       onDelete: deleteNode,
       onFocus: switchFocus,
     }),
-    [toggleCollapse, commitEdit, addChild, startAdd, commitAdd, cancelAdd, deleteNode, switchFocus],
+    [toggleCollapse, commitEdit, startAdd, commitAdd, cancelAdd, deleteNode, switchFocus],
   )
 
   // ── 刷新门卫：内容签名 ────────────────────────────────────────────────
@@ -847,11 +940,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       .map((ln) => {
         const id = ln.node.display_id
         const flags =
-          (id === selectedId ? 's' : '') + (id === editingId ? 'e' : '') + (id === addingId ? 'a' : '') + ((childCount.get(id) ?? 0) > 0 ? 'h' : '')
+          (id === selectedId ? 's' : '') +
+          (id === editingId ? 'e' : '') +
+          (id === adding?.anchor ? (adding.dir === 'sibling' ? 'S' : 'a') : '') +
+          ((childCount.get(id) ?? 0) > 0 ? 'h' : '')
         return `${id}:${Math.round(ln.x)},${Math.round(ln.y)},${ln.w}x${ln.h}:${ln.side}${ln === layout.root ? 'R' : ''}${ln.node.collapsed ? 'C' : ''}:${flags}:${ln.node.content}`
       })
       .join('|')
-  }, [layout, selectedId, editingId, addingId, childCount])
+  }, [layout, selectedId, editingId, adding, childCount])
 
   // 边签名只看结构（谁连谁 + 锚定侧）：文本 / 选中态变化不影响边
   const edgesSig = useMemo(() => {
@@ -863,7 +959,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   }, [layout])
 
   // 依赖是签名而非 layout 身份（内容未变即复用）；animPos 在动画期间逐帧变化，
-  // 照常驱动重建；callbacks 单列——语言切换时 t 变化需重建（defaultName 闭包），
+  // 照常驱动重建；callbacks 单列——语言切换时 t 变化需重建，
   // 普通刷新间其身份稳定，不破签名门卫
   const rfNodes: MindNode[] = useMemo(() => {
     if (!layout) return []
@@ -881,7 +977,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           lnode,
           isLayoutRoot: lnode === layout.root, // 引用相等：all 里的根对象就是 layout.root
           isEditing: lnode.node.display_id === editingId,
-          isAdding: lnode.node.display_id === addingId,
+          isAdding: lnode.node.display_id === adding?.anchor,
+          addingDir: adding?.dir ?? 'child',
           hasChildren: (childCount.get(lnode.node.display_id) ?? 0) > 0,
           ...callbacks,
         },
@@ -1103,7 +1200,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             elementsSelectable
             onPaneClick={() => {
             setSelectedId(null)
-            setAddingId(null)
+            setAdding(null)
           }}
             proOptions={{ hideAttribution: true }}
           >

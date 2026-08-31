@@ -50,7 +50,7 @@ const zh = {
   // ── 节点（MindNodeView 内 + addChild 默认名）──
   'node.saveTitle': '保存（Enter）',
   'node.saveAria': '保存',
-  'node.addTitle': '加子级（Tab 用默认名快速加）',
+  'node.addTitle': '加子级（Tab）',
   'node.addAria': '加子级',
   'node.focusTitle': '聚焦：只看此节点的子树（Esc / 点面包屑根节点退出）',
   'node.focusAria': '聚焦',
@@ -61,7 +61,7 @@ const zh = {
   'node.expand': '展开',
   'node.collapse': '折叠',
   'node.addPlaceholder': '子节点内容…',
-  'node.defaultName': '新节点', // 会写入后端数据——按当前 UI 语言落库
+  'node.addSiblingPlaceholder': '同级节点内容…',
   // ── 聊天面板 ──
   'chat.title': '💬 Agent 对话',
   'chat.unavailable': 'Agent 对话不可用',
@@ -168,7 +168,7 @@ const en: Record<I18nKey, string> = {
   'outline.replace': 'replace (keep root, delete & rebuild the rest)',
   'node.saveTitle': 'Save (Enter)',
   'node.saveAria': 'Save',
-  'node.addTitle': 'Add child (Tab adds with default name)',
+  'node.addTitle': 'Add child (Tab)',
   'node.addAria': 'Add child',
   'node.focusTitle': 'Focus: view this subtree only (Esc or breadcrumb root to exit)',
   'node.focusAria': 'Focus',
@@ -179,7 +179,7 @@ const en: Record<I18nKey, string> = {
   'node.expand': 'Expand',
   'node.collapse': 'Collapse',
   'node.addPlaceholder': 'Child content…',
-  'node.defaultName': 'New node',
+  'node.addSiblingPlaceholder': 'Sibling content…',
   'chat.title': '💬 Agent chat',
   'chat.unavailable': 'Agent chat unavailable',
   'chat.gatedTitle': 'Agent chat not configured',
