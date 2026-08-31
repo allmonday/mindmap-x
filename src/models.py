@@ -174,6 +174,7 @@ def mount_method():
         list_revisions,
         move_node,
         restore_revision,
+        set_node_collapsed,
         set_fold_level,
         update_node,
     )
@@ -190,6 +191,7 @@ def mount_method():
     _mount(Map, get_tree, query)
     _mount(Map, add_node, mutation)
     _mount(Map, update_node, mutation)
+    _mount(Map, set_node_collapsed, mutation)
     _mount(Map, move_node, mutation)
     _mount(Map, delete_node, mutation)
     _mount(Map, delete_map, mutation)

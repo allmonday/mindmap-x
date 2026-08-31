@@ -519,7 +519,7 @@ button.crumb:hover { color: var(--ink); }
   border: 1.6px solid #94a3b8;
   border-radius: 9px;
   padding: 4px 10px;
-  cursor: pointer;
+  cursor: default;
   user-select: none;
   font-size: 14px;
   transition: box-shadow 0.12s;
@@ -629,6 +629,15 @@ button.crumb:hover { color: var(--ink); }
 /* React Flow 边样式 */
 .rf-wrap .react-flow__edge path { stroke: #cbd5e1; stroke-width: 1.6; }
 .rf-wrap .react-flow__handle { border: none; background: transparent; width: 2px; height: 2px; min-width: 0; min-height: 0; }
+/* 保留 React Flow 的 selectable/focusable 交互，只覆盖其 pointer 光标。
+   edge 的透明 interaction path 也显式覆盖，避免 pywebview 显示白色手形。 */
+.rf-wrap .react-flow__node.selectable,
+.rf-wrap .react-flow__node.selectable .rf-node,
+.rf-wrap .react-flow__edge.selectable,
+.rf-wrap .react-flow__edge.selectable path,
+.rf-wrap .react-flow__edge-interaction {
+  cursor: default !important;
+}
 
 /* 节点操作按钮：渲染在节点 DOM 内（随画布平移缩放），节点左下方、左右排列。
    显示时机：hover 或 选中（.sel）常驻；默认 opacity/visibility 隐藏（不可点） */

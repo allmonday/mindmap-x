@@ -1,34 +1,44 @@
-// 与后端 dtos.py 对应的响应类型（Phase 4 生成 TS SDK 后由 SDK 类型替代）
+// UI 领域类型从 OpenAPI SDK DTO 派生，只收紧后端运行时必定存在的字段。
 //
 // ID 语义：display_id 是 map 内编号（每图从 1 起）——角标显示、API 参数、
 // outline [id:N] 都用它。parent_id 是全局内部键，仅用于组装树结构。
 
-export interface MapSummary {
+import type {
+  MapDetail as GeneratedMapDetail,
+  MapSummary as GeneratedMapSummary,
+  NodeDto as GeneratedNodeDto,
+  NodeRef as GeneratedNodeRef,
+  RevisionDetail as GeneratedRevisionDetail,
+  RevisionNodeDto as GeneratedRevisionNode,
+  RevisionSnapshotDto as GeneratedRevisionSnapshot,
+  RevisionSummary as GeneratedRevisionSummary,
+} from './sdk'
+
+export type MapSummary = GeneratedMapSummary & {
   id: number
-  title: string
   version: number
   created_at: string
 }
 
-export interface NodeRef {
-  display_id: number
-}
+export type NodeRef = GeneratedNodeRef
 
-export interface NodeDTO {
-  display_id: number
-  map_id: number
+export type NodeDTO = Omit<
+  GeneratedNodeDto,
+  'parent_id' | 'parent' | 'position' | 'collapsed' | 'updated_by' | 'updated_at'
+> & {
   parent_id: number | null // 内部结构键（全局），不作 API 参数
   parent: NodeRef | null // 父节点操作编号（display_id）
-  content: string
   position: number
   collapsed: boolean
   updated_by: 'human' | 'agent'
   updated_at: string
 }
 
-export interface MapDetail {
+export type MapDetail = Omit<
+  GeneratedMapDetail,
+  'id' | 'version' | 'created_at' | 'nodes'
+> & {
   id: number
-  title: string
   version: number
   created_at: string
   nodes: NodeDTO[]
@@ -37,29 +47,29 @@ export interface MapDetail {
 export type OutlineMode = 'merge' | 'replace'
 
 // ── 版本快照（map_revision）──
-export interface RevisionNode {
-  display_id: number
-  parent: number | null // 父节点 display_id（根为 null）
-  content: string
-  position: number
-  collapsed: boolean
+export type RevisionNode = Omit<GeneratedRevisionNode, 'updated_by'> & {
   updated_by: 'human' | 'agent'
-  updated_at: string // ISO
 }
-export interface RevisionSnapshot {
-  title: string
+
+export type RevisionSnapshot = Omit<GeneratedRevisionSnapshot, 'nodes'> & {
   nodes: RevisionNode[]
 }
-export interface RevisionSummary {
+
+export type RevisionSummary = Omit<
+  GeneratedRevisionSummary,
+  'id' | 'actor' | 'detail' | 'created_at'
+> & {
   id: number
-  map_id: number
-  version: number
-  action: string
   actor: 'human' | 'agent'
   detail: string | null
   created_at: string
 }
-export interface RevisionDetail extends RevisionSummary {
+
+export type RevisionDetail = Omit<
+  GeneratedRevisionDetail,
+  'id' | 'actor' | 'detail' | 'created_at' | 'snapshot'
+> &
+  RevisionSummary & {
   snapshot: RevisionSnapshot
 }
 

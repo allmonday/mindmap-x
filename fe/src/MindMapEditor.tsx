@@ -251,6 +251,94 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
 
 const nodeTypes = { mind: MindNodeView }
 
+type OptimisticFold = (detail: MapDetail) => MapDetail
+
+function patchCollapsed(detail: MapDetail, nodeId: number, collapsed: boolean): MapDetail {
+  let changed = false
+  const nodes = detail.nodes.map((node) => {
+    if (node.display_id !== nodeId || node.collapsed === collapsed) return node
+    changed = true
+    return { ...node, collapsed }
+  })
+  return changed ? { ...detail, nodes } : detail
+}
+
+function expandAllOptimistically(detail: MapDetail): MapDetail {
+  let changed = false
+  const nodes = detail.nodes.map((node) => {
+    if (!node.collapsed) return node
+    changed = true
+    return { ...node, collapsed: false }
+  })
+  return changed ? { ...detail, nodes } : detail
+}
+
+function foldToLevelOptimistically(detail: MapDetail, level: number): MapDetail {
+  const children = new Map<number, number[]>()
+  const roots: number[] = []
+  for (const node of detail.nodes) {
+    if (node.parent == null) roots.push(node.display_id)
+    else {
+      const parentId = node.parent.display_id
+      children.set(parentId, [...(children.get(parentId) ?? []), node.display_id])
+    }
+  }
+
+  const depth = new Map<number, number>()
+  const stack: [number, number][] = roots.map((id) => [id, 1])
+  while (stack.length > 0) {
+    const [id, currentDepth] = stack.pop()!
+    depth.set(id, currentDepth)
+    for (const childId of children.get(id) ?? []) {
+      stack.push([childId, currentDepth + 1])
+    }
+  }
+
+  let changed = false
+  const nodes = detail.nodes.map((node) => {
+    const nodeDepth = depth.get(node.display_id)
+    if (nodeDepth == null) return node
+    const collapsed = children.has(node.display_id) && nodeDepth >= level
+    if (node.collapsed === collapsed) return node
+    changed = true
+    return { ...node, collapsed }
+  })
+  return changed ? { ...detail, nodes } : detail
+}
+
+function newClientRequestId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function foldEventUpdate(msg: unknown): OptimisticFold | null {
+  if (!msg || typeof msg !== 'object' || !('action' in msg)) return null
+  const event = msg as { action?: unknown; payload?: unknown }
+  const payload =
+    event.payload && typeof event.payload === 'object'
+      ? (event.payload as Record<string, unknown>)
+      : null
+
+  if (event.action === 'expanded_all' && payload) return expandAllOptimistically
+  if (
+    event.action === 'folded_to_level' &&
+    payload &&
+    typeof payload.level === 'number'
+  ) {
+    return (detail) => foldToLevelOptimistically(detail, payload.level as number)
+  }
+  if (
+    event.action === 'node_collapsed' &&
+    payload &&
+    typeof payload.node_id === 'number' &&
+    typeof payload.collapsed === 'boolean'
+  ) {
+    return (detail) =>
+      patchCollapsed(detail, payload.node_id as number, payload.collapsed as boolean)
+  }
+  return null
+}
+
 // ── 节点操作按钮的小图标（stroke 用 currentColor，继承按钮配色） ──────
 
 const CheckIcon = () => (
@@ -350,6 +438,31 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     localStorage.setItem('layoutMode', layoutMode)
   }, [layoutMode])
   const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
+  const foldQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const foldSequenceRef = useRef(0)
+  const foldRefreshNeededRef = useRef(false)
+  const ownFoldRequestsRef = useRef(new Map<string, number>())
+
+  const forgetOwnFoldRequest = useCallback((requestId: string) => {
+    const timer = ownFoldRequestsRef.current.get(requestId)
+    if (timer != null) window.clearTimeout(timer)
+    ownFoldRequestsRef.current.delete(requestId)
+  }, [])
+
+  const rememberOwnFoldRequest = useCallback((requestId: string) => {
+    const timer = window.setTimeout(() => {
+      ownFoldRequestsRef.current.delete(requestId)
+    }, 10_000)
+    ownFoldRequestsRef.current.set(requestId, timer)
+  }, [])
+
+  useEffect(
+    () => () => {
+      for (const timer of ownFoldRequestsRef.current.values()) window.clearTimeout(timer)
+      ownFoldRequestsRef.current.clear()
+    },
+    [],
+  )
 
   // 切换布局形态 / 聚焦切换后节点坐标剧变，重新 fitView 才不会跑出视口。
   // 节点重排带 300ms 动画（useAnimatedLayout），fitView 等动画落定后再平滑飞过去
@@ -393,7 +506,37 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }
   }, [mapId])
 
-  // 数据加载 + WebSocket 实时同步（hello/changed 都触发重拉）。
+  const queueFoldMutation = useCallback(
+    (optimisticUpdate: OptimisticFold, request: (clientRequestId: string) => Promise<void>) => {
+      const clientRequestId = newClientRequestId()
+      const sequence = ++foldSequenceRef.current
+      setDetail((current) => (current ? optimisticUpdate(current) : current))
+      rememberOwnFoldRequest(clientRequestId)
+
+      const persist = async () => {
+        try {
+          await request(clientRequestId)
+        } catch (e) {
+          forgetOwnFoldRequest(clientRequestId)
+          foldRefreshNeededRef.current = true
+          setError(e instanceof Error ? e.message : String(e))
+          window.setTimeout(() => setError(null), 3500)
+        } finally {
+          if (sequence === foldSequenceRef.current && foldRefreshNeededRef.current) {
+            foldRefreshNeededRef.current = false
+            await refresh()
+          }
+        }
+      }
+
+      // UI 立即响应，但持久化严格按点击顺序执行，避免快速连点后服务端终态反序。
+      foldQueueRef.current = foldQueueRef.current.then(persist, persist)
+    },
+    [forgetOwnFoldRequest, refresh, rememberOwnFoldRequest],
+  )
+
+  // 数据加载 + WebSocket 实时同步。收放事件携带最小增量，所有页签直接 patch；
+  // 自己的乐观更新只确认事件，内容变更仍重拉整棵树。
   // 断线自动重连（指数退避 1s→8s 封顶）——hello 到达即重拉，恢复后状态自然同步。
   useEffect(() => {
     setDetail(null)
@@ -427,6 +570,21 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           onBack()
           return
         }
+        if (
+          msg.type === 'changed' &&
+          typeof msg.client_request_id === 'string' &&
+          ownFoldRequestsRef.current.has(msg.client_request_id)
+        ) {
+          forgetOwnFoldRequest(msg.client_request_id)
+          return
+        }
+        if (msg.type === 'changed') {
+          const update = foldEventUpdate(msg)
+          if (update) {
+            setDetail((current) => (current ? update(current) : current))
+            return
+          }
+        }
         if (msg.type === 'hello' || msg.type === 'changed') void refresh()
       }
     }
@@ -436,7 +594,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       window.clearTimeout(timer)
       ws?.close()
     }
-  }, [mapId, refresh])
+  }, [mapId, refresh, forgetOwnFoldRequest])
 
   // ── 编辑操作（成功后由 WS 事件驱动重拉，保持单一数据流） ─────────────
   const guard = async (fn: () => Promise<unknown>) => {
@@ -479,9 +637,31 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     [mapId],
   )
   const toggleCollapse = useCallback(
-    (lnode: LNode) =>
-      void guard(() => api.updateNode(mapId, lnode.node.display_id, undefined, !lnode.node.collapsed)),
-    [mapId],
+    (lnode: LNode) => {
+      const nodeId = lnode.node.display_id
+      const collapsed = !lnode.node.collapsed
+      queueFoldMutation(
+        (current) => patchCollapsed(current, nodeId, collapsed),
+        (clientRequestId) => api.setNodeCollapsed(mapId, nodeId, collapsed, clientRequestId),
+      )
+    },
+    [mapId, queueFoldMutation],
+  )
+  const setFoldLevel = useCallback(
+    (level: number) =>
+      queueFoldMutation(
+        (current) => foldToLevelOptimistically(current, level),
+        (clientRequestId) => api.setFoldLevel(mapId, level, clientRequestId),
+      ),
+    [mapId, queueFoldMutation],
+  )
+  const expandAll = useCallback(
+    () =>
+      queueFoldMutation(
+        expandAllOptimistically,
+        (clientRequestId) => api.expandAll(mapId, clientRequestId),
+      ),
+    [mapId, queueFoldMutation],
   )
 
   // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Esc 退聚焦）──
@@ -819,7 +999,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
                     className={`btn sm${curLevel === lv ? ' active' : ''}`}
                     aria-pressed={curLevel === lv}
                     title={t('fold.toLevel', { lv })}
-                    onClick={() => void guard(() => api.setFoldLevel(mapId, lv))}
+                    onClick={() => {
+                      if (curLevel !== lv) setFoldLevel(lv)
+                    }}
                   >
                     {lv}
                   </button>
@@ -828,7 +1010,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
                   className={`btn sm${curLevel === 'all' ? ' active' : ''}`}
                   aria-pressed={curLevel === 'all'}
                   title={t('editor.expandAll')}
-                  onClick={() => void guard(() => api.expandAll(mapId))}
+                  onClick={() => {
+                    if (curLevel !== 'all') expandAll()
+                  }}
                 >
                   {t('fold.allLabel')}
                 </button>

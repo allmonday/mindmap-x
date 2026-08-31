@@ -116,8 +116,11 @@ async def test_fold_ops_exit_version_history(session_factory, seeded_map):
         m = await mm.get_map(100)
         assert m.version == 1  # 三次收放，version 纹丝不动
         assert await _revisions(session_factory) == []  # 零快照
-        events = [q.get_nowait() for _ in range(3)]  # 每次都广播（多端重拉视图态）
-        assert all(e["action"] in ("node_updated", "expanded_all", "folded_to_level") for e in events)
+        events = [q.get_nowait() for _ in range(3)]  # 每次都广播（多端直接 patch 视图态）
+        assert all(
+            e["action"] in ("node_collapsed", "expanded_all", "folded_to_level")
+            for e in events
+        )
     finally:
         unsubscribe(100, q)
 

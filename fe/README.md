@@ -30,3 +30,20 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## OpenAPI SDK
+
+MindmapService requests use the generated client under `src/sdk`.
+
+Start the backend on port 8740, then regenerate after changing a REST contract:
+
+```bash
+npm run generate-client
+```
+
+To use the anonymous Artifactory registry without credentials:
+
+```bash
+npm install --userconfig=/dev/null \
+  --registry=https://artifactory.ubisoft.org/api/npm/npm/
+```

@@ -2,9 +2,10 @@
 
 设计（Phase 0 决策）：
 - 事件不落库，仅进程内转发；无订阅者时 publish 是 no-op
-- 事件语义是「某图变了，version 到了 N」——通知客户端全量重拉，不做细粒度 patch
-- 慢消费者（队列满）直接丢消息：客户端重连/收到后续事件时按 version 对比，
-  发现落后就全量刷新，不依赖每条消息都送达
+- 内容变更事件语义是「某图变了，version 到了 N」，客户端全量重拉
+- 高频收放事件额外携带最小 payload，客户端直接 patch，避免读取整棵树
+- 慢消费者（队列满）直接丢消息：客户端重连时通过 hello 全量刷新，
+  不依赖每条消息都送达
 """
 import asyncio
 
@@ -33,13 +34,16 @@ def publish_change(
     action: str,
     actor: str,
     detail: str | None = None,
+    client_request_id: str | None = None,
+    payload: dict[str, object] | None = None,
 ) -> None:
     """脑图发生 mutation 后广播。action 如 'node_added' / 'outline_applied'。
 
     detail 为该次改动的人类可读摘要（如 "update_node #9 →「xx」"）。除页内
     Agent 外的来源（actor != 'page_agent'：浏览器 human 与外部 MCP/CLI/REST
     agent）都落入待通知缓冲，由页内 Agent 在收到下一条用户消息时消费
-    （drain_pending）。
+    （drain_pending）。client_request_id 仅用于发起收放的浏览器识别自己的
+    乐观更新事件；payload 为其他订阅者同步收放状态所需的最小增量。
     """
     if detail is not None and actor != "page_agent":
         record_pending(map_id, detail, actor)
@@ -50,11 +54,15 @@ def publish_change(
         "action": action,
         "actor": actor,
     }
+    if client_request_id is not None:
+        event["client_request_id"] = client_request_id
+    if payload is not None:
+        event["payload"] = payload
     for q in list(_subscribers.get(map_id, ())):
         try:
             q.put_nowait(event)
         except asyncio.QueueFull:
-            pass  # 丢消息安全：客户端按 version 全量重拉
+            pass  # 极慢客户端可在重连收到 hello 后全量校准
 
 
 # ── 外部改动待通知缓冲（页内 Agent 的"你不在时别人改了什么"清单） ──────

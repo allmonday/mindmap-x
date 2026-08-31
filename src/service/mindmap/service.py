@@ -147,6 +147,25 @@ class MindmapService(UseCaseService):
         return await Resolver().resolve(dto)
 
     @mutation
+    async def set_node_collapsed(
+        cls,
+        map_id: int,
+        node_id: int,
+        collapsed: bool,
+        actor: str = "agent",
+        client_request_id: str | None = None,
+        source: Annotated[str | None, FromContext()] = None,
+    ) -> bool:
+        """设置单节点折叠状态。REST 返回 204；GraphQL/MCP 仅返回是否发生变化。"""
+        return await methods.set_node_collapsed(
+            map_id,
+            node_id,
+            collapsed,
+            actor=_resolve_actor(actor, source),
+            client_request_id=client_request_id,
+        )
+
+    @mutation
     async def move_node(
         cls,
         map_id: int,
@@ -218,12 +237,16 @@ class MindmapService(UseCaseService):
         cls,
         map_id: int,
         actor: str = "agent",
+        client_request_id: str | None = None,
         source: Annotated[str | None, FromContext()] = None,
-    ) -> MapDetail:
-        """展开全部节点（视图状态，不改变修改标记/时间戳）。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。"""
-        m = await methods.expand_all(map_id, actor=_resolve_actor(actor, source))
-        dto = MapDetail.model_validate(m)
-        return await Resolver().resolve(dto)
+    ) -> bool:
+        """展开全部节点。REST 返回 204；GraphQL/MCP 仅返回是否完成。"""
+        await methods.expand_all(
+            map_id,
+            actor=_resolve_actor(actor, source),
+            client_request_id=client_request_id,
+        )
+        return True
 
     @mutation
     async def set_fold_level(
@@ -231,8 +254,9 @@ class MindmapService(UseCaseService):
         map_id: int,
         level: int,
         actor: str = "agent",
+        client_request_id: str | None = None,
         source: Annotated[str | None, FromContext()] = None,
-    ) -> MapDetail:
+    ) -> bool:
         """按层级批量收放视图：保留前 level 层可见，更深的子树收起（根 = 第 1 层）。
 
         level = 可见层数（off-by-one 注意）：第 level 层节点本身可见但被置为
@@ -243,10 +267,15 @@ class MindmapService(UseCaseService):
         无实际变化时是空操作（version 不递增、不广播）。level 必须 ≥ 2。
         批量按层折叠/展开请用它，不要逐节点 update_node(collapsed=...)。
         若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
+        REST 返回 204；GraphQL/MCP 仅返回是否完成。
         """
-        m = await methods.set_fold_level(map_id, level, actor=_resolve_actor(actor, source))
-        dto = MapDetail.model_validate(m)
-        return await Resolver().resolve(dto)
+        await methods.set_fold_level(
+            map_id,
+            level,
+            actor=_resolve_actor(actor, source),
+            client_request_id=client_request_id,
+        )
+        return True
 
     @mutation
     async def apply_outline(

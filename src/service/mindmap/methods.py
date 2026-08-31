@@ -219,17 +219,32 @@ async def _commit_with_revision(
     publish_change(m.id, m.version, action, actor, detail=detail)
 
 
-async def _commit_view_state(session, m: Map, *, action: str, actor: str) -> None:
+async def _commit_view_state(
+    session,
+    m: Map,
+    *,
+    action: str,
+    actor: str,
+    client_request_id: str | None = None,
+    payload: dict[str, object] | None = None,
+) -> None:
     """收放类视图态提交：不递增 version、不落快照、不入 Agent 通知缓冲，仅 WS 广播。
 
     折叠不改变任何内容信息（README：视图状态），高频且不可回滚价值——进版本
-    历史只会灌水（实测约 3/4 的快照是收放产生的）。广播仍发：多端（另一个
-    浏览器页签 / 外部 Agent 客户端）需要感知视图态变化并重拉。不传 detail：
-    视图态不值得注入页内 Agent 的上下文（与 expand_all 既有语义一致）。
+    历史只会灌水（实测约 3/4 的快照是收放产生的）。广播仍发：其他浏览器
+    页签需要直接应用视图态增量。不传 detail：视图态不值得注入页内 Agent
+    的上下文（与 expand_all 既有语义一致）。
     """
     session.add(m)
     await session.commit()
-    publish_change(m.id, m.version, action, actor)
+    publish_change(
+        m.id,
+        m.version,
+        action,
+        actor,
+        client_request_id=client_request_id,
+        payload=payload,
+    )
 
 
 # ── queries ───────────────────────────────────────────────────────────
@@ -362,9 +377,45 @@ async def update_node(
                 detail=f"update_node #{node_id} {'，'.join(changes)}",
             )
         else:
-            await _commit_view_state(session, m, action="node_updated", actor=actor)
+            await _commit_view_state(
+                session,
+                m,
+                action="node_collapsed",
+                actor=actor,
+                payload={"node_id": node_id, "collapsed": collapsed},
+            )
         await session.refresh(node)
         return node
+
+
+async def set_node_collapsed(
+    map_id: int,
+    node_id: int,
+    collapsed: bool,
+    actor: str = "agent",
+    client_request_id: str | None = None,
+) -> bool:
+    """设置单节点折叠状态，只返回是否发生变化。
+
+    这是高频视图态专用入口：不刷新节点、不构造 DTO；REST 出口使用 204。
+    client_request_id 仅用于浏览器识别自己的 WS 事件并跳过重复整树读取。
+    """
+    async with async_session() as session:
+        node = await _get_node(session, map_id, node_id)
+        m = await _get_map(session, map_id)
+        if node.collapsed == collapsed:
+            return False
+        node.collapsed = collapsed
+        session.add(node)
+        await _commit_view_state(
+            session,
+            m,
+            action="node_collapsed",
+            actor=actor,
+            client_request_id=client_request_id,
+            payload={"node_id": node_id, "collapsed": collapsed},
+        )
+        return True
 
 
 async def move_node(
@@ -448,12 +499,16 @@ async def delete_map(map_id: int, actor: str = "agent") -> bool:
     return True
 
 
-async def expand_all(map_id: int, actor: str = "agent") -> Map:
+async def expand_all(
+    map_id: int,
+    actor: str = "agent",
+    client_request_id: str | None = None,
+) -> Map:
     """展开全部节点（collapsed=False），单事务批量更新。
 
     语义注意：折叠是视图状态而非内容修改 —— 不刷新 updated_by/updated_at
     （否则 Agent 修改角标会误亮），也不递增 version、不落快照（收放不进
-    版本历史，实测约 3/4 快照是收放灌的水），仅 WS 广播驱动多端重拉。
+    版本历史，实测约 3/4 快照是收放灌的水），仅 WS 广播驱动多端增量同步。
     全图已展开时是空操作：version 不动、不广播。get_tree 不感知
     collapsed，因此不向 Agent 通知。
     """
@@ -469,11 +524,23 @@ async def expand_all(map_id: int, actor: str = "agent") -> Map:
         for n in folded:
             n.collapsed = False
             session.add(n)
-        await _commit_view_state(session, m, action="expanded_all", actor=actor)
+        await _commit_view_state(
+            session,
+            m,
+            action="expanded_all",
+            actor=actor,
+            client_request_id=client_request_id,
+            payload={},
+        )
         return m
 
 
-async def set_fold_level(map_id: int, level: int, actor: str = "agent") -> Map:
+async def set_fold_level(
+    map_id: int,
+    level: int,
+    actor: str = "agent",
+    client_request_id: str | None = None,
+) -> Map:
     """按层级批量收放：保留前 level 层可见（根 = 第 1 层），更深的子树收起。
 
     声明式语义 —— 每个节点按深度直接取目标态，而非增量操作：
@@ -485,7 +552,7 @@ async def set_fold_level(map_id: int, level: int, actor: str = "agent") -> Map:
 
     视图状态语义与 expand_all 一致：不刷新 updated_by/updated_at
     （否则 Agent 修改角标会误亮），也不递增 version、不落快照（收放不进
-    版本历史），仅 WS 广播驱动多端重拉。
+    版本历史），仅 WS 广播驱动多端增量同步。
     无任何节点需要变化时是空操作：version 不动、不广播。get_tree 不感知
     collapsed，因此不向 Agent 通知（不传 detail）。
     """
@@ -528,7 +595,14 @@ async def set_fold_level(map_id: int, level: int, actor: str = "agent") -> Map:
                 changed = True
         if not changed:
             return m  # 空操作：version 不动、不落快照、不广播、不入 Agent 通知缓冲
-        await _commit_view_state(session, m, action="folded_to_level", actor=actor)
+        await _commit_view_state(
+            session,
+            m,
+            action="folded_to_level",
+            actor=actor,
+            client_request_id=client_request_id,
+            payload={"level": level},
+        )
         return m
 
 

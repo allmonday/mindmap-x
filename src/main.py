@@ -118,7 +118,19 @@ app.add_middleware(
 
 # ── REST（create_use_case_router 自动生成，response_model 来自返回注解） ──
 
-app.include_router(create_use_case_router(use_case_config))
+app.include_router(
+    create_use_case_router(
+        use_case_config,
+        route_options={
+            route: {"status_code": 204, "response_model": None}
+            for route in (
+                "MindmapService.set_node_collapsed",
+                "MindmapService.expand_all",
+                "MindmapService.set_fold_level",
+            )
+        },
+    )
+)
 
 # ── Voyager（services 视图：service 节点 + method） ────────────────────
 
@@ -178,8 +190,8 @@ async def watch_map(ws: WebSocket, map_id: int):
     """订阅某棵脑图的变更事件。
 
     协议：连接即发 {"type":"hello","version":N}；此后每次 mutation 推
-    {"type":"changed","version":M,"action":...,"actor":...}。
-    客户端策略：本地 version < 收到 version → 全量重拉。
+    {"type":"changed","version":M,"action":...,"actor":...}。收放事件
+    额外携带最小 payload，客户端直接 patch；内容事件仍全量重拉。
 
     双通道检测：
     - 快速路径：服务进程内的 mutation（REST/MCP/前端）→ events hub 即时推送

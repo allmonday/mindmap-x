@@ -88,6 +88,40 @@ async def test_update_node_wrong_map(session_factory, seeded_map):
     assert n.content == "别图的 #2"
 
 
+async def test_set_node_collapsed_is_lightweight_and_correlates_event(
+    session_factory, seeded_map
+):
+    from sqlmodel import select
+
+    q = subscribe(100)
+    try:
+        changed = await mm.set_node_collapsed(
+            100,
+            2,
+            True,
+            actor="human",
+            client_request_id="fold-123",
+        )
+        assert changed is True
+        event = q.get_nowait()
+        assert event["action"] == "node_collapsed"
+        assert event["client_request_id"] == "fold-123"
+        assert event["payload"] == {"node_id": 2, "collapsed": True}
+
+        async with session_factory() as session:
+            node = (
+                await session.exec(
+                    select(Node).where(Node.map_id == 100, Node.display_id == 2)
+                )
+            ).one()
+            assert node.collapsed is True
+
+        assert await mm.set_node_collapsed(100, 2, True) is False
+        assert q.empty()
+    finally:
+        unsubscribe(100, q)
+
+
 # ── move_node ─────────────────────────────────────────────────────────
 
 
@@ -165,15 +199,26 @@ async def test_expand_all(session_factory, seeded_map):
     # 先折叠 #1 root 和 #2 a
     await mm.update_node(100, 1, collapsed=True, actor="human")
     await mm.update_node(100, 2, collapsed=True, actor="human")
-    m = await mm.expand_all(100, actor="human")
+    q = subscribe(100)
+    m = await mm.expand_all(
+        100,
+        actor="human",
+        client_request_id="expand-123",
+    )
     from sqlmodel import select
 
-    async with session_factory() as s:
-        nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
-        assert all(n.collapsed is False for n in nodes)  # 全部展开
-        # 视图操作不改变修改标记与时间戳
-        assert all(n.updated_by == "human" for n in nodes if n.display_id == 1)
-        assert m.version == 1  # 收放是视图态：不递增 version（两次折叠 + expand 都不动）
+    try:
+        event = q.get_nowait()
+        assert event["client_request_id"] == "expand-123"
+        assert event["payload"] == {}
+        async with session_factory() as s:
+            nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
+            assert all(n.collapsed is False for n in nodes)  # 全部展开
+            # 视图操作不改变修改标记与时间戳
+            assert all(n.updated_by == "human" for n in nodes if n.display_id == 1)
+            assert m.version == 1  # 收放是视图态：不递增 version（两次折叠 + expand 都不动）
+    finally:
+        unsubscribe(100, q)
 
 
 # ── set_fold_level ────────────────────────────────────────────────────
@@ -185,10 +230,17 @@ async def test_set_fold_level_folds_by_depth(session_factory, seeded_map):
     await mm.update_node(100, 2, content="a(agent)", actor="agent")  # updated_by → agent
     q = subscribe(100)
     try:
-        m = await mm.set_fold_level(100, 2, actor="human")
+        m = await mm.set_fold_level(
+            100,
+            2,
+            actor="human",
+            client_request_id="level-123",
+        )
         assert m.version == 2  # 仅 update_node 计数；fold 是视图态不递增
         evt = q.get_nowait()
         assert evt["action"] == "folded_to_level" and evt["version"] == 2  # 仍广播（同 version）
+        assert evt["client_request_id"] == "level-123"
+        assert evt["payload"] == {"level": 2}
         async with session_factory() as s:
             nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
             # root(d1) 展开、a(d2, 有孩子) 折叠、a1(d3, 叶子) 不折叠
