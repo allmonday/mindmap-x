@@ -480,12 +480,13 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     [],
   )
 
-  // 切换布局形态 / 聚焦切换后节点坐标剧变，重新 fitView 才不会跑出视口。
-  // 节点重排带 300ms 动画（useAnimatedLayout），fitView 等动画落定后再平滑飞过去
+  // 布局形态切换后节点坐标剧变，重排动画落定后瞬时 fitView。
+  // 聚焦切换**不 fit**——保持用户当前视口（zoom/位置都不动），子树围绕
+  // 聚焦点重排即可；跑出视口由方向键导航的出界平移与手动拖拽兜底
   useEffect(() => {
-    const t = setTimeout(() => rfRef.current?.fitView({ padding: 0.25, maxZoom: 1, duration: 250 }), 320)
+    const t = setTimeout(() => rfRef.current?.fitView({ padding: 0.25, maxZoom: 1 }), 320)
     return () => clearTimeout(t)
-  }, [layoutMode, focusId])
+  }, [layoutMode])
 
   // 切换布局形态 / 聚焦：布局变化走动画，不再需要遮罩盖瞬移
   const toggleLayout = () => setLayoutMode((m) => (m === 'balanced' ? 'right' : 'balanced'))
