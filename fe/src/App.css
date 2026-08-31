@@ -450,6 +450,65 @@ button.crumb:hover { color: var(--ink); }
   white-space: nowrap;
 }
 
+/* 同层导航：可点中间 crumb 的容器（relative 供下拉锚定）。
+   下拉是 wrap 的后代——鼠标从 crumb 移进菜单不触发 mouseleave */
+.crumb-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.crumb-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 100%;
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16); /* 同 .node-actions 浮层投影 */
+  padding: 3px;
+}
+/* 悬停桥：crumb 底边与菜单间的 6px 空隙由伪元素覆盖，hover 链不断 */
+.crumb-menu::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 6px;
+}
+.crumb-menu button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border: none;
+  background: none;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  border-radius: calc(var(--radius) - 2px);
+  max-width: 320px;
+}
+.crumb-menu button:hover { background: var(--bg-hover); }
+/* 节点名超长省略；#N 角标与画布 id-badge / outline [id:N] 协议呼应 */
+.crumb-menu .cm-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crumb-menu .cm-id {
+  flex-shrink: 0;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
 /* 画布左上角工具列：标题正下方（布局切换 / 层级刻度条） */
 .canvas-tools {
   position: absolute;

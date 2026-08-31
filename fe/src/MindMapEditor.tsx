@@ -251,6 +251,23 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
 
 const nodeTypes = { mind: MindNodeView }
 
+// 面包屑同层导航菜单：兄弟列表（调用方已算好、排除自身），点选即聚焦过去。
+// 独立组件而非内联 JSX：role=menu 语义块 + 空列表不渲染的收口
+function CrumbMenu({ siblings, onPick }: { siblings: NodeDTO[]; onPick: (id: number) => void }) {
+  const { t } = useI18n()
+  if (siblings.length === 0) return null
+  return (
+    <div className="crumb-menu" role="menu" aria-label={t('crumb.siblingsAria')}>
+      {siblings.map((s) => (
+        <button key={s.display_id} role="menuitem" onClick={() => onPick(s.display_id)}>
+          <span className="cm-name">{s.content}</span>
+          <span className="cm-id">#{s.display_id}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 type OptimisticFold = (detail: MapDetail) => MapDetail
 
 function patchCollapsed(detail: MapDetail, nodeId: number, collapsed: boolean): MapDetail {
@@ -784,6 +801,22 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     return path.reverse()
   }, [detail, focusId])
 
+  // 面包屑同层导航：hover 中间 crumb 弹出其兄弟（同父、非自身、按 position 序）。
+  // 打开走 150ms 延迟（沿面包屑扫过不连环弹），关闭即时；点兄弟即聚焦并收起
+  const [crumbHoverId, setCrumbHoverId] = useState<number | null>(null)
+  const crumbHoverTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(crumbHoverTimer.current), [])
+  const siblingsOf = useCallback(
+    (id: number): NodeDTO[] => {
+      const self = detail?.nodes.find((n) => n.display_id === id)
+      if (!detail || !self || self.parent == null) return []
+      return detail.nodes
+        .filter((n) => n.parent != null && n.parent.display_id === self.parent!.display_id && n.display_id !== id)
+        .sort((a, b) => a.position - b.position)
+    },
+    [detail],
+  )
+
   const callbacks = useMemo(
     () => ({
       onSelect: (id: number) => setSelectedId(id),
@@ -958,6 +991,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               <span className="crumbs">
                 {focusPath.map((n, i) => {
                   const isCurrent = i === focusPath.length - 1
+                  // 根(i=0)=返回全图无兄弟；当前项不可点——都直出，只有中间可点项挂同层导航
+                  const withMenu = !isCurrent && i > 0
                   return (
                     <Fragment key={n.display_id}>
                       <span className="crumb-sep">›</span>
@@ -965,11 +1000,40 @@ export function MindMapEditor({ mapId, onBack }: Props) {
                         <span className="crumb cur" title={n.content}>
                           {n.content}
                         </span>
+                      ) : withMenu ? (
+                        <span
+                          className="crumb-wrap"
+                          onMouseEnter={() => {
+                            window.clearTimeout(crumbHoverTimer.current)
+                            crumbHoverTimer.current = window.setTimeout(() => setCrumbHoverId(n.display_id), 150)
+                          }}
+                          onMouseLeave={() => {
+                            window.clearTimeout(crumbHoverTimer.current)
+                            setCrumbHoverId((cur) => (cur === n.display_id ? null : cur))
+                          }}
+                        >
+                          <button
+                            className="crumb"
+                            title={t('editor.focusTo', { content: n.content })}
+                            onClick={() => switchFocus(n.display_id)}
+                          >
+                            {n.content}
+                          </button>
+                          {crumbHoverId === n.display_id && (
+                            <CrumbMenu
+                              siblings={siblingsOf(n.display_id)}
+                              onPick={(id) => {
+                                setCrumbHoverId(null)
+                                switchFocus(id)
+                              }}
+                            />
+                          )}
+                        </span>
                       ) : (
                         <button
                           className="crumb"
-                          title={i === 0 ? t('editor.backToFull') : t('editor.focusTo', { content: n.content })}
-                          onClick={() => (i === 0 ? switchFocus(null) : switchFocus(n.display_id))}
+                          title={t('editor.backToFull')}
+                          onClick={() => switchFocus(null)}
                         >
                           {n.content}
                         </button>

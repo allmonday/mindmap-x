@@ -33,6 +33,7 @@ const zh = {
   'editor.backToFull': '返回全图',
   'editor.focusTo': '聚焦到「{content}」',
   'editor.expandAll': '展开所有节点',
+  'crumb.siblingsAria': '同级节点快速导航',
   // ── 布局切换 ──
   'layout.balanced.title': '当前：左右对称，点击切换为一律靠右',
   'layout.balanced.aria': '布局：左右对称',
@@ -154,6 +155,7 @@ const en: Record<I18nKey, string> = {
   'editor.backToFull': 'Back to full map',
   'editor.focusTo': 'Focus on "{content}"',
   'editor.expandAll': 'Expand all nodes',
+  'crumb.siblingsAria': 'Quick navigation to sibling nodes',
   'layout.balanced.title': 'Current: balanced — click for right-aligned',
   'layout.balanced.aria': 'Layout: balanced',
   'layout.right.title': 'Current: right-aligned — click for balanced',
