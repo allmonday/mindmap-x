@@ -1,11 +1,14 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  BaseEdge,
   Controls,
+  getBezierPath,
   Handle,
   MiniMap,
   Position,
   ReactFlow,
   type Edge,
+  type EdgeProps,
   type Node,
   type NodeProps,
   type ReactFlowInstance,
@@ -33,6 +36,7 @@ type MindNodeData = {
   isEditing: boolean
   isAdding: boolean
   addingDir: 'child' | 'sibling' // 输入框方位与提交语义（child=挂锚点下，sibling=挂锚点父）
+  selectedByPointer: boolean // 选中来源：点击亮按钮行，键盘导航只高亮
   hasChildren: boolean
   onSelect: (id: number) => void
   onStartEdit: (id: number) => void
@@ -49,12 +53,19 @@ type MindNodeData = {
 type MindNode = Node<MindNodeData, 'mind'>
 
 function MindNodeView({ data, selected }: NodeProps<MindNode>) {
-  const { lnode, isEditing, isAdding, addingDir, hasChildren } = data
+  const { lnode, isEditing, isAdding, addingDir, selectedByPointer, hasChildren } = data
   const n = lnode.node
   const isRoot = data.isLayoutRoot // 布局根 = 真根或聚焦节点；非聚焦时与真根判定完全一致
   // 文案经 context 直取（ReactFlow 的 memo 不拦截 context 更新）——
   // 切语言时本组件自渲染，rfNodes memo 不需要重建
   const { t } = useI18n()
+
+  // 加节点输入框聚焦：effect 在 commit 后跑——autoFocus 只在 mount 一瞬生效，
+  // 会被 React Flow 对 selected 节点的 focus 管理抢走（键盘选中后打开时必现）
+  const addInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (isAdding) addInputRef.current?.focus()
+  }, [isAdding])
 
   // 操作按钮行：点击选中才显示、点外部（画布/别的节点）即消失——
   // 选中态由编辑器 selectedId 驱动（onPaneClick / 点其他节点都会换选），
@@ -68,7 +79,8 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
     if (!selected) setConfirmDel(false) // 选中丢失即解除 armed 态，不留悬亮红
   }, [selected])
   useEffect(() => () => window.clearTimeout(delTimer.current), [])
-  const showActions = !isEditing && selected
+  // 按钮行只认点击选中；键盘导航选中只做高亮定位（操作走快捷键）
+  const showActions = !isEditing && selected && selectedByPointer
 
   const clickDelete = () => {
     if (confirmDel) {
@@ -141,8 +153,8 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
         isAdding ? (
           <div className={`node-actions adding as-${addingDir}`}>
             <input
+              ref={addInputRef}
               className="add-input"
-              autoFocus
               placeholder={t(addingDir === 'sibling' ? 'node.addSiblingPlaceholder' : 'node.addPlaceholder')}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
@@ -235,6 +247,26 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
 
 const nodeTypes = { mind: MindNodeView }
 
+// 自定义边（default 的同款视觉：bezier + BaseEdge）+ React.memo：
+// RF 内部 EdgeWrapper 用 useStore 订阅节点位置，重渲染绕过外层 memo，
+// 默认边因此每帧全量重挂（实测 19 边 × ~3 SVG 元素/渲染轮，d 属性从不
+// 走更新路径）——memo 后 props（两端坐标）不变即跳过，动画期间坐标
+// 逐帧变则走 d 属性更新，DOM 不再卸载重挂
+const MindEdge = memo(function MindEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+}: EdgeProps) {
+  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
+  return <BaseEdge id={id} path={path} />
+})
+
+const edgeTypes = { mind: MindEdge }
+
 // 面包屑同层导航菜单：兄弟列表（调用方已算好、排除自身），点选即聚焦过去。
 // 独立组件而非内联 JSX：role=menu 语义块 + 空列表不渲染的收口
 function CrumbMenu({ siblings, onPick }: { siblings: NodeDTO[]; onPick: (id: number) => void }) {
@@ -305,6 +337,42 @@ function foldToLevelOptimistically(detail: MapDetail, level: number): MapDetail 
     return { ...node, collapsed }
   })
   return changed ? { ...detail, nodes } : detail
+}
+
+// ↑/↓ 层内流（2026-09-01 拍板）：同父兄弟直接给；兄弟序列到头看父的
+// 相邻兄弟 U——U 有可见子则落衔接端（down=U 首子 / up=U 末子），无则落
+// U 本身（折叠块是一块砖，不主动展开）；父无相邻兄弟 = 停（不上溯更
+// 上层找延续）。落点恒可见：cur 可见 ⇒ 父链全展开 ⇒ 兄弟、U、U 的
+// 展开子都在可见集内——永不触发展开，也无需展开。布局根（真根/聚焦根）
+// 无层流：cur 或父为布局根 → null（←→ 负责进出层级）
+function verticalNeighbor(nodes: NodeDTO[], curId: number, rootId: number, down: boolean): number | null {
+  const kidsOf = (pid: number): NodeDTO[] =>
+    nodes
+      .filter((n) => n.parent != null && n.parent.display_id === pid)
+      .sort((a, b) => a.position - b.position)
+  const cur = nodes.find((n) => n.display_id === curId)
+  const parent = cur?.parent ?? null
+  if (!cur || !parent || curId === rootId) return null
+  // 1) 兄弟间直接移动
+  const sibs = kidsOf(parent.display_id)
+  const i = sibs.findIndex((n) => n.display_id === curId)
+  if (i < 0) return null
+  if (down ? i < sibs.length - 1 : i > 0) return (down ? sibs[i + 1] : sibs[i - 1]).display_id
+  // 2) 兄弟序列到头：父的相邻兄弟 U（父是布局根则层流闭合于其子树）。
+  //    parent 是 NodeRef（仅 display_id 引用）——查回完整节点才有祖父
+  if (parent.display_id === rootId) return null
+  const gref = nodes.find((n) => n.display_id === parent.display_id)?.parent ?? null
+  if (gref == null) return null
+  const psibs = kidsOf(gref.display_id)
+  const pi = psibs.findIndex((n) => n.display_id === parent.display_id)
+  if (pi < 0) return null
+  const u = down ? psibs[pi + 1] : psibs[pi - 1]
+  if (!u) return null // 父是末/首子：停
+  // U 不可能是布局根（它有父，布局根无父或在聚焦场景中不与其孩子同父），
+  // collapsed 判定即真实可见性
+  const ukids = u.collapsed ? [] : kidsOf(u.display_id)
+  if (ukids.length === 0) return u.display_id
+  return (down ? ukids[0] : ukids[ukids.length - 1]).display_id
 }
 
 function newClientRequestId(): string {
@@ -421,6 +489,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const { t } = useI18n()
   const [detail, setDetail] = useState<MapDetail | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  // 选中来源：点击=要操作这个节点（亮按钮行）；键盘导航=移动浏览焦点
+  //（不亮按钮，快捷键 F2/Tab/Enter/Delete 已覆盖操作入口）
+  const [selectedByPointer, setSelectedByPointer] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
   // 加节点输入态：anchor = 输入框锚定的节点，dir = 方位与提交语义（见 startAdd）
   const [adding, setAdding] = useState<{ anchor: number; dir: 'child' | 'sibling' } | null>(null)
@@ -635,10 +706,15 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   // 两段式加节点：先出输入框，确认内容后才真正创建（空文本 = 取消）。
   // dir 决定输入框方位与提交语义——child：锚点右侧，创建挂锚点下；
   // sibling：锚点正下方，创建挂锚点的父（MindNodeView 提交时自算父 id）
-  const startAdd = useCallback(
-    (anchor: number, dir: 'child' | 'sibling' = 'child') => setAdding({ anchor, dir }),
-    [],
-  )
+  const startAdd = useCallback((anchor: number, dir: 'child' | 'sibling' = 'child') => {
+    setAdding({ anchor, dir })
+    // 焦点仲裁：React Flow 对 selected 节点（tabindex=0）的 focus 管理会盖掉
+    // 输入框的 autoFocus / mount effect focus（键盘导航后打开时必现，字符全丢）。
+    // setTimeout 宏任务在 React commit 与全部同步 effect 之后跑，最后拿到焦点
+    window.setTimeout(() => {
+      document.querySelector<HTMLInputElement>('.add-input')?.focus()
+    }, 0)
+  }, [])
   const commitAdd = useCallback(
     (parentId: number, text: string) => {
       setAdding(null)
@@ -689,44 +765,62 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     [detail, layoutMode, focusId],
   )
 
-  // 方向键导航（层级语义，XMind 同款：→ 进子 / ← 回父 / ↑↓ 兄弟）。
-  // 目标节点必在可见集内：当前可见 ⇒ 父链全展开 ⇒ 兄弟与父可见；
-  // 唯一例外是 → 的子节点——折叠时先乐观展开（与选中同批 setState，
-  // 子节点渲染出来即带选中态）。折叠节点的子数据一直躺在 detail.nodes
-  // 里（折叠只是渲染裁剪），找目标不等展开
+  // 方向键导航（物理方向语义：←→ 指哪打哪 / ↑↓ 层内流）。
+  // ←→ 按屏幕方位路由：balanced 布局左半边的子节点在物理左侧——层级语义
+  // （→ 永远进子）会反向跳，故按键一侧有子则进子（折叠先乐观展开），无子
+  // 且自身在对面子树则回父（父物理上就在按键方向）；right-aligned 布局全
+  // side=1，规则自动退化为 → 进子 / ← 回父。目标必在可见集内：当前可见 ⇒
+  // 父链全展开；折叠节点的子数据躺在 detail.nodes（折叠只是渲染裁剪），
+  // 找目标不等展开。↑↓ 见 verticalNeighbor：层内流，永不触发展开
   const navigate = useCallback(
-    (dir: 'child' | 'parent' | 'prev' | 'next') => {
-      if (!detail || selectedId == null) return
+    (dir: 'right' | 'left' | 'prev' | 'next') => {
+      if (!detail || !layout || selectedId == null) return
+      const lcur = layout.all.find((l) => l.node.display_id === selectedId)
       const cur = detail.nodes.find((n) => n.display_id === selectedId)
-      if (!cur) return
+      if (!cur || !lcur) return
       let target: number | null = null
-      if (dir === 'child') {
-        const kids = detail.nodes
-          .filter((n) => n.parent != null && n.parent.display_id === cur.display_id)
-          .sort((a, b) => a.position - b.position)
-        if (kids.length === 0) return
-        if (cur.collapsed) {
-          queueFoldMutation(
-            (current) => patchCollapsed(current, cur.display_id, false),
-            (clientRequestId) => api.setNodeCollapsed(mapId, cur.display_id, false, clientRequestId),
-          )
+      if (dir === 'right' || dir === 'left') {
+        const wantSide = dir === 'right' ? 1 : -1
+        // 1) 按键一侧有子 → 进第一个（折叠则先乐观展开，与选中同批 setState）。
+        //    折叠时 lcur.children 为空（layout 只建可见树）——从全量 detail.nodes
+        //    找子，side 按"子树同侧继承"推断：非根节点的子与其同侧
+        //    （布局根不涉及：真根不可折叠、聚焦根视作展开）
+        let kidIds: number[] = []
+        if (lcur.children.length > 0) {
+          kidIds = lcur.children
+            .filter((c) => c.side === wantSide)
+            .sort((a, b) => a.node.position - b.node.position)
+            .map((c) => c.node.display_id)
+        } else if (cur.collapsed && lcur !== layout.root && lcur.side === wantSide) {
+          kidIds = detail.nodes
+            .filter((n) => n.parent != null && n.parent.display_id === cur.display_id)
+            .sort((a, b) => a.position - b.position)
+            .map((n) => n.display_id)
         }
-        target = kids[0].display_id
-      } else if (dir === 'parent') {
-        // 聚焦根的真父在视野外，回父会选中一个看不见的节点
-        if (cur.parent == null || cur.display_id === focusId) return
-        target = cur.parent.display_id
+        if (kidIds.length > 0) {
+          if (cur.collapsed) {
+            queueFoldMutation(
+              (current) => patchCollapsed(current, cur.display_id, false),
+              (clientRequestId) => api.setNodeCollapsed(mapId, cur.display_id, false, clientRequestId),
+            )
+          }
+          target = kidIds[0]
+        } else if (lcur.side === -wantSide) {
+          // 2) 自身在对面子树 → 父物理上就在按键方向 → 回父。
+          //    聚焦根的真父在视野外，回父会选中一个看不见的节点
+          if (cur.parent != null && cur.display_id !== focusId) target = cur.parent.display_id
+        }
+        // 3) 都不满足（同侧叶子往同侧按 / 根往无子一侧按）→ 无操作
       } else {
-        if (cur.parent == null) return
-        const siblings = detail.nodes
-          .filter((n) => n.parent != null && n.parent.display_id === cur.parent!.display_id)
-          .sort((a, b) => a.position - b.position)
-        const idx = siblings.findIndex((n) => n.display_id === cur.display_id)
-        const next = dir === 'prev' ? idx - 1 : idx + 1
-        if (idx < 0 || next < 0 || next >= siblings.length) return // 首/末兄弟：停下
-        target = siblings[next].display_id
+        // ↑/↓ = 层内流（规则见 verticalNeighbor）：兄弟直接移动；兄弟序列
+        // 到头看父的相邻兄弟——展开落衔接端子节点，折叠落其本身；无则停。
+        // 落点恒可见：无展开副作用，旧先序流的"展开遮挡祖先"整段删除
+        target = verticalNeighbor(detail.nodes, selectedId, layout.root!.node.display_id, dir === 'next')
       }
+      // 物理方向无目标（同侧叶子往同侧按）＝无操作：不清选中、不动画
+      if (target == null) return
       setSelectedId(target)
+      setSelectedByPointer(false)
       // 视口跟随：目标出界（留 60px 边距）才平移到中心，不出界不动画面。
       // 等 React 渲染出目标 DOM 再判（展开场景新节点要一轮 render 才出现）
       window.setTimeout(() => {
@@ -746,7 +840,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     [detail, selectedId, focusId, mapId, layout, queueFoldMutation],
   )
 
-  // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Esc 退聚焦 / 方向键导航）──
+  // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Space 收放 / Esc 退聚焦 / 方向键导航）──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Esc 逐层退出：先关弹层（outline/版本面板），再退聚焦；
@@ -771,6 +865,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         if (focusId != null && !typing) switchFocus(null)
         return
       }
+      // 加节点输入框开着时全局快捷键全禁：即使焦点异常不在 input 上，
+      // Enter/Tab 也不许再把已开的输入框切模式（防焦点被抢时的次生误操作）
+      if (adding != null) return
       if (editingId != null || outlineOpen || revOpen || chatGateOpen || selectedId == null || !detail) return
       // 焦点在任何输入元素上时快捷键一律失效（编辑框/聊天面板/outline 弹层）
       const el = document.activeElement
@@ -798,34 +895,27 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         if (node.parent == null || node.display_id === focusId) return // 布局根不可删
         e.preventDefault()
         deleteNode(node.display_id)
-      } else if (e.key === 'ArrowRight' && e.shiftKey) {
-        // Shift+→ 展开当前节点的子树（停在原地），与 Shift+← 折叠对称。
-        // 已展开/叶子无操作——不 toggle，收起语义专属 Shift+←
-        const hasKids = detail.nodes.some((n) => n.parent?.display_id === node.display_id)
-        if (node.collapsed && hasKids) {
+      } else if (e.key === ' ' || e.code === 'Space') {
+        // Space = 收放当前节点的子树（toggle，Freeplane 同款）。
+        // 叶子/布局根无操作——真根不可折叠，聚焦根视作展开
+        const lsel = layout?.all.find((l) => l.node.display_id === selectedId)
+        const hasKids =
+          (lsel?.children.length ?? 0) > 0 ||
+          detail.nodes.some((n) => n.parent?.display_id === node.display_id)
+        if (lsel && lsel !== layout?.root && hasKids) {
           e.preventDefault()
+          const collapsed = !node.collapsed
           queueFoldMutation(
-            (current) => patchCollapsed(current, node.display_id, false),
-            (clientRequestId) => api.setNodeCollapsed(mapId, node.display_id, false, clientRequestId),
+            (current) => patchCollapsed(current, node.display_id, collapsed),
+            (clientRequestId) => api.setNodeCollapsed(mapId, node.display_id, collapsed, clientRequestId),
           )
         }
       } else if (e.key === 'ArrowRight') {
         e.preventDefault()
-        navigate('child')
-      } else if (e.key === 'ArrowLeft' && e.shiftKey) {
-        // Shift+← 折叠当前节点的子树（停在原地）；展开也可 Shift+→（对称）
-        // 或普通 →（先展开再进子）。已折叠/叶子无操作——不 toggle
-        const hasKids = detail.nodes.some((n) => n.parent?.display_id === node.display_id)
-        if (!node.collapsed && hasKids) {
-          e.preventDefault()
-          queueFoldMutation(
-            (current) => patchCollapsed(current, node.display_id, true),
-            (clientRequestId) => api.setNodeCollapsed(mapId, node.display_id, true, clientRequestId),
-          )
-        }
+        navigate('right')
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        navigate('parent')
+        navigate('left')
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
         navigate('prev')
@@ -836,7 +926,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, editingId, outlineOpen, revOpen, chatGateOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation])
+  }, [selectedId, editingId, adding, outlineOpen, revOpen, chatGateOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation])
   // 重排动画：动画期间逐帧给出节点位置（null = 静止，直接用布局终值）；
   // 边由 React Flow 按节点位置实时重算，滑行中始终与节点贴合
   const animPos = useAnimatedLayout(layout)
@@ -914,7 +1004,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
   const callbacks = useMemo(
     () => ({
-      onSelect: (id: number) => setSelectedId(id),
+      onSelect: (id: number) => {
+        setSelectedId(id)
+        setSelectedByPointer(true)
+      },
       onStartEdit: (id: number) => setEditingId(id),
       onToggleCollapse: toggleCollapse,
       onCommitEdit: commitEdit,
@@ -942,13 +1035,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         const id = ln.node.display_id
         const flags =
           (id === selectedId ? 's' : '') +
+          (id === selectedId && selectedByPointer ? 'P' : '') +
           (id === editingId ? 'e' : '') +
           (id === adding?.anchor ? (adding.dir === 'sibling' ? 'S' : 'a') : '') +
           ((childCount.get(id) ?? 0) > 0 ? 'h' : '')
         return `${id}:${Math.round(ln.x)},${Math.round(ln.y)},${ln.w}x${ln.h}:${ln.side}${ln === layout.root ? 'R' : ''}${ln.node.collapsed ? 'C' : ''}:${flags}:${ln.node.content}`
       })
       .join('|')
-  }, [layout, selectedId, editingId, adding, childCount])
+  }, [layout, selectedId, selectedByPointer, editingId, adding, childCount])
 
   // 边签名只看结构（谁连谁 + 锚定侧）：文本 / 选中态变化不影响边
   const edgesSig = useMemo(() => {
@@ -962,29 +1056,64 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   // 依赖是签名而非 layout 身份（内容未变即复用）；animPos 在动画期间逐帧变化，
   // 照常驱动重建；callbacks 单列——语言切换时 t 变化需重建，
   // 普通刷新间其身份稳定，不破签名门卫
+  //
+  // 节点级引用复用：内容未变的节点返回上一轮的同对象。React Flow 对新
+  // 节点对象会重置 internals（handleBounds 需重测），间隙里边查不到锚点
+  // → EdgeWrapper 渲染 null → 全部边卸载重挂（实测 19 边 × 3 svg/轮，
+  // 动画 300ms 内 400+ 次，即"边集体闪没再闪回"的根因）。复用对象 =
+  // RF 视节点未变、internals 沿用，边保持挂载、path 走 d 属性更新。
+  const prevNodesRef = useRef(new Map<string, { key: string; node: MindNode }>())
   const rfNodes: MindNode[] = useMemo(() => {
     if (!layout) return []
-    return layout.all.map((lnode) => {
+    const prev = prevNodesRef.current
+    const next = new Map<string, { key: string; node: MindNode }>()
+    const result = layout.all.map((lnode) => {
+      const id = String(lnode.node.display_id)
       const p = animPos?.get(lnode.node.display_id)
-      return {
-        id: String(lnode.node.display_id),
+      const sel = lnode.node.display_id === selectedId
+      const x = p?.x ?? lnode.x
+      const y = (p?.y ?? lnode.y) - lnode.h / 2
+      const op = p ? p.op : 1
+      // 节点内容签名：RF 与 MindNodeView 消费的全部字段（nodesSig 同源维度
+      // + 交互态 + 动画位置/透明度）。签名相同 → 复用旧对象。
+      // 透明度取 1% 粒度（视觉阈值）：整数 round 会让中断帧 op≈0.5 撞上终态
+      // key（半透明对象被永久复用——节点卡浅色）；千分位精确又使动画尾段
+      // 每帧换对象（churn 回升）。1% 粒度两头兼顾：0.5 不撞 1，>0.995 等价 1
+      const key = `${id}:${Math.round(x)},${Math.round(y)},${Math.round(op * 100)}:${sel ? 's' : ''}${
+        lnode.node.display_id === editingId ? 'e' : ''
+      }${lnode.node.display_id === adding?.anchor ? (adding!.dir === 'sibling' ? 'S' : 'a') : ''}${
+        sel && selectedByPointer ? 'P' : ''
+      }:${lnode === layout.root ? 'R' : ''}${(childCount.get(lnode.node.display_id) ?? 0) > 0 ? 'h' : ''}`
+      const old = prev.get(id)
+      // callbacks 身份代表整个 data 回调组（其内部字段同批重建）
+      if (old && old.key === key && old.node.data.onSelect === callbacks.onSelect) {
+        next.set(id, old)
+        return old.node
+      }
+      const fresh: MindNode = {
+        id,
         type: 'mind' as const,
-        position: { x: p?.x ?? lnode.x, y: (p?.y ?? lnode.y) - lnode.h / 2 },
+        position: { x, y },
         width: lnode.w, // 供 MiniMap 等在 DOM 测量前使用（nodeHasDimensions）
         height: lnode.h,
-        style: { width: lnode.w, height: lnode.h, opacity: p ? p.op : 1 },
-        selected: lnode.node.display_id === selectedId,
+        style: { width: lnode.w, height: lnode.h, opacity: op },
+        selected: sel,
         data: {
           lnode,
           isLayoutRoot: lnode === layout.root, // 引用相等：all 里的根对象就是 layout.root
           isEditing: lnode.node.display_id === editingId,
           isAdding: lnode.node.display_id === adding?.anchor,
           addingDir: adding?.dir ?? 'child',
+          selectedByPointer: sel && selectedByPointer,
           hasChildren: (childCount.get(lnode.node.display_id) ?? 0) > 0,
           ...callbacks,
         },
       }
+      next.set(id, { key, node: fresh })
+      return fresh
     })
+    prevNodesRef.current = next
+    return result
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 门卫注释见上；layout 由 nodesSig 表达
   }, [nodesSig, animPos, callbacks])
 
@@ -1000,7 +1129,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           // 锚定侧由 child 的方向决定（见 layout.ts edgePath 的同款规则）
           sourceHandle: c.side === 1 ? 'sr' : 'sl',
           targetHandle: c.side === 1 ? 'tl' : 'tr',
-          type: 'default',
+          type: 'mind',
         })
       }
     }
@@ -1188,6 +1317,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onInit={(inst) => {
               rfRef.current = inst
             }}
