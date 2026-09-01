@@ -720,6 +720,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       setAdding(null)
       const value = text.trim() // 局部命名避开 i18n 的 t
       if (!value) return
+      // 真创建才收起锚点的按钮行：点击选中打开的输入框提交后，按钮行
+      // 不再回亮（选中高亮保留，操作入口交回快捷键）。空文本取消不动——
+      // 点开的上下文不该被 Esc 顺手清掉
+      setSelectedByPointer(false)
       void guard(() => api.addNode(mapId, parentId, value))
     },
     [mapId],
@@ -840,7 +844,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     [detail, selectedId, focusId, mapId, layout, queueFoldMutation],
   )
 
-  // ── 快捷键（F2 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Space 收放 / Esc 退聚焦 / 方向键导航）──
+  // ── 快捷键（F2·Ctrl+Enter 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Space 收放 / Esc 退聚焦 / 方向键导航）──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Esc 逐层退出：先关弹层（outline/版本面板），再退聚焦；
@@ -886,12 +890,18 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         // Enter 确认才调 API 创建——不落默认名节点，取消零痕迹
         e.preventDefault()
         startAdd(node.display_id, 'child')
+      } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        // Ctrl/Cmd+Enter 直接编辑当前节点（F2 的顺手版——单手可达）
+        e.preventDefault()
+        setEditingId(node.display_id)
       } else if (e.key === 'Enter') {
         // 布局根无兄弟：聚焦根加兄弟会挂到视野外的真父上，成为不可见变更
         if (node.parent == null || node.display_id === focusId) return
         e.preventDefault()
         startAdd(node.display_id, 'sibling')
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      } else if (e.key === 'Delete') {
+        // 删除只认 Delete 不认 Backspace：退格误触率高（打字肌肉记忆），
+        // 而这里删的是整个子树，代价太大
         if (node.parent == null || node.display_id === focusId) return // 布局根不可删
         e.preventDefault()
         deleteNode(node.display_id)
