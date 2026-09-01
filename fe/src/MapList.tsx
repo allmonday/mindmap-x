@@ -11,11 +11,21 @@ const TrashIcon = () => (
   </svg>
 )
 
+// 新建卡片的 ＋（lucide plus）
+const PlusIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+    <path d="M5 12h14M12 5v14" />
+  </svg>
+)
+
 export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
   const { t, locale } = useI18n()
   const [maps, setMaps] = useState<MapSummary[] | null>(null)
-  const [title, setTitle] = useState('')
+  const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // 新建卡片两态：静止（虚线 ＋ 卡）↔ 输入中（卡内 input，Enter 才创建）
+  const [creatingCard, setCreatingCard] = useState(false)
+  const [creatingTitle, setCreatingTitle] = useState('')
   const [creating, setCreating] = useState(false)
   // 两步确认：第一次点删除只亮起「确认删除」，3s 内再点才执行
   const [confirmId, setConfirmId] = useState<number | null>(null)
@@ -27,8 +37,8 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
   }, [])
 
   const create = async () => {
-    const value = title.trim()
-    if (!value) return
+    const value = creatingTitle.trim()
+    if (!value || creating) return
     setCreating(true)
     try {
       const d = await api.createMap(value)
@@ -38,6 +48,12 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
     } finally {
       setCreating(false)
     }
+  }
+
+  // 退出输入态即复位；创建是重操作，不提交半截——必须显式 Enter
+  const cancelCreate = () => {
+    setCreatingCard(false)
+    setCreatingTitle('')
   }
 
   const askDelete = (id: number) => {
@@ -57,24 +73,50 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
     }
   }
 
+  const kw = query.trim().toLowerCase()
+  const shown = (maps ?? []).filter((m) => m.title.toLowerCase().includes(kw))
+
   return (
     <div className="map-list">
       <LangSwitch />
       <h1>MindMap X</h1>
-      <div className="create-row">
+      <div className="search-row">
         <input
-          value={title}
-          placeholder={t('map.placeholder')}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && create()}
+          value={query}
+          placeholder={t('map.searchPlaceholder')}
+          onChange={(e) => setQuery(e.target.value)}
         />
-        <button className="btn primary" disabled={creating || !title.trim()} onClick={create}>
-          {t('map.create')}
-        </button>
       </div>
       {error && <div className="toast">{error}</div>}
       <div className="cards">
-        {(maps ?? []).map((m) => (
+        {/* 第一格恒为新建卡片（搜索中也保留，随时可建） */}
+        {creatingCard ? (
+          <div className="card new-card editing">
+            <input
+              autoFocus
+              value={creatingTitle}
+              placeholder={t('map.placeholder')}
+              disabled={creating}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setCreatingTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void create()
+                }
+                if (e.key === 'Escape') cancelCreate()
+              }}
+              onBlur={() => {
+                if (!creatingTitle.trim()) cancelCreate()
+              }}
+            />
+          </div>
+        ) : (
+          <button className="card new-card" onClick={() => setCreatingCard(true)}>
+            <PlusIcon /> {t('map.newCard')}
+          </button>
+        )}
+        {shown.map((m) => (
           <div key={m.id} className="card" onClick={() => confirmId === null && onOpen(m.id)}>
             <div className="card-title">{m.title}</div>
             <div className="card-meta">

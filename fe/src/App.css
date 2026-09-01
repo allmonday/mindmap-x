@@ -293,28 +293,29 @@ body.chat-resizing {
 
 /* ── 语言切换（双 pill 拼合，复用 .btn 体系）───────────── */
 .lang-switch { display: inline-flex; }
-/* 与相邻的 .btn.icon 同高：同 6px 上下 padding + 内容行高对齐 16px 图标行 */
-.lang-switch .btn { padding: 6px 9px; font-size: 12px; line-height: 16px; }
+/* 与相邻的 .btn.icon 同高：图标按钮的 svg 行内基线空隙实测撑到 33px，
+   显式对齐之（6px padding + 16px 行高本只有 30px） */
+.lang-switch .btn { padding: 6px 9px; font-size: 12px; line-height: 16px; height: 33px; }
 .lang-switch .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
 .lang-switch .btn + .btn { border-left: none; border-radius: 0 var(--radius) var(--radius) 0; }
 .lang-switch .btn.active { background: var(--bg-hover); font-weight: 600; }
 
 
-.create-row { display: flex; gap: 10px; margin-bottom: 24px; }
-.create-row input {
-  flex: 1;
+.search-row { margin-bottom: 24px; }
+.search-row input {
+  width: 100%;
   border: 1px solid #e3e2e0;
   border-radius: var(--radius);
   padding: 8px 12px;
   font: inherit;
   background: var(--bg);
 }
-.create-row input:focus {
+.search-row input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.15);
 }
-.create-row input::placeholder { color: var(--ink-3); }
+.search-row input::placeholder { color: var(--ink-3); }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .card {
@@ -328,6 +329,32 @@ body.chat-resizing {
   transition: background 0.1s, border-color 0.1s;
 }
 .card:hover { background: var(--bg-hover); border-color: #d3d1cb; }
+/* 新建卡片：网格第一格，虚线边框与普通卡区分；点击进入卡内输入态 */
+.card.new-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 72px;
+  border: 1.5px dashed #d3d1cb;
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+.card.new-card:hover { border-color: var(--ink-3); color: var(--ink-2); background: var(--bg-hover); }
+.card.new-card.editing { border-style: solid; cursor: default; }
+.card.new-card input {
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+}
+.card.new-card input:focus { outline: none; }
+.card.new-card input::placeholder { color: var(--ink-3); font-weight: 400; }
 .card-title { font-weight: 600; margin-bottom: 6px; font-size: 15px; }
 .card-meta { color: var(--ink-3); font-size: 12.5px; }
 /* 删除入口：hover 显示；两步确认——第一次点击变红色「确认删除」，3s 内再点执行 */
