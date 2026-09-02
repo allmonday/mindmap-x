@@ -40,7 +40,7 @@ type MindNodeData = {
   selectedByPointer: boolean // 选中来源：点击亮按钮行，键盘导航只高亮
   hasChildren: boolean
   hasNote: boolean // 带 markdown 备注（角标 ✎ 的显隐源）
-  onSelect: (id: number) => void
+  onSelect: (id: number, hasNote?: boolean) => void // hasNote 驱动备注面板开合
   onStartEdit: (id: number) => void
   onToggleCollapse: (lnode: LNode) => void
   onCommitEdit: (id: number, text: string) => void
@@ -104,7 +104,7 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       style={{ width: lnode.w, height: isEditing ? 'auto' : lnode.h, minHeight: isEditing ? lnode.h : undefined }}
       onClick={(e) => {
         e.stopPropagation()
-        data.onSelect(n.display_id)
+        data.onSelect(n.display_id, data.hasNote)
       }}
       onDoubleClick={(e) => {
         e.stopPropagation()
@@ -216,6 +216,20 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
             >
               <PlusIcon />
             </button>
+            {/* 添加备注：无备注节点的创建入口（有备注的节点点击即开面板，无需按钮） */}
+            {!hasNote && (
+              <button
+                className="btn sm"
+                title={t('node.addNoteTitle')}
+                aria-label={t('node.addNoteTitle')}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data.onOpenNote(n.display_id)
+                }}
+              >
+                <StickyNoteIcon />
+              </button>
+            )}
             {!isRoot && hasChildren && (
               <button
                 className="btn sm"
@@ -904,8 +918,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       if (target == null) return
       setSelectedId(target)
       setSelectedByPointer(false)
-      // 键盘导航换选中 = 离开依附节点：未 pin 的备注面板收起（与点击选中同款）
-      if (noteOpen && !notePinned) setNoteOpen(false)
+      // 键盘导航同款规则：面板开合跟随"目标节点有无备注"（pin 恒开）
+      if (!notePinned) {
+        const tnode = detail.nodes.find((n) => n.display_id === target)
+        setNoteOpen(!!tnode?.note)
+      }
       // 视口跟随：目标出界（留 60px 边距）才平移到中心，不出界不动画面。
       // 等 React 渲染出目标 DOM 再判（展开场景新节点要一轮 render 才出现）
       window.setTimeout(() => {
@@ -922,7 +939,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         rfRef.current.setCenter(ln.x + ln.w / 2, ln.y, { duration: 300, zoom: rfRef.current.getZoom() })
       }, 60)
     },
-    [detail, selectedId, focusId, mapId, layout, queueFoldMutation, noteOpen, notePinned],
+    [detail, selectedId, focusId, mapId, layout, queueFoldMutation, notePinned],
   )
 
   // ── 快捷键（F2·Ctrl+Enter 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Space 收放 / Esc 退聚焦 / 方向键导航）──
@@ -971,11 +988,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         toggleNote()
         return
       }
-      // 聊天面板开着时节点快捷键整体让位：输入框 disabled（Agent 处理中）
-      // 会把焦点踢到 body、点面板非输入区焦点也不在 textarea——activeElement
-      // 推断在这两种场景失效，用户按 Enter 想发消息却触发画布"加兄弟"。
-      // （d 键不受此限：备注与聊天左右并存）
-      if (editingId != null || outlineOpen || revOpen || chatGateOpen || chatOpen || selectedId == null || !detail) return
+      if (editingId != null || outlineOpen || revOpen || chatGateOpen || selectedId == null || !detail) return
+      // 聊天面板开着时：浏览类（方向键/空格收放）保留——边聊边看图是常态流；
+      // 只禁会产生编辑界面的键（Enter/Tab 弹输入框、F2 进编辑、Delete 删子树）：
+      // 输入框 disabled（Agent 处理中）会把焦点踢到 body、点面板非输入区焦点
+      // 也不在 textarea，activeElement 推断失效，用户按 Enter 想发消息却会
+      // 触发画布"加兄弟"
+      if (chatOpen && (e.key === 'F2' || e.key === 'Tab' || e.key === 'Enter' || e.key === 'Delete'))
+        return
       // 焦点在任何输入元素上时快捷键一律失效（编辑框/聊天面板/outline 弹层）
       const el = document.activeElement
       if (
@@ -1117,11 +1137,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
   const callbacks = useMemo(
     () => ({
-      onSelect: (id: number) => {
+      onSelect: (id: number, hasNote?: boolean) => {
         setSelectedId(id)
         setSelectedByPointer(true)
-        // 未 pin 的面板依附于"从角标打开的节点"：普通点击选中了别的节点 → 收起
-        if (noteOpen && !notePinned) setNoteOpen(false)
+        // 点击节点 = 选中 + 备注面板按"有无备注"开合（无备注节点不弹空面板，
+        // 创建入口走按钮行的添加备注按钮 / d 键 / 工具栏）。pin 时恒开不动
+        if (!notePinned) setNoteOpen(!!hasNote)
       },
       onStartEdit: (id: number) => setEditingId(id),
       onToggleCollapse: toggleCollapse,
@@ -1138,7 +1159,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         setNoteOpen(true) // 角标是打开入口（不自动 pin；stopPropagation 不触发 onSelect）
       },
     }),
-    [toggleCollapse, commitEdit, startAdd, commitAdd, cancelAdd, deleteNode, switchFocus, noteOpen, notePinned],
+    [toggleCollapse, commitEdit, startAdd, commitAdd, cancelAdd, deleteNode, switchFocus, notePinned],
   )
 
   // ── 刷新门卫：内容签名 ────────────────────────────────────────────────

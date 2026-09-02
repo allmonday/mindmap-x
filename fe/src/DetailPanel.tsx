@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { mdComponents } from './Mermaid'
 import { useI18n } from './i18n'
 import type { NodeDTO } from './types'
 
@@ -204,7 +205,7 @@ export function DetailPanel({ node, width, onResize, pinned, onTogglePin, onSave
         draft ? (
           <div className="chat-list">
             <div className="md">
-              <Markdown remarkPlugins={[remarkGfm]}>{draft}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{draft}</Markdown>
             </div>
           </div>
         ) : (

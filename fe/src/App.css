@@ -235,6 +235,26 @@ body.chat-resizing {
 .md tr:nth-child(even) td { background: rgba(55, 53, 47, 0.02); }
 /* GFM 删除线 */
 .md del { color: var(--ink-3); }
+/* mermaid 图表：居中 + 横向滚动兜底（宽图不撑爆气泡/面板） */
+.mermaid-svg { margin: 8px 0; text-align: center; overflow-x: auto; }
+.mermaid-svg svg { max-width: 100%; height: auto; }
+.mermaid-loading {
+  margin: 8px 0;
+  height: 48px;
+  background: var(--bg-hover);
+  border-radius: var(--radius);
+  animation: mermaid-pulse 1s ease-in-out infinite;
+}
+@keyframes mermaid-pulse { 50% { opacity: 0.5; } }
+.mermaid-err {
+  display: block;
+  white-space: pre-wrap;
+  color: var(--danger);
+  border: 1px dashed rgba(235, 87, 87, 0.4);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin: 8px 0;
+}
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ── 节点备注面板（DetailPanel：复用 chat-panel 骨架/head/resize/empty） ── */
@@ -266,6 +286,9 @@ body.chat-resizing {
 .note-save.ok { color: #1f7a55; border-color: #b7dcc6; background: rgba(51, 154, 108, 0.08); }
 /* pin 住：图钉高亮（accent 色系，比普通 active 更醒目——常驻是模式切换） */
 .note-pin.active { color: var(--accent); background: rgba(35, 131, 226, 0.08); border-color: #b9d7f3; }
+/* 备注预览的 markdown：作用域字号（比气泡 13.5 再小一号）——.md 本身无字号，
+   不限作用域会继承 body 的 16px 显得过大 */
+.detail-panel .md { font-size: 13px; }
 .note-editor {
   flex: 1;
   border: none;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { mdComponents } from './Mermaid'
 import { chatApi, gateReasonText, type ArchiveDoc, type ArchiveMeta } from './api'
 import { fmtTime, useI18n } from './i18n'
 
@@ -276,7 +277,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             {m.text &&
               (m.role === 'agent' && !m.error ? (
                 <div className="md">
-                  <Markdown remarkPlugins={[remarkGfm]}>{m.text}</Markdown>
+                  <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{m.text}</Markdown>
                 </div>
               ) : (
                 m.text
