@@ -44,31 +44,45 @@
   font-size: 12.5px;
 }
 
-/* ── Agent 对话面板（悬浮于画布右侧，不压缩画布） ──────── */
-.chat-panel {
+/* ── 悬浮侧栏骨架（Agent 对话右侧 / 节点备注左侧，overlay 不压缩画布） ── */
+.chat-panel,
+.detail-panel {
   position: absolute;
   top: 0;
-  right: 0;
   bottom: 0;
   z-index: 6; /* 盖过 ReactFlow 的 Controls/MiniMap（内部面板 z-index ~5）与 map-title */
   display: flex;
   flex-direction: column;
   max-width: 92vw; /* 宽度由行内 style 控制（拖拽调宽），此处只做小屏兜底 */
-  border-left: 1px solid var(--hairline);
   background: var(--bg);
 }
-
-/* 左缘拖拽调宽柄 */
-.chat-resize {
-  position: absolute;
+.chat-panel {
+  right: 0;
+  border-left: 1px solid var(--hairline);
+}
+.detail-panel {
   left: 0;
+  /* 让出左上组件区（map-title bottom≈49 / canvas-tools bottom≈87，实测）：
+     组件原地不动，面板从它们下方展开——不做推挤避让 */
+  top: 110px;
+  border-top: 1px solid var(--hairline); /* 顶部悬空（不再贴满），补上边界 */
+  border-right: 1px solid var(--hairline);
+}
+
+/* 拖拽调宽柄：贴边面板的内缘（右面板=左缘，左面板=右缘） */
+.chat-resize,
+.detail-resize {
+  position: absolute;
   top: 0;
   bottom: 0;
   width: 6px;
   cursor: col-resize;
   z-index: 2;
 }
-.chat-resize:hover {
+.chat-resize { left: 0; }
+.detail-resize { right: 0; }
+.chat-resize:hover,
+.detail-resize:hover {
   background: rgba(55, 53, 47, 0.08);
 }
 body.chat-resizing {
@@ -166,25 +180,26 @@ body.chat-resizing {
   overflow-y: auto; /* 长思考内部滚动，不撑爆气泡 */
 }
 
-/* agent 气泡的 markdown 渲染（user/error 气泡保持纯文本 pre-wrap） */
+/* markdown 渲染（聊天气泡的 agent 消息 / 节点备注面板共用；
+   user/error 气泡不走 .md，保持纯文本 pre-wrap） */
 .bubble .md { white-space: normal; }
-.bubble .md > :first-child { margin-top: 0; }
-.bubble .md > :last-child { margin-bottom: 0; }
-.bubble .md p { margin: 6px 0; }
-.bubble .md ul,
-.bubble .md ol { margin: 6px 0; padding-left: 18px; }
-.bubble .md li { margin: 2px 0; }
-.bubble .md h1,
-.bubble .md h2,
-.bubble .md h3 { font-size: 13.5px; margin: 8px 0 4px; }
-.bubble .md code {
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 6px 0; }
+.md ul,
+.md ol { margin: 6px 0; padding-left: 18px; }
+.md li { margin: 2px 0; }
+.md h1,
+.md h2,
+.md h3 { font-size: 13.5px; margin: 8px 0 4px; }
+.md code {
   background: rgba(55, 53, 47, 0.08);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 12.5px;
   font-family: ui-monospace, Consolas, monospace;
 }
-.bubble .md pre {
+.md pre {
   background: #37352f;
   color: #f1f1ef;
   border-radius: var(--radius);
@@ -192,15 +207,86 @@ body.chat-resizing {
   overflow-x: auto;
   margin: 8px 0;
 }
-.bubble .md pre code { background: none; padding: 0; color: inherit; }
-.bubble .md a { color: var(--accent); }
-.bubble .md blockquote {
+.md pre code { background: none; padding: 0; color: inherit; }
+.md a { color: var(--accent); }
+.md blockquote {
   margin: 6px 0;
   padding-left: 10px;
   border-left: 3px solid var(--hairline);
   color: var(--ink-2);
 }
+/* GFM 表格（remark-gfm 启用后才有）：hairline 边框 + 表头浅底，
+   宽度不撑爆气泡/面板——块级滚动兜底 */
+.md table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.md th, .md td {
+  border: 1px solid var(--hairline);
+  padding: 4px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.md th { background: var(--bg-hover); font-weight: 600; }
+.md tr:nth-child(even) td { background: rgba(55, 53, 47, 0.02); }
+/* GFM 删除线 */
+.md del { color: var(--ink-3); }
 @keyframes blink { 50% { opacity: 0; } }
+
+/* ── 节点备注面板（DetailPanel：复用 chat-panel 骨架/head/resize/empty） ── */
+.note-title {
+  /* 不设 flex:1——head 里的 .spacer 也是 flex:1，两个平分会把标题压到一半
+     就提前 ellipsis。自然宽度 + 可收缩：短标题贴左侧，长标题挤完 spacer
+     后才截断，拿到按钮以外的全部空间 */
+  flex: 0 1 auto;
+  min-width: 0; /* flex 截断链：允许子元素收缩 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+/* 源码/预览切换的分段按钮组 */
+.seg {
+  display: flex;
+  gap: 0;
+  flex-shrink: 0;
+}
+.seg .btn { border-radius: 0; }
+.seg .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.seg .btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+/* 激活态与 .lang-switch / .fold-steps 同款高亮：当前模式一眼可辨 */
+.seg .btn.active { background: var(--bg-hover); font-weight: 600; }
+/* 图标保存按钮：saved 确认 = 勾短暂变绿（与状态机 timer 同步回落） */
+.note-save { padding: 4px 7px; }
+.note-save.ok { color: #1f7a55; border-color: #b7dcc6; background: rgba(51, 154, 108, 0.08); }
+/* pin 住：图钉高亮（accent 色系，比普通 active 更醒目——常驻是模式切换） */
+.note-pin.active { color: var(--accent); background: rgba(35, 131, 226, 0.08); border-color: #b9d7f3; }
+.note-editor {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 12px 14px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: transparent;
+}
+.note-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.note-add {
+  margin-top: 12px;
+}
 
 .chat-input-row {
   display: flex;
@@ -688,6 +774,23 @@ button.crumb:hover { color: var(--ink); }
 }
 .id-badge.on-root { background: #cbd5e1; }
 
+/* 备注 ✎ 角标：与 id-badge 镜像位（右上角），暖色与灰蓝的 id 区分；
+   pointer-events:auto——本身就是"打开备注"的点击入口 */
+.note-mark {
+  position: absolute;
+  top: -9px;
+  right: -7px;
+  display: inline-flex;
+  align-items: center;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 6px;
+  padding: 2.5px 4px; /* 9px SVG 图标（文本字符时代是 1px 5px + 10px 字号） */
+  border: 1.5px solid #fff;
+  cursor: pointer;
+}
+.note-mark:hover { background: #fde68a; }
+
 .fold {
   position: absolute;
   top: 50%;
@@ -933,9 +1036,10 @@ button.crumb:hover { color: var(--ink); }
   padding: 1px 6px;
   white-space: nowrap;
 }
-.rev-badge.add { background: rgba(235, 87, 87, 0.1); color: var(--danger); }        /* 回滚将删除（警示） */
-.rev-badge.restore { background: rgba(51, 154, 108, 0.12); color: #1f7a55; }        /* 回滚将恢复 */
+.rev-badge.added { background: rgba(51, 154, 108, 0.12); color: #1f7a55; }           /* 本版新增（绿） */
+.rev-badge.removed { background: rgba(235, 87, 87, 0.1); color: var(--danger); }     /* 本版删除（红） */
 .rev-badge.chg { background: rgba(35, 131, 226, 0.1); color: var(--accent); }
+.rev-badge.note { background: rgba(180, 130, 20, 0.12); color: #92400e; }            /* 备注变更（琥珀，同节点 ✎ 角标色系） */
 .rev-badge.mov, .rev-badge.fold { background: var(--bg-hover); color: var(--ink-2); }
 .rev-node { flex-shrink: 0; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--ink-3); }
 .rev-node-content { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

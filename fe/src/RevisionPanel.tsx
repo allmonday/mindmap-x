@@ -4,9 +4,9 @@ import { fmtTime, useI18n, type I18nKey } from './i18n'
 import { edgePath, layoutMap, type LayoutMode } from './layout'
 import type {
   DiffKind,
-  DiffRow,
   MapDetail,
   NodeDTO,
+  RevisionChanges,
   RevisionDetail,
   RevisionSnapshot,
   RevisionSummary,
@@ -14,42 +14,18 @@ import type {
 
 interface Props {
   mapId: number
-  current: MapDetail // 父组件的 detail 引用：WS 刷新带入最新树，diff 与"当前"标记自动跟随
+  current: MapDetail // 父组件的 detail 引用：WS 刷新带入最新 version（"当前"标记 + 时间线重拉跟随）
   layoutMode: LayoutMode // 预览沿用用户当前选择的布局形态
   onClose: () => void
 }
 
-/** 快照 vs 当前树的列表式 diff（按 display_id 对齐；忽略 updated_by/at——restore 不回写）。 */
-function diffSnapshotVsCurrent(
-  snap: RevisionSnapshot,
-  current: MapDetail,
-): { titleChange: boolean; rows: DiffRow[] } {
-  const snapBy = new Map(snap.nodes.map((n) => [n.display_id, n]))
-  const curBy = new Map(
-    current.nodes.map((n) => [n.display_id, { ...n, parent: n.parent?.display_id ?? null }]),
-  )
-  const rows: DiffRow[] = []
-  const ids = new Set([...snapBy.keys(), ...curBy.keys()])
-  for (const id of ids) {
-    const a = snapBy.get(id) // 快照态
-    const b = curBy.get(id) // 当前态
-    if (a && !b) rows.push({ display_id: id, kind: 'removed', content: a.content }) // 回滚将恢复
-    else if (!a && b) rows.push({ display_id: id, kind: 'added', content: b.content }) // 回滚将删除
-    else if (a && b) {
-      if (a.content !== b.content)
-        rows.push({ display_id: id, kind: 'changed', content: b.content, oldContent: a.content })
-      else if (a.parent !== b.parent) rows.push({ display_id: id, kind: 'moved', content: b.content })
-      else if (a.collapsed !== b.collapsed) rows.push({ display_id: id, kind: 'folded', content: b.content })
-    }
-  }
-  rows.sort((x, y) => x.display_id - y.display_id)
-  return { titleChange: snap.title !== current.title, rows }
-}
-
+// 徽章语义 = 该版本当时发生的事（git log 风格，与旧"回滚预览"视角相反）：
+// added 绿（本版新增）/ removed 红（本版删除）/ note 备注变更（琥珀）
 const KIND_CLASS: Record<DiffKind, string> = {
-  added: 'add', // 回滚将删除（警示红）
-  removed: 'restore', // 回滚将恢复（绿）
+  added: 'added',
+  removed: 'removed',
   changed: 'chg',
+  note: 'note',
   moved: 'mov',
   folded: 'fold',
 }
@@ -95,6 +71,7 @@ function snapshotToDetail(snap: RevisionSnapshot): MapDetail {
     parent_id: null,
     parent: n.parent == null ? null : { display_id: n.parent },
     content: n.content,
+    note: n.note,
     position: n.position,
     collapsed: n.collapsed,
     updated_by: n.updated_by,
@@ -175,6 +152,7 @@ export function RevisionPanel({ mapId, current, layoutMode, onClose }: Props) {
   const { t, locale } = useI18n()
   const [revisions, setRevisions] = useState<RevisionSummary[] | null>(null)
   const [selected, setSelected] = useState<RevisionDetail | null>(null)
+  const [changes, setChanges] = useState<RevisionChanges | null>(null)
   const [tab, setTab] = useState<'diff' | 'preview'>('diff')
   const [confirming, setConfirming] = useState(false)
   const [restoring, setRestoring] = useState(false)
@@ -189,9 +167,15 @@ export function RevisionPanel({ mapId, current, layoutMode, onClose }: Props) {
   const pick = (version: number) => {
     window.clearTimeout(confirmTimer.current)
     setConfirming(false)
+    setChanges(null)
+    // 完整内容（preview 用）与版本间变更（diff 用）并行拉取
     api
       .getRevision(mapId, version)
       .then(setSelected)
+      .catch((e) => setError(String(e)))
+    api
+      .getRevisionChanges(mapId, version)
+      .then(setChanges)
       .catch((e) => setError(String(e)))
   }
 
@@ -218,8 +202,8 @@ export function RevisionPanel({ mapId, current, layoutMode, onClose }: Props) {
   }
 
   const isCurrent = selected?.version === current.version
-  const diff = selected ? diffSnapshotVsCurrent(selected.snapshot, current) : null
-  const shownRows = diff ? (diff.rows.length > 200 ? diff.rows.slice(0, 200) : diff.rows) : []
+  const shownRows =
+    changes && changes.rows.length > 200 ? changes.rows.slice(0, 200) : (changes?.rows ?? [])
 
   return (
     <div className="modal" onClick={onClose}>
@@ -289,18 +273,19 @@ export function RevisionPanel({ mapId, current, layoutMode, onClose }: Props) {
                 )}
                 {tab === 'diff' && (
                   <>
-                    {diff && diff.titleChange && (
+                    {changes && changes.title_change && (
                       <div className="rev-row-line title">
-                        {t('rev.titleChanged')}：{selected.snapshot.title} → {current.title}
+                        {t('rev.titleChanged')}：{changes.old_title} → {selected.snapshot.title}
                       </div>
                     )}
-                    {diff && diff.rows.length === 0 && !diff.titleChange && (
+                    {changes && changes.rows.length === 0 && !changes.title_change && (
                       <div className="rev-empty">{t('rev.diffEmpty')}</div>
                     )}
+                    {!changes && <div className="rev-empty">{t('rev.loading')}</div>}
                     {shownRows.map((r) => (
                       <div key={r.display_id} className="rev-row-line">
                         <span className={`rev-badge ${KIND_CLASS[r.kind]}`}>
-                          {r.kind === 'added' ? t('rev.willDelete') : r.kind === 'removed' ? t('rev.willRestore') : t(`rev.${r.kind}` as I18nKey)}
+                          {t(`rev.${r.kind}` as I18nKey)}
                         </span>
                         <span className="rev-node">#{r.display_id}</span>
                         {r.kind === 'changed' && r.oldContent != null ? (
@@ -310,8 +295,8 @@ export function RevisionPanel({ mapId, current, layoutMode, onClose }: Props) {
                         )}
                       </div>
                     ))}
-                    {diff && diff.rows.length > 200 && (
-                      <div className="rev-empty">+{diff.rows.length - 200} …</div>
+                    {changes && changes.rows.length > 200 && (
+                      <div className="rev-empty">+{changes.rows.length - 200} …</div>
                     )}
                   </>
                 )}

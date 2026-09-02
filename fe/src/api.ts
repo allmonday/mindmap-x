@@ -2,24 +2,26 @@
 // 收敛为 UI 需要的领域方法。节点 ID 均为 map 内 display_id（每图从 1 起）。
 import type { I18nKey } from './i18n'
 import {
-  handlerApiMindmapServiceAddNodePost,
-  handlerApiMindmapServiceApplyOutlinePost,
-  handlerApiMindmapServiceCreateMapPost,
-  handlerApiMindmapServiceDeleteMapPost,
-  handlerApiMindmapServiceDeleteNodePost,
-  handlerApiMindmapServiceExpandAllPost,
-  handlerApiMindmapServiceGetMapPost,
-  handlerApiMindmapServiceGetRevisionPost,
-  handlerApiMindmapServiceGetTreePost,
-  handlerApiMindmapServiceListMapsPost,
-  handlerApiMindmapServiceListRevisionsPost,
-  handlerApiMindmapServiceMoveNodePost,
-  handlerApiMindmapServiceRestoreRevisionPost,
-  handlerApiMindmapServiceSetFoldLevelPost,
-  handlerApiMindmapServiceSetNodeCollapsedPost,
-  handlerApiMindmapServiceUpdateNodePost,
+  addNodeApiMindmapServiceAddNodePost,
+  applyOutlineApiMindmapServiceApplyOutlinePost,
+  createMapApiMindmapServiceCreateMapPost,
+  deleteMapApiMindmapServiceDeleteMapPost,
+  deleteNodeApiMindmapServiceDeleteNodePost,
+  expandAllApiMindmapServiceExpandAllPost,
+  getMapApiMindmapServiceGetMapPost,
+  getNodeApiMindmapServiceGetNodePost,
+  getRevisionApiMindmapServiceGetRevisionPost,
+  getRevisionChangesApiMindmapServiceGetRevisionChangesPost,
+  getTreeApiMindmapServiceGetTreePost,
+  listMapsApiMindmapServiceListMapsPost,
+  listRevisionsApiMindmapServiceListRevisionsPost,
+  moveNodeApiMindmapServiceMoveNodePost,
+  restoreRevisionApiMindmapServiceRestoreRevisionPost,
+  setFoldLevelApiMindmapServiceSetFoldLevelPost,
+  setNodeCollapsedApiMindmapServiceSetNodeCollapsedPost,
+  updateNodeApiMindmapServiceUpdateNodePost,
 } from './sdk'
-import type { MapDetail, MapSummary, NodeDTO, OutlineMode, RevisionDetail, RevisionSummary } from './types'
+import type { MapDetail, MapSummary, NodeDTO, OutlineMode, RevisionChanges, RevisionDetail, RevisionSummary } from './types'
 
 type SdkResult<T> = {
   data?: T
@@ -55,21 +57,27 @@ function sdkNoContent(method: string, result: SdkResult<unknown>): void {
 
 export const api = {
   listMaps: async () =>
-    sdkData<MapSummary[]>('list_maps', await handlerApiMindmapServiceListMapsPost()),
+    sdkData<MapSummary[]>('list_maps', await listMapsApiMindmapServiceListMapsPost()),
   getMap: async (map_id: number) =>
     sdkData<MapDetail>(
       'get_map',
-      await handlerApiMindmapServiceGetMapPost({ body: { map_id } }),
+      await getMapApiMindmapServiceGetMapPost({ body: { map_id } }),
     ),
   getTree: async (map_id: number) =>
     sdkData<string>(
       'get_tree',
-      await handlerApiMindmapServiceGetTreePost({ body: { map_id } }),
+      await getTreeApiMindmapServiceGetTreePost({ body: { map_id } }),
+    ),
+  // 备注面板不调用（note 已随 MapDetail 全树下发）；保留给 CLI 同构的调试/未来入口
+  getNode: async (map_id: number, node_id: number) =>
+    sdkData<NodeDTO>(
+      'get_node',
+      await getNodeApiMindmapServiceGetNodePost({ body: { map_id, node_id } }),
     ),
   createMap: async (title: string) =>
     sdkData<MapDetail>(
       'create_map',
-      await handlerApiMindmapServiceCreateMapPost({ body: { title, actor: 'human' } }),
+      await createMapApiMindmapServiceCreateMapPost({ body: { title, actor: 'human' } }),
     ),
   addNode: async (
     map_id: number,
@@ -79,15 +87,16 @@ export const api = {
   ) =>
     sdkData<NodeDTO>(
       'add_node',
-      await handlerApiMindmapServiceAddNodePost({
+      await addNodeApiMindmapServiceAddNodePost({
         body: { map_id, parent_id, content, position, actor: 'human' },
       }),
     ),
-  updateNode: async (map_id: number, node_id: number, content: string) =>
+  // content/note 均"不传 = 不动"（JSON.stringify 丢弃 undefined 键）；note 传 '' 显式清空
+  updateNode: async (map_id: number, node_id: number, content?: string, note?: string | null) =>
     sdkData<NodeDTO>(
       'update_node',
-      await handlerApiMindmapServiceUpdateNodePost({
-        body: { map_id, node_id, content, actor: 'human' },
+      await updateNodeApiMindmapServiceUpdateNodePost({
+        body: { map_id, node_id, content, note, actor: 'human' },
       }),
     ),
   setNodeCollapsed: async (
@@ -98,7 +107,7 @@ export const api = {
   ) => {
     sdkNoContent(
       'set_node_collapsed',
-      await handlerApiMindmapServiceSetNodeCollapsedPost({
+      await setNodeCollapsedApiMindmapServiceSetNodeCollapsedPost({
         body: { map_id, node_id, collapsed, client_request_id, actor: 'human' },
       }),
     )
@@ -111,26 +120,26 @@ export const api = {
   ) =>
     sdkData<NodeDTO>(
       'move_node',
-      await handlerApiMindmapServiceMoveNodePost({
+      await moveNodeApiMindmapServiceMoveNodePost({
         body: { map_id, node_id, new_parent_id, position, actor: 'human' },
       }),
     ),
   deleteNode: async (map_id: number, node_id: number) =>
     sdkData<boolean>(
       'delete_node',
-      await handlerApiMindmapServiceDeleteNodePost({
+      await deleteNodeApiMindmapServiceDeleteNodePost({
         body: { map_id, node_id, actor: 'human' },
       }),
     ),
   deleteMap: async (map_id: number) =>
     sdkData<boolean>(
       'delete_map',
-      await handlerApiMindmapServiceDeleteMapPost({ body: { map_id, actor: 'human' } }),
+      await deleteMapApiMindmapServiceDeleteMapPost({ body: { map_id, actor: 'human' } }),
     ),
   expandAll: async (map_id: number, client_request_id: string) => {
     sdkNoContent(
       'expand_all',
-      await handlerApiMindmapServiceExpandAllPost({
+      await expandAllApiMindmapServiceExpandAllPost({
         body: { map_id, client_request_id, actor: 'human' },
       }),
     )
@@ -138,7 +147,7 @@ export const api = {
   setFoldLevel: async (map_id: number, level: number, client_request_id: string) => {
     sdkNoContent(
       'set_fold_level',
-      await handlerApiMindmapServiceSetFoldLevelPost({
+      await setFoldLevelApiMindmapServiceSetFoldLevelPost({
         body: { map_id, level, client_request_id, actor: 'human' },
       }),
     )
@@ -146,24 +155,30 @@ export const api = {
   applyOutline: async (map_id: number, outline: string, mode: OutlineMode) =>
     sdkData<MapDetail>(
       'apply_outline',
-      await handlerApiMindmapServiceApplyOutlinePost({
+      await applyOutlineApiMindmapServiceApplyOutlinePost({
         body: { map_id, outline, mode, actor: 'human' },
       }),
     ),
   listRevisions: async (map_id: number) =>
     sdkData<RevisionSummary[]>(
       'list_revisions',
-      await handlerApiMindmapServiceListRevisionsPost({ body: { map_id } }),
+      await listRevisionsApiMindmapServiceListRevisionsPost({ body: { map_id } }),
     ),
   getRevision: async (map_id: number, version: number) =>
     sdkData<RevisionDetail>(
       'get_revision',
-      await handlerApiMindmapServiceGetRevisionPost({ body: { map_id, version } }),
+      await getRevisionApiMindmapServiceGetRevisionPost({ body: { map_id, version } }),
+    ),
+  // 版本间变更集（该版本 vs 上一版本）——RevisionPanel 的「变更」tab 数据源
+  getRevisionChanges: async (map_id: number, version: number) =>
+    sdkData<RevisionChanges>(
+      'get_revision_changes',
+      await getRevisionChangesApiMindmapServiceGetRevisionChangesPost({ body: { map_id, version } }),
     ),
   restoreRevision: async (map_id: number, version: number) =>
     sdkData<MapDetail>(
       'restore_revision',
-      await handlerApiMindmapServiceRestoreRevisionPost({
+      await restoreRevisionApiMindmapServiceRestoreRevisionPost({
         body: { map_id, version, actor: 'human' },
       }),
     ),

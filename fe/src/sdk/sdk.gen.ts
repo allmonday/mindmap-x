@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ChatArchiveDetailApiChatArchivesArchiveIdGetData, ChatArchiveDetailApiChatArchivesArchiveIdGetErrors, ChatArchiveDetailApiChatArchivesArchiveIdGetResponses, ChatArchivesApiChatArchivesGetData, ChatArchivesApiChatArchivesGetErrors, ChatArchivesApiChatArchivesGetResponses, ChatStatusApiChatStatusGetData, ChatStatusApiChatStatusGetResponses, GraphiqlGraphqlGetData, GraphiqlGraphqlGetResponses, GraphqlEndpointGraphqlPostData, GraphqlEndpointGraphqlPostErrors, GraphqlEndpointGraphqlPostResponses, GraphqlSchemaSchemaGetData, GraphqlSchemaSchemaGetResponses, HandlerApiMindmapServiceAddNodePostData, HandlerApiMindmapServiceAddNodePostErrors, HandlerApiMindmapServiceAddNodePostResponses, HandlerApiMindmapServiceApplyOutlinePostData, HandlerApiMindmapServiceApplyOutlinePostErrors, HandlerApiMindmapServiceApplyOutlinePostResponses, HandlerApiMindmapServiceCreateMapPostData, HandlerApiMindmapServiceCreateMapPostErrors, HandlerApiMindmapServiceCreateMapPostResponses, HandlerApiMindmapServiceDeleteMapPostData, HandlerApiMindmapServiceDeleteMapPostErrors, HandlerApiMindmapServiceDeleteMapPostResponses, HandlerApiMindmapServiceDeleteNodePostData, HandlerApiMindmapServiceDeleteNodePostErrors, HandlerApiMindmapServiceDeleteNodePostResponses, HandlerApiMindmapServiceExpandAllPostData, HandlerApiMindmapServiceExpandAllPostErrors, HandlerApiMindmapServiceExpandAllPostResponses, HandlerApiMindmapServiceGetMapPostData, HandlerApiMindmapServiceGetMapPostErrors, HandlerApiMindmapServiceGetMapPostResponses, HandlerApiMindmapServiceGetRevisionPostData, HandlerApiMindmapServiceGetRevisionPostErrors, HandlerApiMindmapServiceGetRevisionPostResponses, HandlerApiMindmapServiceGetTreePostData, HandlerApiMindmapServiceGetTreePostErrors, HandlerApiMindmapServiceGetTreePostResponses, HandlerApiMindmapServiceListMapsPostData, HandlerApiMindmapServiceListMapsPostResponses, HandlerApiMindmapServiceListRevisionsPostData, HandlerApiMindmapServiceListRevisionsPostErrors, HandlerApiMindmapServiceListRevisionsPostResponses, HandlerApiMindmapServiceMoveNodePostData, HandlerApiMindmapServiceMoveNodePostErrors, HandlerApiMindmapServiceMoveNodePostResponses, HandlerApiMindmapServiceRestoreRevisionPostData, HandlerApiMindmapServiceRestoreRevisionPostErrors, HandlerApiMindmapServiceRestoreRevisionPostResponses, HandlerApiMindmapServiceSetFoldLevelPostData, HandlerApiMindmapServiceSetFoldLevelPostErrors, HandlerApiMindmapServiceSetFoldLevelPostResponses, HandlerApiMindmapServiceSetNodeCollapsedPostData, HandlerApiMindmapServiceSetNodeCollapsedPostErrors, HandlerApiMindmapServiceSetNodeCollapsedPostResponses, HandlerApiMindmapServiceUpdateNodePostData, HandlerApiMindmapServiceUpdateNodePostErrors, HandlerApiMindmapServiceUpdateNodePostResponses } from './types.gen';
+import type { AddNodeApiMindmapServiceAddNodePostData, AddNodeApiMindmapServiceAddNodePostErrors, AddNodeApiMindmapServiceAddNodePostResponses, ApplyOutlineApiMindmapServiceApplyOutlinePostData, ApplyOutlineApiMindmapServiceApplyOutlinePostErrors, ApplyOutlineApiMindmapServiceApplyOutlinePostResponses, ChatArchiveDetailApiChatArchivesArchiveIdGetData, ChatArchiveDetailApiChatArchivesArchiveIdGetErrors, ChatArchiveDetailApiChatArchivesArchiveIdGetResponses, ChatArchivesApiChatArchivesGetData, ChatArchivesApiChatArchivesGetErrors, ChatArchivesApiChatArchivesGetResponses, ChatStatusApiChatStatusGetData, ChatStatusApiChatStatusGetResponses, CreateMapApiMindmapServiceCreateMapPostData, CreateMapApiMindmapServiceCreateMapPostErrors, CreateMapApiMindmapServiceCreateMapPostResponses, DeleteMapApiMindmapServiceDeleteMapPostData, DeleteMapApiMindmapServiceDeleteMapPostErrors, DeleteMapApiMindmapServiceDeleteMapPostResponses, DeleteNodeApiMindmapServiceDeleteNodePostData, DeleteNodeApiMindmapServiceDeleteNodePostErrors, DeleteNodeApiMindmapServiceDeleteNodePostResponses, ExpandAllApiMindmapServiceExpandAllPostData, ExpandAllApiMindmapServiceExpandAllPostErrors, ExpandAllApiMindmapServiceExpandAllPostResponses, GetMapApiMindmapServiceGetMapPostData, GetMapApiMindmapServiceGetMapPostErrors, GetMapApiMindmapServiceGetMapPostResponses, GetNodeApiMindmapServiceGetNodePostData, GetNodeApiMindmapServiceGetNodePostErrors, GetNodeApiMindmapServiceGetNodePostResponses, GetRevisionApiMindmapServiceGetRevisionPostData, GetRevisionApiMindmapServiceGetRevisionPostErrors, GetRevisionApiMindmapServiceGetRevisionPostResponses, GetRevisionChangesApiMindmapServiceGetRevisionChangesPostData, GetRevisionChangesApiMindmapServiceGetRevisionChangesPostErrors, GetRevisionChangesApiMindmapServiceGetRevisionChangesPostResponses, GetTreeApiMindmapServiceGetTreePostData, GetTreeApiMindmapServiceGetTreePostErrors, GetTreeApiMindmapServiceGetTreePostResponses, GraphiqlGraphqlGetData, GraphiqlGraphqlGetResponses, GraphqlEndpointGraphqlPostData, GraphqlEndpointGraphqlPostErrors, GraphqlEndpointGraphqlPostResponses, GraphqlSchemaSchemaGetData, GraphqlSchemaSchemaGetResponses, ListMapsApiMindmapServiceListMapsPostData, ListMapsApiMindmapServiceListMapsPostResponses, ListRevisionsApiMindmapServiceListRevisionsPostData, ListRevisionsApiMindmapServiceListRevisionsPostErrors, ListRevisionsApiMindmapServiceListRevisionsPostResponses, MoveNodeApiMindmapServiceMoveNodePostData, MoveNodeApiMindmapServiceMoveNodePostErrors, MoveNodeApiMindmapServiceMoveNodePostResponses, RestoreRevisionApiMindmapServiceRestoreRevisionPostData, RestoreRevisionApiMindmapServiceRestoreRevisionPostErrors, RestoreRevisionApiMindmapServiceRestoreRevisionPostResponses, SetFoldLevelApiMindmapServiceSetFoldLevelPostData, SetFoldLevelApiMindmapServiceSetFoldLevelPostErrors, SetFoldLevelApiMindmapServiceSetFoldLevelPostResponses, SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostData, SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostErrors, SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostResponses, UpdateNodeApiMindmapServiceUpdateNodePostData, UpdateNodeApiMindmapServiceUpdateNodePostErrors, UpdateNodeApiMindmapServiceUpdateNodePostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -23,14 +23,14 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  *
  * 列出所有脑图（轻量摘要，不含节点）。
  */
-export const handlerApiMindmapServiceListMapsPost = <ThrowOnError extends boolean = false>(options?: Options<HandlerApiMindmapServiceListMapsPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceListMapsPostResponses, unknown, ThrowOnError> => (options?.client ?? client).post<HandlerApiMindmapServiceListMapsPostResponses, unknown, ThrowOnError>({ url: '/api/mindmap_service/list_maps', ...options });
+export const listMapsApiMindmapServiceListMapsPost = <ThrowOnError extends boolean = false>(options?: Options<ListMapsApiMindmapServiceListMapsPostData, ThrowOnError>): RequestResult<ListMapsApiMindmapServiceListMapsPostResponses, unknown, ThrowOnError> => (options?.client ?? client).post<ListMapsApiMindmapServiceListMapsPostResponses, unknown, ThrowOnError>({ url: '/api/mindmap_service/list_maps', ...options });
 
 /**
  * 获取整棵脑图的结构化数据（前端渲染用）。
  *
  * 获取整棵脑图的结构化数据（前端渲染用）。
  */
-export const handlerApiMindmapServiceGetMapPost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceGetMapPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceGetMapPostResponses, HandlerApiMindmapServiceGetMapPostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceGetMapPostResponses, HandlerApiMindmapServiceGetMapPostErrors, ThrowOnError>({
+export const getMapApiMindmapServiceGetMapPost = <ThrowOnError extends boolean = false>(options: Options<GetMapApiMindmapServiceGetMapPostData, ThrowOnError>): RequestResult<GetMapApiMindmapServiceGetMapPostResponses, GetMapApiMindmapServiceGetMapPostErrors, ThrowOnError> => (options.client ?? client).post<GetMapApiMindmapServiceGetMapPostResponses, GetMapApiMindmapServiceGetMapPostErrors, ThrowOnError>({
     url: '/api/mindmap_service/get_map',
     ...options,
     headers: {
@@ -56,7 +56,7 @@ export const handlerApiMindmapServiceGetMapPost = <ThrowOnError extends boolean 
  * 先读本接口核对最新全量树，避免基于过期认知覆盖用户修改；享有注入的
  * 页内 Agent 无需重复读取（你经 MCP 的写入也会进它的注入清单）。
  */
-export const handlerApiMindmapServiceGetTreePost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceGetTreePostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceGetTreePostResponses, HandlerApiMindmapServiceGetTreePostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceGetTreePostResponses, HandlerApiMindmapServiceGetTreePostErrors, ThrowOnError>({
+export const getTreeApiMindmapServiceGetTreePost = <ThrowOnError extends boolean = false>(options: Options<GetTreeApiMindmapServiceGetTreePostData, ThrowOnError>): RequestResult<GetTreeApiMindmapServiceGetTreePostResponses, GetTreeApiMindmapServiceGetTreePostErrors, ThrowOnError> => (options.client ?? client).post<GetTreeApiMindmapServiceGetTreePostResponses, GetTreeApiMindmapServiceGetTreePostErrors, ThrowOnError>({
     url: '/api/mindmap_service/get_tree',
     ...options,
     headers: {
@@ -66,6 +66,24 @@ export const handlerApiMindmapServiceGetTreePost = <ThrowOnError extends boolean
 });
 
 /**
+ * 读单个节点全文（content + note markdown）。node_id 为 map 内 display_id。
+ *
+ * Agent 写 note 后的读回入口——get_tree/outline 行协议不含 note。
+ *
+ * 读单个节点全文（content + note markdown）。node_id 为 map 内 display_id。
+ *
+ * Agent 写 note 后的读回入口——get_tree/outline 行协议不含 note。
+ */
+export const getNodeApiMindmapServiceGetNodePost = <ThrowOnError extends boolean = false>(options: Options<GetNodeApiMindmapServiceGetNodePostData, ThrowOnError>): RequestResult<GetNodeApiMindmapServiceGetNodePostResponses, GetNodeApiMindmapServiceGetNodePostErrors, ThrowOnError> => (options.client ?? client).post<GetNodeApiMindmapServiceGetNodePostResponses, GetNodeApiMindmapServiceGetNodePostErrors, ThrowOnError>({
+    url: '/api/mindmap_service/get_node',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * 版本时间线：某图全部快照，version 降序（最新在前）。
  * v{N} 角标点开的面板数据源；不含快照体（列表轻量）。
  * Agent 可用它审计"自己/用户上几轮各改了什么"。
@@ -74,7 +92,7 @@ export const handlerApiMindmapServiceGetTreePost = <ThrowOnError extends boolean
  * v{N} 角标点开的面板数据源；不含快照体（列表轻量）。
  * Agent 可用它审计"自己/用户上几轮各改了什么"。
  */
-export const handlerApiMindmapServiceListRevisionsPost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceListRevisionsPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceListRevisionsPostResponses, HandlerApiMindmapServiceListRevisionsPostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceListRevisionsPostResponses, HandlerApiMindmapServiceListRevisionsPostErrors, ThrowOnError>({
+export const listRevisionsApiMindmapServiceListRevisionsPost = <ThrowOnError extends boolean = false>(options: Options<ListRevisionsApiMindmapServiceListRevisionsPostData, ThrowOnError>): RequestResult<ListRevisionsApiMindmapServiceListRevisionsPostResponses, ListRevisionsApiMindmapServiceListRevisionsPostErrors, ThrowOnError> => (options.client ?? client).post<ListRevisionsApiMindmapServiceListRevisionsPostResponses, ListRevisionsApiMindmapServiceListRevisionsPostErrors, ThrowOnError>({
     url: '/api/mindmap_service/list_revisions',
     ...options,
     headers: {
@@ -84,13 +102,17 @@ export const handlerApiMindmapServiceListRevisionsPost = <ThrowOnError extends b
 });
 
 /**
- * 取某版本的整树快照（title + nodes 列表，节点带
- * display_id/parent/content/position/collapsed）。version 不存在时报错。
+ * 取某版本（title + nodes 列表，节点带
+ * display_id/parent/content/note/position/collapsed）。version 不存在时报错。
  *
- * 取某版本的整树快照（title + nodes 列表，节点带
- * display_id/parent/content/position/collapsed）。version 不存在时报错。
+ * 树内容由 node_revision 行物化（MVCC；对外 shape 与整树快照时代一致）。
+ *
+ * 取某版本（title + nodes 列表，节点带
+ * display_id/parent/content/note/position/collapsed）。version 不存在时报错。
+ *
+ * 树内容由 node_revision 行物化（MVCC；对外 shape 与整树快照时代一致）。
  */
-export const handlerApiMindmapServiceGetRevisionPost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceGetRevisionPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceGetRevisionPostResponses, HandlerApiMindmapServiceGetRevisionPostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceGetRevisionPostResponses, HandlerApiMindmapServiceGetRevisionPostErrors, ThrowOnError>({
+export const getRevisionApiMindmapServiceGetRevisionPost = <ThrowOnError extends boolean = false>(options: Options<GetRevisionApiMindmapServiceGetRevisionPostData, ThrowOnError>): RequestResult<GetRevisionApiMindmapServiceGetRevisionPostResponses, GetRevisionApiMindmapServiceGetRevisionPostErrors, ThrowOnError> => (options.client ?? client).post<GetRevisionApiMindmapServiceGetRevisionPostResponses, GetRevisionApiMindmapServiceGetRevisionPostErrors, ThrowOnError>({
     url: '/api/mindmap_service/get_revision',
     ...options,
     headers: {
@@ -100,11 +122,33 @@ export const handlerApiMindmapServiceGetRevisionPost = <ThrowOnError extends boo
 });
 
 /**
+ * 该版本相对上一版本的节点级变更（git log 风格）。
+ *
+ * 注意语义：这是"这个版本当时改了什么"，不是回滚影响预览（与旧前端的
+ * 快照 vs 当前树比较相反）。首版本（无更早版本）全部按 added。
+ * kind：added / removed / changed(old_content=改前) / note / moved / folded。
+ *
+ * 该版本相对上一版本的节点级变更（git log 风格）。
+ *
+ * 注意语义：这是"这个版本当时改了什么"，不是回滚影响预览（与旧前端的
+ * 快照 vs 当前树比较相反）。首版本（无更早版本）全部按 added。
+ * kind：added / removed / changed(old_content=改前) / note / moved / folded。
+ */
+export const getRevisionChangesApiMindmapServiceGetRevisionChangesPost = <ThrowOnError extends boolean = false>(options: Options<GetRevisionChangesApiMindmapServiceGetRevisionChangesPostData, ThrowOnError>): RequestResult<GetRevisionChangesApiMindmapServiceGetRevisionChangesPostResponses, GetRevisionChangesApiMindmapServiceGetRevisionChangesPostErrors, ThrowOnError> => (options.client ?? client).post<GetRevisionChangesApiMindmapServiceGetRevisionChangesPostResponses, GetRevisionChangesApiMindmapServiceGetRevisionChangesPostErrors, ThrowOnError>({
+    url: '/api/mindmap_service/get_revision_changes',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * 创建脑图（自动建根节点），返回含根节点的整树。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  *
  * 创建脑图（自动建根节点），返回含根节点的整树。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  */
-export const handlerApiMindmapServiceCreateMapPost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceCreateMapPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceCreateMapPostResponses, HandlerApiMindmapServiceCreateMapPostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceCreateMapPostResponses, HandlerApiMindmapServiceCreateMapPostErrors, ThrowOnError>({
+export const createMapApiMindmapServiceCreateMapPost = <ThrowOnError extends boolean = false>(options: Options<CreateMapApiMindmapServiceCreateMapPostData, ThrowOnError>): RequestResult<CreateMapApiMindmapServiceCreateMapPostResponses, CreateMapApiMindmapServiceCreateMapPostErrors, ThrowOnError> => (options.client ?? client).post<CreateMapApiMindmapServiceCreateMapPostResponses, CreateMapApiMindmapServiceCreateMapPostErrors, ThrowOnError>({
     url: '/api/mindmap_service/create_map',
     ...options,
     headers: {
@@ -114,13 +158,13 @@ export const handlerApiMindmapServiceCreateMapPost = <ThrowOnError extends boole
 });
 
 /**
- * 在 parent 下新增子节点（position=None 追加到末尾）。parent_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
+ * 在 parent 下新增子节点（position=None 追加到末尾；可带初始 note，空串归一为无备注）。parent_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  * 禁止用别名在一次 mutation 里调多个 add_node（会被静默折叠，只执行最后一个）；批量新增请用 apply_outline。
  *
- * 在 parent 下新增子节点（position=None 追加到末尾）。parent_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
+ * 在 parent 下新增子节点（position=None 追加到末尾；可带初始 note，空串归一为无备注）。parent_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  * 禁止用别名在一次 mutation 里调多个 add_node（会被静默折叠，只执行最后一个）；批量新增请用 apply_outline。
  */
-export const handlerApiMindmapServiceAddNodePost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceAddNodePostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceAddNodePostResponses, HandlerApiMindmapServiceAddNodePostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceAddNodePostResponses, HandlerApiMindmapServiceAddNodePostErrors, ThrowOnError>({
+export const addNodeApiMindmapServiceAddNodePost = <ThrowOnError extends boolean = false>(options: Options<AddNodeApiMindmapServiceAddNodePostData, ThrowOnError>): RequestResult<AddNodeApiMindmapServiceAddNodePostResponses, AddNodeApiMindmapServiceAddNodePostErrors, ThrowOnError> => (options.client ?? client).post<AddNodeApiMindmapServiceAddNodePostResponses, AddNodeApiMindmapServiceAddNodePostErrors, ThrowOnError>({
     url: '/api/mindmap_service/add_node',
     ...options,
     headers: {
@@ -130,11 +174,17 @@ export const handlerApiMindmapServiceAddNodePost = <ThrowOnError extends boolean
 });
 
 /**
- * 部分更新节点（content / collapsed）。node_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
+ * 部分更新节点（content / collapsed / note）。node_id 为 map 内 display_id。
  *
- * 部分更新节点（content / collapsed）。node_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
+ * note 语义：None=不动；空串 ""=清空（存 null）。长内容写 note 而非撑长 content。
+ * 若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
+ *
+ * 部分更新节点（content / collapsed / note）。node_id 为 map 内 display_id。
+ *
+ * note 语义：None=不动；空串 ""=清空（存 null）。长内容写 note 而非撑长 content。
+ * 若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  */
-export const handlerApiMindmapServiceUpdateNodePost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceUpdateNodePostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceUpdateNodePostResponses, HandlerApiMindmapServiceUpdateNodePostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceUpdateNodePostResponses, HandlerApiMindmapServiceUpdateNodePostErrors, ThrowOnError>({
+export const updateNodeApiMindmapServiceUpdateNodePost = <ThrowOnError extends boolean = false>(options: Options<UpdateNodeApiMindmapServiceUpdateNodePostData, ThrowOnError>): RequestResult<UpdateNodeApiMindmapServiceUpdateNodePostResponses, UpdateNodeApiMindmapServiceUpdateNodePostErrors, ThrowOnError> => (options.client ?? client).post<UpdateNodeApiMindmapServiceUpdateNodePostResponses, UpdateNodeApiMindmapServiceUpdateNodePostErrors, ThrowOnError>({
     url: '/api/mindmap_service/update_node',
     ...options,
     headers: {
@@ -148,7 +198,7 @@ export const handlerApiMindmapServiceUpdateNodePost = <ThrowOnError extends bool
  *
  * 设置单节点折叠状态。REST 返回 204；GraphQL/MCP 仅返回是否发生变化。
  */
-export const handlerApiMindmapServiceSetNodeCollapsedPost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceSetNodeCollapsedPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceSetNodeCollapsedPostResponses, HandlerApiMindmapServiceSetNodeCollapsedPostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceSetNodeCollapsedPostResponses, HandlerApiMindmapServiceSetNodeCollapsedPostErrors, ThrowOnError>({
+export const setNodeCollapsedApiMindmapServiceSetNodeCollapsedPost = <ThrowOnError extends boolean = false>(options: Options<SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostData, ThrowOnError>): RequestResult<SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostResponses, SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostErrors, ThrowOnError> => (options.client ?? client).post<SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostResponses, SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostErrors, ThrowOnError>({
     url: '/api/mindmap_service/set_node_collapsed',
     ...options,
     headers: {
@@ -168,7 +218,7 @@ export const handlerApiMindmapServiceSetNodeCollapsedPost = <ThrowOnError extend
  * node_id / new_parent_id 均为 map 内 display_id。
  * 若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  */
-export const handlerApiMindmapServiceMoveNodePost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceMoveNodePostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceMoveNodePostResponses, HandlerApiMindmapServiceMoveNodePostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceMoveNodePostResponses, HandlerApiMindmapServiceMoveNodePostErrors, ThrowOnError>({
+export const moveNodeApiMindmapServiceMoveNodePost = <ThrowOnError extends boolean = false>(options: Options<MoveNodeApiMindmapServiceMoveNodePostData, ThrowOnError>): RequestResult<MoveNodeApiMindmapServiceMoveNodePostResponses, MoveNodeApiMindmapServiceMoveNodePostErrors, ThrowOnError> => (options.client ?? client).post<MoveNodeApiMindmapServiceMoveNodePostResponses, MoveNodeApiMindmapServiceMoveNodePostErrors, ThrowOnError>({
     url: '/api/mindmap_service/move_node',
     ...options,
     headers: {
@@ -182,7 +232,7 @@ export const handlerApiMindmapServiceMoveNodePost = <ThrowOnError extends boolea
  *
  * 删除节点及其子树（根节点不可删除）。node_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  */
-export const handlerApiMindmapServiceDeleteNodePost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceDeleteNodePostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceDeleteNodePostResponses, HandlerApiMindmapServiceDeleteNodePostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceDeleteNodePostResponses, HandlerApiMindmapServiceDeleteNodePostErrors, ThrowOnError>({
+export const deleteNodeApiMindmapServiceDeleteNodePost = <ThrowOnError extends boolean = false>(options: Options<DeleteNodeApiMindmapServiceDeleteNodePostData, ThrowOnError>): RequestResult<DeleteNodeApiMindmapServiceDeleteNodePostResponses, DeleteNodeApiMindmapServiceDeleteNodePostErrors, ThrowOnError> => (options.client ?? client).post<DeleteNodeApiMindmapServiceDeleteNodePostResponses, DeleteNodeApiMindmapServiceDeleteNodePostErrors, ThrowOnError>({
     url: '/api/mindmap_service/delete_node',
     ...options,
     headers: {
@@ -206,7 +256,7 @@ export const handlerApiMindmapServiceDeleteNodePost = <ThrowOnError extends bool
  * 删除后向仍打开该图的客户端广播 map_deleted（浏览器自动退回列表）。
  * 若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  */
-export const handlerApiMindmapServiceDeleteMapPost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceDeleteMapPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceDeleteMapPostResponses, HandlerApiMindmapServiceDeleteMapPostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceDeleteMapPostResponses, HandlerApiMindmapServiceDeleteMapPostErrors, ThrowOnError>({
+export const deleteMapApiMindmapServiceDeleteMapPost = <ThrowOnError extends boolean = false>(options: Options<DeleteMapApiMindmapServiceDeleteMapPostData, ThrowOnError>): RequestResult<DeleteMapApiMindmapServiceDeleteMapPostResponses, DeleteMapApiMindmapServiceDeleteMapPostErrors, ThrowOnError> => (options.client ?? client).post<DeleteMapApiMindmapServiceDeleteMapPostResponses, DeleteMapApiMindmapServiceDeleteMapPostErrors, ThrowOnError>({
     url: '/api/mindmap_service/delete_map',
     ...options,
     headers: {
@@ -230,7 +280,7 @@ export const handlerApiMindmapServiceDeleteMapPost = <ThrowOnError extends boole
  * Agent 可用它撤销自己上一轮的误操作。
  * 若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  */
-export const handlerApiMindmapServiceRestoreRevisionPost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceRestoreRevisionPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceRestoreRevisionPostResponses, HandlerApiMindmapServiceRestoreRevisionPostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceRestoreRevisionPostResponses, HandlerApiMindmapServiceRestoreRevisionPostErrors, ThrowOnError>({
+export const restoreRevisionApiMindmapServiceRestoreRevisionPost = <ThrowOnError extends boolean = false>(options: Options<RestoreRevisionApiMindmapServiceRestoreRevisionPostData, ThrowOnError>): RequestResult<RestoreRevisionApiMindmapServiceRestoreRevisionPostResponses, RestoreRevisionApiMindmapServiceRestoreRevisionPostErrors, ThrowOnError> => (options.client ?? client).post<RestoreRevisionApiMindmapServiceRestoreRevisionPostResponses, RestoreRevisionApiMindmapServiceRestoreRevisionPostErrors, ThrowOnError>({
     url: '/api/mindmap_service/restore_revision',
     ...options,
     headers: {
@@ -244,7 +294,7 @@ export const handlerApiMindmapServiceRestoreRevisionPost = <ThrowOnError extends
  *
  * 展开全部节点。REST 返回 204；GraphQL/MCP 仅返回是否完成。
  */
-export const handlerApiMindmapServiceExpandAllPost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceExpandAllPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceExpandAllPostResponses, HandlerApiMindmapServiceExpandAllPostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceExpandAllPostResponses, HandlerApiMindmapServiceExpandAllPostErrors, ThrowOnError>({
+export const expandAllApiMindmapServiceExpandAllPost = <ThrowOnError extends boolean = false>(options: Options<ExpandAllApiMindmapServiceExpandAllPostData, ThrowOnError>): RequestResult<ExpandAllApiMindmapServiceExpandAllPostResponses, ExpandAllApiMindmapServiceExpandAllPostErrors, ThrowOnError> => (options.client ?? client).post<ExpandAllApiMindmapServiceExpandAllPostResponses, ExpandAllApiMindmapServiceExpandAllPostErrors, ThrowOnError>({
     url: '/api/mindmap_service/expand_all',
     ...options,
     headers: {
@@ -278,7 +328,7 @@ export const handlerApiMindmapServiceExpandAllPost = <ThrowOnError extends boole
  * 若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
  * REST 返回 204；GraphQL/MCP 仅返回是否完成。
  */
-export const handlerApiMindmapServiceSetFoldLevelPost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceSetFoldLevelPostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceSetFoldLevelPostResponses, HandlerApiMindmapServiceSetFoldLevelPostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceSetFoldLevelPostResponses, HandlerApiMindmapServiceSetFoldLevelPostErrors, ThrowOnError>({
+export const setFoldLevelApiMindmapServiceSetFoldLevelPost = <ThrowOnError extends boolean = false>(options: Options<SetFoldLevelApiMindmapServiceSetFoldLevelPostData, ThrowOnError>): RequestResult<SetFoldLevelApiMindmapServiceSetFoldLevelPostResponses, SetFoldLevelApiMindmapServiceSetFoldLevelPostErrors, ThrowOnError> => (options.client ?? client).post<SetFoldLevelApiMindmapServiceSetFoldLevelPostResponses, SetFoldLevelApiMindmapServiceSetFoldLevelPostErrors, ThrowOnError>({
     url: '/api/mindmap_service/set_fold_level',
     ...options,
     headers: {
@@ -302,7 +352,8 @@ export const handlerApiMindmapServiceSetFoldLevelPost = <ThrowOnError extends bo
  * - 孙节点（4 空格缩进 = 第二层）
  *
  * merge：[id:N] 锚定更新 + 无 id 新建 + 未提及保留（不误删）；
- * replace：保留根节点，其余全删重建。
+ * replace：保留根节点，其余全删重建。outline 行不含 note——锚定 [id:N]
+ * 节点的 note 自动保留（replace 下按旧号带回），不会因此丢失。
  * 若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树（本方法整树重写，过期认知的破坏面最大）。
  *
  * Agent 批量写法：按缩进 outline 整树写入。
@@ -319,10 +370,11 @@ export const handlerApiMindmapServiceSetFoldLevelPost = <ThrowOnError extends bo
  * - 孙节点（4 空格缩进 = 第二层）
  *
  * merge：[id:N] 锚定更新 + 无 id 新建 + 未提及保留（不误删）；
- * replace：保留根节点，其余全删重建。
+ * replace：保留根节点，其余全删重建。outline 行不含 note——锚定 [id:N]
+ * 节点的 note 自动保留（replace 下按旧号带回），不会因此丢失。
  * 若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树（本方法整树重写，过期认知的破坏面最大）。
  */
-export const handlerApiMindmapServiceApplyOutlinePost = <ThrowOnError extends boolean = false>(options: Options<HandlerApiMindmapServiceApplyOutlinePostData, ThrowOnError>): RequestResult<HandlerApiMindmapServiceApplyOutlinePostResponses, HandlerApiMindmapServiceApplyOutlinePostErrors, ThrowOnError> => (options.client ?? client).post<HandlerApiMindmapServiceApplyOutlinePostResponses, HandlerApiMindmapServiceApplyOutlinePostErrors, ThrowOnError>({
+export const applyOutlineApiMindmapServiceApplyOutlinePost = <ThrowOnError extends boolean = false>(options: Options<ApplyOutlineApiMindmapServiceApplyOutlinePostData, ThrowOnError>): RequestResult<ApplyOutlineApiMindmapServiceApplyOutlinePostResponses, ApplyOutlineApiMindmapServiceApplyOutlinePostErrors, ThrowOnError> => (options.client ?? client).post<ApplyOutlineApiMindmapServiceApplyOutlinePostResponses, ApplyOutlineApiMindmapServiceApplyOutlinePostErrors, ThrowOnError>({
     url: '/api/mindmap_service/apply_outline',
     ...options,
     headers: {

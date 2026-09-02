@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "generate-client": "openapi-ts",
+    "generate-client": "curl -s http://127.0.0.1:8740/openapi.json > /tmp/mindmap-openapi.json && OPENAPI_INPUT=/tmp/mindmap-openapi.json openapi-ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -14,14 +14,15 @@
     "@xyflow/react": "^12.11.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@hey-api/openapi-ts": "0.99.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
-    "@hey-api/openapi-ts": "0.99.0",
     "oxlint": "^1.79.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.2"

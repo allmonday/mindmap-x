@@ -16,6 +16,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { api, chatApi, gateReasonText, type ChatGateStatus } from './api'
 import { ChatPanel } from './ChatPanel'
+import { DetailPanel } from './DetailPanel'
 import { useI18n, type I18nKey } from './i18n'
 import { LangSwitch } from './LangSwitch'
 import { layoutMap, type LNode, type LayoutMode } from './layout'
@@ -38,6 +39,7 @@ type MindNodeData = {
   addingDir: 'child' | 'sibling' // 输入框方位与提交语义（child=挂锚点下，sibling=挂锚点父）
   selectedByPointer: boolean // 选中来源：点击亮按钮行，键盘导航只高亮
   hasChildren: boolean
+  hasNote: boolean // 带 markdown 备注（角标 ✎ 的显隐源）
   onSelect: (id: number) => void
   onStartEdit: (id: number) => void
   onToggleCollapse: (lnode: LNode) => void
@@ -48,12 +50,13 @@ type MindNodeData = {
   onCancelAdd: () => void
   onDelete: (id: number) => void
   onFocus: (id: number) => void // 聚焦（下钻）到该节点
+  onOpenNote: (id: number) => void // 打开备注面板并选中该节点
 }
 
 type MindNode = Node<MindNodeData, 'mind'>
 
 function MindNodeView({ data, selected }: NodeProps<MindNode>) {
-  const { lnode, isEditing, isAdding, addingDir, selectedByPointer, hasChildren } = data
+  const { lnode, isEditing, isAdding, addingDir, selectedByPointer, hasChildren, hasNote } = data
   const n = lnode.node
   const isRoot = data.isLayoutRoot // 布局根 = 真根或聚焦节点；非聚焦时与真根判定完全一致
   // 文案经 context 直取（ReactFlow 的 memo 不拦截 context 更新）——
@@ -142,6 +145,22 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
         <span className="rf-label" title={lnode.truncated ? n.content : undefined}>
           {n.content}
         </span>
+      )}
+
+      {/* 备注角标（折角便签）：有 markdown 长文的节点一眼可辨（点击直开备注面板）。
+          编辑态隐藏——textarea 盖满节点，角标叠上去无意义 */}
+      {hasNote && !isEditing && (
+        <button
+          className="note-mark"
+          title={t('note.markTitle')}
+          aria-label={t('note.markTitle')}
+          onClick={(e) => {
+            e.stopPropagation()
+            data.onOpenNote(n.display_id)
+          }}
+        >
+          <StickyNoteIcon />
+        </button>
       )}
 
       {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
@@ -434,6 +453,16 @@ const LayoutRightIcon = () => (
   </svg>
 )
 
+// 备注角标（lucide sticky-note：折角便签——"这里贴了张纸"）。
+// 画线而非文本字符：字形留白随平台字体回退漂移（✎ 在部分系统偏左上），
+// 与 FoldPlusIcon 同一教训
+const StickyNoteIcon = () => (
+  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11l5-5V5a2 2 0 0 0-2-2Z" />
+    <path d="M15 3v4a2 2 0 0 0 2 2h4" />
+  </svg>
+)
+
 // Agent 对话开关（lucide message-circle：带尾气泡）
 const ChatIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -480,6 +509,15 @@ const FocusIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="12" cy="12" r="10" />
     <path d="M22 12h-4M6 12H2M12 6V2M12 22v-4" />
+  </svg>
+)
+
+// 节点备注开关（lucide note-tabs-pen：页签 + 斜笔，"页面上的长文"）
+const NoteIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M6 3h12a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+    <path d="M15 8v2H9V8z" />
+    <path d="m13 15 5-5 1.5 1.5-5 5L13 17z" />
   </svg>
 )
 
@@ -585,6 +623,30 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   useEffect(() => {
     localStorage.setItem('chatWidth', String(chatWidth))
   }, [chatWidth])
+  // 节点备注面板：左侧悬浮（与右侧聊天面板一左一右并存，互不遮挡）。
+  // pinned：常驻模式——选中变到别处（点别的节点/空白/键盘导航）不收起，
+  // 内容跟随选中（空态兜底）；未 pin 时面板依附于角标打开的节点，选中
+  // 一变即收起。关闭（Esc/工具栏/d）一律同时解除 pin
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [notePinned, setNotePinned] = useState(false)
+  const [noteWidth, setNoteWidth] = useState(() => {
+    const saved = Number(localStorage.getItem('noteWidth'))
+    return saved >= 280 && saved <= 760 ? saved : 480
+  })
+  useEffect(() => {
+    localStorage.setItem('noteWidth', String(noteWidth))
+  }, [noteWidth])
+  const toggleNote = useCallback(() => {
+    setNoteOpen((v) => {
+      const nv = !v
+      if (!nv) setNotePinned(false) // 整体关闭 = 解除 pin，下次开回到依附模式
+      return nv
+    })
+  }, [])
+  const noteNode = useMemo(
+    () => detail?.nodes.find((n) => n.display_id === selectedId) ?? null,
+    [detail, selectedId],
+  )
 
   const refresh = useCallback(async () => {
     try {
@@ -700,6 +762,23 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       const value = text.trim() // 局部命名避开 i18n 的 t
       if (!value) return
       void guard(() => api.updateNode(mapId, id, value))
+    },
+    [mapId],
+  )
+  // 备注保存与 commitEdit 同款"无乐观更新"流：保存 → WS changed → refresh() 全量重拉。
+  // note 走第四参（content undefined 被 JSON.stringify 丢弃 = 不动）。
+  // 返回是否成功：内联 guard 逻辑（guard 吞错后调用方无从分辨成败——面板需要
+  // 失败时保留脏态可重试，不能把失败当已保存前移基线）
+  const saveNote = useCallback(
+    async (nodeId: number, note: string): Promise<boolean> => {
+      try {
+        await api.updateNode(mapId, nodeId, undefined, note)
+        return true
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+        window.setTimeout(() => setError(null), 3500)
+        return false
+      }
     },
     [mapId],
   )
@@ -825,6 +904,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       if (target == null) return
       setSelectedId(target)
       setSelectedByPointer(false)
+      // 键盘导航换选中 = 离开依附节点：未 pin 的备注面板收起（与点击选中同款）
+      if (noteOpen && !notePinned) setNoteOpen(false)
       // 视口跟随：目标出界（留 60px 边距）才平移到中心，不出界不动画面。
       // 等 React 渲染出目标 DOM 再判（展开场景新节点要一轮 render 才出现）
       window.setTimeout(() => {
@@ -841,7 +922,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         rfRef.current.setCenter(ln.x + ln.w / 2, ln.y, { duration: 300, zoom: rfRef.current.getZoom() })
       }, 60)
     },
-    [detail, selectedId, focusId, mapId, layout, queueFoldMutation],
+    [detail, selectedId, focusId, mapId, layout, queueFoldMutation, noteOpen, notePinned],
   )
 
   // ── 快捷键（F2·Ctrl+Enter 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Space 收放 / Esc 退聚焦 / 方向键导航）──
@@ -866,13 +947,35 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           setChatGateOpen(false)
           return
         }
+        if (!typing && noteOpen) {
+          setNoteOpen(false)
+          setNotePinned(false)
+          return
+        }
         if (focusId != null && !typing) switchFocus(null)
         return
       }
       // 加节点输入框开着时全局快捷键全禁：即使焦点异常不在 input 上，
       // Enter/Tab 也不许再把已开的输入框切模式（防焦点被抢时的次生误操作）
       if (adding != null) return
-      if (editingId != null || outlineOpen || revOpen || chatGateOpen || selectedId == null || !detail) return
+      // d = 备注面板开合：插在综合守卫之前——无选中时也允许"关"（开着面板
+      // 但选区已被清空的场景）；面板内 textarea 聚焦时走下方输入元素守卫
+      if (e.key === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const el = document.activeElement
+        const typing =
+          el instanceof HTMLElement &&
+          (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+        if (typing || editingId != null || outlineOpen || revOpen || chatGateOpen) return
+        if (selectedId == null && !noteOpen) return // 无选中且未开：无可展示的对象
+        e.preventDefault()
+        toggleNote()
+        return
+      }
+      // 聊天面板开着时节点快捷键整体让位：输入框 disabled（Agent 处理中）
+      // 会把焦点踢到 body、点面板非输入区焦点也不在 textarea——activeElement
+      // 推断在这两种场景失效，用户按 Enter 想发消息却触发画布"加兄弟"。
+      // （d 键不受此限：备注与聊天左右并存）
+      if (editingId != null || outlineOpen || revOpen || chatGateOpen || chatOpen || selectedId == null || !detail) return
       // 焦点在任何输入元素上时快捷键一律失效（编辑框/聊天面板/outline 弹层）
       const el = document.activeElement
       if (
@@ -936,7 +1039,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, editingId, adding, outlineOpen, revOpen, chatGateOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation])
+  }, [selectedId, editingId, adding, outlineOpen, revOpen, chatGateOpen, chatOpen, noteOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation, toggleNote])
   // 重排动画：动画期间逐帧给出节点位置（null = 静止，直接用布局终值）；
   // 边由 React Flow 按节点位置实时重算，滑行中始终与节点贴合
   const animPos = useAnimatedLayout(layout)
@@ -1017,6 +1120,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       onSelect: (id: number) => {
         setSelectedId(id)
         setSelectedByPointer(true)
+        // 未 pin 的面板依附于"从角标打开的节点"：普通点击选中了别的节点 → 收起
+        if (noteOpen && !notePinned) setNoteOpen(false)
       },
       onStartEdit: (id: number) => setEditingId(id),
       onToggleCollapse: toggleCollapse,
@@ -1027,8 +1132,13 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       onCancelAdd: cancelAdd,
       onDelete: deleteNode,
       onFocus: switchFocus,
+      onOpenNote: (id: number) => {
+        setSelectedId(id)
+        setSelectedByPointer(true)
+        setNoteOpen(true) // 角标是打开入口（不自动 pin；stopPropagation 不触发 onSelect）
+      },
     }),
-    [toggleCollapse, commitEdit, startAdd, commitAdd, cancelAdd, deleteNode, switchFocus],
+    [toggleCollapse, commitEdit, startAdd, commitAdd, cancelAdd, deleteNode, switchFocus, noteOpen, notePinned],
   )
 
   // ── 刷新门卫：内容签名 ────────────────────────────────────────────────
@@ -1048,7 +1158,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           (id === selectedId && selectedByPointer ? 'P' : '') +
           (id === editingId ? 'e' : '') +
           (id === adding?.anchor ? (adding.dir === 'sibling' ? 'S' : 'a') : '') +
-          ((childCount.get(id) ?? 0) > 0 ? 'h' : '')
+          ((childCount.get(id) ?? 0) > 0 ? 'h' : '') +
+          (ln.node.note ? 'n' : '')
         return `${id}:${Math.round(ln.x)},${Math.round(ln.y)},${ln.w}x${ln.h}:${ln.side}${ln === layout.root ? 'R' : ''}${ln.node.collapsed ? 'C' : ''}:${flags}:${ln.node.content}`
       })
       .join('|')
@@ -1093,7 +1204,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         lnode.node.display_id === editingId ? 'e' : ''
       }${lnode.node.display_id === adding?.anchor ? (adding!.dir === 'sibling' ? 'S' : 'a') : ''}${
         sel && selectedByPointer ? 'P' : ''
-      }:${lnode === layout.root ? 'R' : ''}${(childCount.get(lnode.node.display_id) ?? 0) > 0 ? 'h' : ''}`
+      }:${lnode === layout.root ? 'R' : ''}${(childCount.get(lnode.node.display_id) ?? 0) > 0 ? 'h' : ''}${
+        lnode.node.note ? 'n' : ''
+      }`
       const old = prev.get(id)
       // callbacks 身份代表整个 data 回调组（其内部字段同批重建）
       if (old && old.key === key && old.node.data.onSelect === callbacks.onSelect) {
@@ -1116,6 +1229,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           addingDir: adding?.dir ?? 'child',
           selectedByPointer: sel && selectedByPointer,
           hasChildren: (childCount.get(lnode.node.display_id) ?? 0) > 0,
+          hasNote: !!lnode.node.note,
           ...callbacks,
         },
       }
@@ -1201,6 +1315,15 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               <ChatIcon />
             </button>
           ))}
+        {/* 备注面板开关：人工 + Agent 共用，不走 agentStatus 门控 */}
+        <button
+          className={`btn icon ${noteOpen ? 'active' : ''}`}
+          onClick={toggleNote}
+          title={t('editor.nodeNote')}
+          aria-label={t('editor.nodeNote')}
+        >
+          <NoteIcon />
+        </button>
         <button className="btn icon" onClick={openOutline} title={t('editor.outlineEdit')} aria-label={t('editor.outlineEdit')}>
           <PencilIcon />
         </button>
@@ -1209,7 +1332,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
       {error && <div className="toast editor-toast">{error}</div>}
 
-      {/* 横向主体：画布始终全宽；聊天面板 absolute 悬浮于右侧（overlay，不压缩画布） */}
+      {/* 横向主体：画布始终全宽；聊天面板悬浮右侧、备注面板悬浮左侧（overlay，不压缩画布）。
+          备注面板 top 让出左上组件区（标题/工具列原地不动，见 App.css .detail-panel） */}
       <div className="editor-main">
         <div className="rf-wrap">
           {/* 标题悬浮于画板左上角，独立于工具栏；pointer-events:none 不挡画布交互
@@ -1342,6 +1466,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             onPaneClick={() => {
             setSelectedId(null)
             setAdding(null)
+            // 点空白清选中 = 离开依附节点：未 pin 的备注面板收起
+            if (noteOpen && !notePinned) setNoteOpen(false)
           }}
             proOptions={{ hideAttribution: true }}
           >
@@ -1361,6 +1487,16 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
         {chatOpen && agentOk && (
           <ChatPanel mapId={mapId} width={chatWidth} onResize={setChatWidth} onClose={() => setChatOpen(false)} />
+        )}
+        {noteOpen && (
+          <DetailPanel
+            node={noteNode}
+            width={noteWidth}
+            onResize={setNoteWidth}
+            pinned={notePinned}
+            onTogglePin={() => setNotePinned((v) => !v)}
+            onSaveNote={saveNote}
+          />
         )}
       </div>
 

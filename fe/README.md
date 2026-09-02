@@ -41,6 +41,14 @@ Start the backend on port 8740, then regenerate after changing a REST contract:
 npm run generate-client
 ```
 
+The script pulls `openapi.json` to a local file first and feeds that to
+`openapi-ts` as input on purpose: hey-api 0.99 derives a hardcoded
+`baseUrl: 'http://127.0.0.1:8740'` from an HTTP input URL (the spec has no
+`servers` entry), which breaks non-8740 origins — the desktop app serves the
+page from a runtime-picked port, so its API calls would hit a foreign backend
+while its WebSocket listens on its own, and edits would never refresh the UI.
+A file input has no origin, keeping the client on relative (same-origin) URLs.
+
 To use the anonymous Artifactory registry without credentials:
 
 ```bash

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { chatApi, gateReasonText, type ArchiveDoc, type ArchiveMeta } from './api'
 import { fmtTime, useI18n } from './i18n'
 
@@ -275,7 +276,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             {m.text &&
               (m.role === 'agent' && !m.error ? (
                 <div className="md">
-                  <Markdown>{m.text}</Markdown>
+                  <Markdown remarkPlugins={[remarkGfm]}>{m.text}</Markdown>
                 </div>
               ) : (
                 m.text
@@ -428,7 +429,11 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             disabled={disabled}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              // 事件层隔离（同备注 textarea 的做法）：不冒泡到 window 的全局
+              // 快捷键——activeElement 推断在 disabled 丢焦点等场景不可靠
+              e.stopPropagation()
+              // IME 组词中的 Enter（含 Shift）是选词不是发送（与 rf-editor 同款判定）
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 send()
               }

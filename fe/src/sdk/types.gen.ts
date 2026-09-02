@@ -119,13 +119,13 @@ export type MindmapServiceAddNodeRequest = {
      */
     position?: number | null;
     /**
+     * Note
+     */
+    note?: string | null;
+    /**
      * Actor
      */
     actor?: string;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -148,10 +148,6 @@ export type MindmapServiceApplyOutlineRequest = {
      * Actor
      */
     actor?: string;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -166,10 +162,6 @@ export type MindmapServiceCreateMapRequest = {
      * Actor
      */
     actor?: string;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -184,10 +176,6 @@ export type MindmapServiceDeleteMapRequest = {
      * Actor
      */
     actor?: string;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -206,10 +194,6 @@ export type MindmapServiceDeleteNodeRequest = {
      * Actor
      */
     actor?: string;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -228,10 +212,6 @@ export type MindmapServiceExpandAllRequest = {
      * Client Request Id
      */
     client_request_id?: string | null;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -242,6 +222,34 @@ export type MindmapServiceGetMapRequest = {
      * Map Id
      */
     map_id: number;
+};
+
+/**
+ * MindmapServiceGetNodeRequest
+ */
+export type MindmapServiceGetNodeRequest = {
+    /**
+     * Map Id
+     */
+    map_id: number;
+    /**
+     * Node Id
+     */
+    node_id: number;
+};
+
+/**
+ * MindmapServiceGetRevisionChangesRequest
+ */
+export type MindmapServiceGetRevisionChangesRequest = {
+    /**
+     * Map Id
+     */
+    map_id: number;
+    /**
+     * Version
+     */
+    version: number;
 };
 
 /**
@@ -302,10 +310,6 @@ export type MindmapServiceMoveNodeRequest = {
      * Actor
      */
     actor?: string;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -324,10 +328,6 @@ export type MindmapServiceRestoreRevisionRequest = {
      * Actor
      */
     actor?: string;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -350,10 +350,6 @@ export type MindmapServiceSetFoldLevelRequest = {
      * Client Request Id
      */
     client_request_id?: string | null;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -380,10 +376,6 @@ export type MindmapServiceSetNodeCollapsedRequest = {
      * Client Request Id
      */
     client_request_id?: string | null;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -407,13 +399,13 @@ export type MindmapServiceUpdateNodeRequest = {
      */
     collapsed?: boolean | null;
     /**
+     * Note
+     */
+    note?: string | null;
+    /**
      * Actor
      */
     actor?: string;
-    /**
-     * Source
-     */
-    source?: string | null;
 };
 
 /**
@@ -444,6 +436,12 @@ export type NodeDto = {
      * 节点文本内容
      */
     content: string;
+    /**
+     * Note
+     *
+     * 节点备注（markdown 长文，Agent 生成内容的主要落点）；null = 无备注，空串写入时归一为 null
+     */
+    note?: string | null;
     /**
      * Position
      *
@@ -484,13 +482,61 @@ export type NodeRef = {
 };
 
 /**
+ * RevisionChangeRowDTO
+ *
+ * 版本间变更行：该版本相对上一版本，一个节点的一项变化。
+ *
+ * kind 语义（注意与旧"回滚预览"视角相反——这是该版本当时发生的事）：
+ * added=本版新增 / removed=本版删除 / changed=标题改（old_content 为改前）
+ * / note=备注改 / moved=换父 / folded=收放。
+ */
+export type RevisionChangeRowDto = {
+    /**
+     * Display Id
+     */
+    display_id: number;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Old Content
+     */
+    old_content?: string | null;
+};
+
+/**
+ * RevisionChangesDTO
+ *
+ * 版本间变更集（get_revision_changes 返回体）。
+ */
+export type RevisionChangesDto = {
+    /**
+     * Title Change
+     */
+    title_change: boolean;
+    /**
+     * Old Title
+     */
+    old_title?: string | null;
+    /**
+     * Rows
+     */
+    rows: Array<RevisionChangeRowDto>;
+};
+
+/**
  * RevisionDetail
  */
 export type RevisionDetail = {
     /**
      * Id
      *
-     * 快照行主键
+     * 版本行主键
      */
     id?: number | null;
     /**
@@ -502,7 +548,7 @@ export type RevisionDetail = {
     /**
      * Version
      *
-     * 该快照对应的树版本号（mutation 提交后的 version）
+     * 该版本对应的树版本号（mutation 提交后的 version）
      */
     version: number;
     /**
@@ -526,7 +572,7 @@ export type RevisionDetail = {
     /**
      * Created At
      *
-     * 快照产生时间（UTC）
+     * 版本产生时间（UTC）
      */
     created_at?: string;
     snapshot: RevisionSnapshotDto;
@@ -550,6 +596,10 @@ export type RevisionNodeDto = {
      * Content
      */
     content: string;
+    /**
+     * Note
+     */
+    note?: string | null;
     /**
      * Position
      */
@@ -592,7 +642,7 @@ export type RevisionSummary = {
     /**
      * Id
      *
-     * 快照行主键
+     * 版本行主键
      */
     id?: number | null;
     /**
@@ -604,7 +654,7 @@ export type RevisionSummary = {
     /**
      * Version
      *
-     * 该快照对应的树版本号（mutation 提交后的 version）
+     * 该版本对应的树版本号（mutation 提交后的 version）
      */
     version: number;
     /**
@@ -628,7 +678,7 @@ export type RevisionSummary = {
     /**
      * Created At
      *
-     * 快照产生时间（UTC）
+     * 版本产生时间（UTC）
      */
     created_at?: string;
 };
@@ -661,406 +711,456 @@ export type ValidationError = {
     };
 };
 
-export type HandlerApiMindmapServiceListMapsPostData = {
+export type ListMapsApiMindmapServiceListMapsPostData = {
     body?: never;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/list_maps';
 };
 
-export type HandlerApiMindmapServiceListMapsPostResponses = {
+export type ListMapsApiMindmapServiceListMapsPostResponses = {
     /**
-     * Response Handler Api Mindmap Service List Maps Post
+     * Response List Maps Api Mindmap Service List Maps Post
      *
      * Successful Response
      */
     200: Array<MapSummary>;
 };
 
-export type HandlerApiMindmapServiceListMapsPostResponse = HandlerApiMindmapServiceListMapsPostResponses[keyof HandlerApiMindmapServiceListMapsPostResponses];
+export type ListMapsApiMindmapServiceListMapsPostResponse = ListMapsApiMindmapServiceListMapsPostResponses[keyof ListMapsApiMindmapServiceListMapsPostResponses];
 
-export type HandlerApiMindmapServiceGetMapPostData = {
+export type GetMapApiMindmapServiceGetMapPostData = {
     body: MindmapServiceGetMapRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/get_map';
 };
 
-export type HandlerApiMindmapServiceGetMapPostErrors = {
+export type GetMapApiMindmapServiceGetMapPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceGetMapPostError = HandlerApiMindmapServiceGetMapPostErrors[keyof HandlerApiMindmapServiceGetMapPostErrors];
+export type GetMapApiMindmapServiceGetMapPostError = GetMapApiMindmapServiceGetMapPostErrors[keyof GetMapApiMindmapServiceGetMapPostErrors];
 
-export type HandlerApiMindmapServiceGetMapPostResponses = {
+export type GetMapApiMindmapServiceGetMapPostResponses = {
     /**
      * Successful Response
      */
     200: MapDetail;
 };
 
-export type HandlerApiMindmapServiceGetMapPostResponse = HandlerApiMindmapServiceGetMapPostResponses[keyof HandlerApiMindmapServiceGetMapPostResponses];
+export type GetMapApiMindmapServiceGetMapPostResponse = GetMapApiMindmapServiceGetMapPostResponses[keyof GetMapApiMindmapServiceGetMapPostResponses];
 
-export type HandlerApiMindmapServiceGetTreePostData = {
+export type GetTreeApiMindmapServiceGetTreePostData = {
     body: MindmapServiceGetTreeRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/get_tree';
 };
 
-export type HandlerApiMindmapServiceGetTreePostErrors = {
+export type GetTreeApiMindmapServiceGetTreePostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceGetTreePostError = HandlerApiMindmapServiceGetTreePostErrors[keyof HandlerApiMindmapServiceGetTreePostErrors];
+export type GetTreeApiMindmapServiceGetTreePostError = GetTreeApiMindmapServiceGetTreePostErrors[keyof GetTreeApiMindmapServiceGetTreePostErrors];
 
-export type HandlerApiMindmapServiceGetTreePostResponses = {
+export type GetTreeApiMindmapServiceGetTreePostResponses = {
     /**
-     * Response Handler Api Mindmap Service Get Tree Post
+     * Response Get Tree Api Mindmap Service Get Tree Post
      *
      * Successful Response
      */
     200: string;
 };
 
-export type HandlerApiMindmapServiceGetTreePostResponse = HandlerApiMindmapServiceGetTreePostResponses[keyof HandlerApiMindmapServiceGetTreePostResponses];
+export type GetTreeApiMindmapServiceGetTreePostResponse = GetTreeApiMindmapServiceGetTreePostResponses[keyof GetTreeApiMindmapServiceGetTreePostResponses];
 
-export type HandlerApiMindmapServiceListRevisionsPostData = {
+export type GetNodeApiMindmapServiceGetNodePostData = {
+    body: MindmapServiceGetNodeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/mindmap_service/get_node';
+};
+
+export type GetNodeApiMindmapServiceGetNodePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetNodeApiMindmapServiceGetNodePostError = GetNodeApiMindmapServiceGetNodePostErrors[keyof GetNodeApiMindmapServiceGetNodePostErrors];
+
+export type GetNodeApiMindmapServiceGetNodePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: NodeDto;
+};
+
+export type GetNodeApiMindmapServiceGetNodePostResponse = GetNodeApiMindmapServiceGetNodePostResponses[keyof GetNodeApiMindmapServiceGetNodePostResponses];
+
+export type ListRevisionsApiMindmapServiceListRevisionsPostData = {
     body: MindmapServiceListRevisionsRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/list_revisions';
 };
 
-export type HandlerApiMindmapServiceListRevisionsPostErrors = {
+export type ListRevisionsApiMindmapServiceListRevisionsPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceListRevisionsPostError = HandlerApiMindmapServiceListRevisionsPostErrors[keyof HandlerApiMindmapServiceListRevisionsPostErrors];
+export type ListRevisionsApiMindmapServiceListRevisionsPostError = ListRevisionsApiMindmapServiceListRevisionsPostErrors[keyof ListRevisionsApiMindmapServiceListRevisionsPostErrors];
 
-export type HandlerApiMindmapServiceListRevisionsPostResponses = {
+export type ListRevisionsApiMindmapServiceListRevisionsPostResponses = {
     /**
-     * Response Handler Api Mindmap Service List Revisions Post
+     * Response List Revisions Api Mindmap Service List Revisions Post
      *
      * Successful Response
      */
     200: Array<RevisionSummary>;
 };
 
-export type HandlerApiMindmapServiceListRevisionsPostResponse = HandlerApiMindmapServiceListRevisionsPostResponses[keyof HandlerApiMindmapServiceListRevisionsPostResponses];
+export type ListRevisionsApiMindmapServiceListRevisionsPostResponse = ListRevisionsApiMindmapServiceListRevisionsPostResponses[keyof ListRevisionsApiMindmapServiceListRevisionsPostResponses];
 
-export type HandlerApiMindmapServiceGetRevisionPostData = {
+export type GetRevisionApiMindmapServiceGetRevisionPostData = {
     body: MindmapServiceGetRevisionRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/get_revision';
 };
 
-export type HandlerApiMindmapServiceGetRevisionPostErrors = {
+export type GetRevisionApiMindmapServiceGetRevisionPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceGetRevisionPostError = HandlerApiMindmapServiceGetRevisionPostErrors[keyof HandlerApiMindmapServiceGetRevisionPostErrors];
+export type GetRevisionApiMindmapServiceGetRevisionPostError = GetRevisionApiMindmapServiceGetRevisionPostErrors[keyof GetRevisionApiMindmapServiceGetRevisionPostErrors];
 
-export type HandlerApiMindmapServiceGetRevisionPostResponses = {
+export type GetRevisionApiMindmapServiceGetRevisionPostResponses = {
     /**
      * Successful Response
      */
     200: RevisionDetail;
 };
 
-export type HandlerApiMindmapServiceGetRevisionPostResponse = HandlerApiMindmapServiceGetRevisionPostResponses[keyof HandlerApiMindmapServiceGetRevisionPostResponses];
+export type GetRevisionApiMindmapServiceGetRevisionPostResponse = GetRevisionApiMindmapServiceGetRevisionPostResponses[keyof GetRevisionApiMindmapServiceGetRevisionPostResponses];
 
-export type HandlerApiMindmapServiceCreateMapPostData = {
+export type GetRevisionChangesApiMindmapServiceGetRevisionChangesPostData = {
+    body: MindmapServiceGetRevisionChangesRequest;
+    path?: never;
+    query?: never;
+    url: '/api/mindmap_service/get_revision_changes';
+};
+
+export type GetRevisionChangesApiMindmapServiceGetRevisionChangesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRevisionChangesApiMindmapServiceGetRevisionChangesPostError = GetRevisionChangesApiMindmapServiceGetRevisionChangesPostErrors[keyof GetRevisionChangesApiMindmapServiceGetRevisionChangesPostErrors];
+
+export type GetRevisionChangesApiMindmapServiceGetRevisionChangesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: RevisionChangesDto;
+};
+
+export type GetRevisionChangesApiMindmapServiceGetRevisionChangesPostResponse = GetRevisionChangesApiMindmapServiceGetRevisionChangesPostResponses[keyof GetRevisionChangesApiMindmapServiceGetRevisionChangesPostResponses];
+
+export type CreateMapApiMindmapServiceCreateMapPostData = {
     body: MindmapServiceCreateMapRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/create_map';
 };
 
-export type HandlerApiMindmapServiceCreateMapPostErrors = {
+export type CreateMapApiMindmapServiceCreateMapPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceCreateMapPostError = HandlerApiMindmapServiceCreateMapPostErrors[keyof HandlerApiMindmapServiceCreateMapPostErrors];
+export type CreateMapApiMindmapServiceCreateMapPostError = CreateMapApiMindmapServiceCreateMapPostErrors[keyof CreateMapApiMindmapServiceCreateMapPostErrors];
 
-export type HandlerApiMindmapServiceCreateMapPostResponses = {
+export type CreateMapApiMindmapServiceCreateMapPostResponses = {
     /**
      * Successful Response
      */
     200: MapDetail;
 };
 
-export type HandlerApiMindmapServiceCreateMapPostResponse = HandlerApiMindmapServiceCreateMapPostResponses[keyof HandlerApiMindmapServiceCreateMapPostResponses];
+export type CreateMapApiMindmapServiceCreateMapPostResponse = CreateMapApiMindmapServiceCreateMapPostResponses[keyof CreateMapApiMindmapServiceCreateMapPostResponses];
 
-export type HandlerApiMindmapServiceAddNodePostData = {
+export type AddNodeApiMindmapServiceAddNodePostData = {
     body: MindmapServiceAddNodeRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/add_node';
 };
 
-export type HandlerApiMindmapServiceAddNodePostErrors = {
+export type AddNodeApiMindmapServiceAddNodePostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceAddNodePostError = HandlerApiMindmapServiceAddNodePostErrors[keyof HandlerApiMindmapServiceAddNodePostErrors];
+export type AddNodeApiMindmapServiceAddNodePostError = AddNodeApiMindmapServiceAddNodePostErrors[keyof AddNodeApiMindmapServiceAddNodePostErrors];
 
-export type HandlerApiMindmapServiceAddNodePostResponses = {
+export type AddNodeApiMindmapServiceAddNodePostResponses = {
     /**
      * Successful Response
      */
     200: NodeDto;
 };
 
-export type HandlerApiMindmapServiceAddNodePostResponse = HandlerApiMindmapServiceAddNodePostResponses[keyof HandlerApiMindmapServiceAddNodePostResponses];
+export type AddNodeApiMindmapServiceAddNodePostResponse = AddNodeApiMindmapServiceAddNodePostResponses[keyof AddNodeApiMindmapServiceAddNodePostResponses];
 
-export type HandlerApiMindmapServiceUpdateNodePostData = {
+export type UpdateNodeApiMindmapServiceUpdateNodePostData = {
     body: MindmapServiceUpdateNodeRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/update_node';
 };
 
-export type HandlerApiMindmapServiceUpdateNodePostErrors = {
+export type UpdateNodeApiMindmapServiceUpdateNodePostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceUpdateNodePostError = HandlerApiMindmapServiceUpdateNodePostErrors[keyof HandlerApiMindmapServiceUpdateNodePostErrors];
+export type UpdateNodeApiMindmapServiceUpdateNodePostError = UpdateNodeApiMindmapServiceUpdateNodePostErrors[keyof UpdateNodeApiMindmapServiceUpdateNodePostErrors];
 
-export type HandlerApiMindmapServiceUpdateNodePostResponses = {
+export type UpdateNodeApiMindmapServiceUpdateNodePostResponses = {
     /**
      * Successful Response
      */
     200: NodeDto;
 };
 
-export type HandlerApiMindmapServiceUpdateNodePostResponse = HandlerApiMindmapServiceUpdateNodePostResponses[keyof HandlerApiMindmapServiceUpdateNodePostResponses];
+export type UpdateNodeApiMindmapServiceUpdateNodePostResponse = UpdateNodeApiMindmapServiceUpdateNodePostResponses[keyof UpdateNodeApiMindmapServiceUpdateNodePostResponses];
 
-export type HandlerApiMindmapServiceSetNodeCollapsedPostData = {
+export type SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostData = {
     body: MindmapServiceSetNodeCollapsedRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/set_node_collapsed';
 };
 
-export type HandlerApiMindmapServiceSetNodeCollapsedPostErrors = {
+export type SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceSetNodeCollapsedPostError = HandlerApiMindmapServiceSetNodeCollapsedPostErrors[keyof HandlerApiMindmapServiceSetNodeCollapsedPostErrors];
+export type SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostError = SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostErrors[keyof SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostErrors];
 
-export type HandlerApiMindmapServiceSetNodeCollapsedPostResponses = {
+export type SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostResponses = {
     /**
      * Successful Response
      */
     204: void;
 };
 
-export type HandlerApiMindmapServiceSetNodeCollapsedPostResponse = HandlerApiMindmapServiceSetNodeCollapsedPostResponses[keyof HandlerApiMindmapServiceSetNodeCollapsedPostResponses];
+export type SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostResponse = SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostResponses[keyof SetNodeCollapsedApiMindmapServiceSetNodeCollapsedPostResponses];
 
-export type HandlerApiMindmapServiceMoveNodePostData = {
+export type MoveNodeApiMindmapServiceMoveNodePostData = {
     body: MindmapServiceMoveNodeRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/move_node';
 };
 
-export type HandlerApiMindmapServiceMoveNodePostErrors = {
+export type MoveNodeApiMindmapServiceMoveNodePostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceMoveNodePostError = HandlerApiMindmapServiceMoveNodePostErrors[keyof HandlerApiMindmapServiceMoveNodePostErrors];
+export type MoveNodeApiMindmapServiceMoveNodePostError = MoveNodeApiMindmapServiceMoveNodePostErrors[keyof MoveNodeApiMindmapServiceMoveNodePostErrors];
 
-export type HandlerApiMindmapServiceMoveNodePostResponses = {
+export type MoveNodeApiMindmapServiceMoveNodePostResponses = {
     /**
      * Successful Response
      */
     200: NodeDto;
 };
 
-export type HandlerApiMindmapServiceMoveNodePostResponse = HandlerApiMindmapServiceMoveNodePostResponses[keyof HandlerApiMindmapServiceMoveNodePostResponses];
+export type MoveNodeApiMindmapServiceMoveNodePostResponse = MoveNodeApiMindmapServiceMoveNodePostResponses[keyof MoveNodeApiMindmapServiceMoveNodePostResponses];
 
-export type HandlerApiMindmapServiceDeleteNodePostData = {
+export type DeleteNodeApiMindmapServiceDeleteNodePostData = {
     body: MindmapServiceDeleteNodeRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/delete_node';
 };
 
-export type HandlerApiMindmapServiceDeleteNodePostErrors = {
+export type DeleteNodeApiMindmapServiceDeleteNodePostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceDeleteNodePostError = HandlerApiMindmapServiceDeleteNodePostErrors[keyof HandlerApiMindmapServiceDeleteNodePostErrors];
+export type DeleteNodeApiMindmapServiceDeleteNodePostError = DeleteNodeApiMindmapServiceDeleteNodePostErrors[keyof DeleteNodeApiMindmapServiceDeleteNodePostErrors];
 
-export type HandlerApiMindmapServiceDeleteNodePostResponses = {
+export type DeleteNodeApiMindmapServiceDeleteNodePostResponses = {
     /**
-     * Response Handler Api Mindmap Service Delete Node Post
+     * Response Delete Node Api Mindmap Service Delete Node Post
      *
      * Successful Response
      */
     200: boolean;
 };
 
-export type HandlerApiMindmapServiceDeleteNodePostResponse = HandlerApiMindmapServiceDeleteNodePostResponses[keyof HandlerApiMindmapServiceDeleteNodePostResponses];
+export type DeleteNodeApiMindmapServiceDeleteNodePostResponse = DeleteNodeApiMindmapServiceDeleteNodePostResponses[keyof DeleteNodeApiMindmapServiceDeleteNodePostResponses];
 
-export type HandlerApiMindmapServiceDeleteMapPostData = {
+export type DeleteMapApiMindmapServiceDeleteMapPostData = {
     body: MindmapServiceDeleteMapRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/delete_map';
 };
 
-export type HandlerApiMindmapServiceDeleteMapPostErrors = {
+export type DeleteMapApiMindmapServiceDeleteMapPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceDeleteMapPostError = HandlerApiMindmapServiceDeleteMapPostErrors[keyof HandlerApiMindmapServiceDeleteMapPostErrors];
+export type DeleteMapApiMindmapServiceDeleteMapPostError = DeleteMapApiMindmapServiceDeleteMapPostErrors[keyof DeleteMapApiMindmapServiceDeleteMapPostErrors];
 
-export type HandlerApiMindmapServiceDeleteMapPostResponses = {
+export type DeleteMapApiMindmapServiceDeleteMapPostResponses = {
     /**
-     * Response Handler Api Mindmap Service Delete Map Post
+     * Response Delete Map Api Mindmap Service Delete Map Post
      *
      * Successful Response
      */
     200: boolean;
 };
 
-export type HandlerApiMindmapServiceDeleteMapPostResponse = HandlerApiMindmapServiceDeleteMapPostResponses[keyof HandlerApiMindmapServiceDeleteMapPostResponses];
+export type DeleteMapApiMindmapServiceDeleteMapPostResponse = DeleteMapApiMindmapServiceDeleteMapPostResponses[keyof DeleteMapApiMindmapServiceDeleteMapPostResponses];
 
-export type HandlerApiMindmapServiceRestoreRevisionPostData = {
+export type RestoreRevisionApiMindmapServiceRestoreRevisionPostData = {
     body: MindmapServiceRestoreRevisionRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/restore_revision';
 };
 
-export type HandlerApiMindmapServiceRestoreRevisionPostErrors = {
+export type RestoreRevisionApiMindmapServiceRestoreRevisionPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceRestoreRevisionPostError = HandlerApiMindmapServiceRestoreRevisionPostErrors[keyof HandlerApiMindmapServiceRestoreRevisionPostErrors];
+export type RestoreRevisionApiMindmapServiceRestoreRevisionPostError = RestoreRevisionApiMindmapServiceRestoreRevisionPostErrors[keyof RestoreRevisionApiMindmapServiceRestoreRevisionPostErrors];
 
-export type HandlerApiMindmapServiceRestoreRevisionPostResponses = {
+export type RestoreRevisionApiMindmapServiceRestoreRevisionPostResponses = {
     /**
      * Successful Response
      */
     200: MapDetail;
 };
 
-export type HandlerApiMindmapServiceRestoreRevisionPostResponse = HandlerApiMindmapServiceRestoreRevisionPostResponses[keyof HandlerApiMindmapServiceRestoreRevisionPostResponses];
+export type RestoreRevisionApiMindmapServiceRestoreRevisionPostResponse = RestoreRevisionApiMindmapServiceRestoreRevisionPostResponses[keyof RestoreRevisionApiMindmapServiceRestoreRevisionPostResponses];
 
-export type HandlerApiMindmapServiceExpandAllPostData = {
+export type ExpandAllApiMindmapServiceExpandAllPostData = {
     body: MindmapServiceExpandAllRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/expand_all';
 };
 
-export type HandlerApiMindmapServiceExpandAllPostErrors = {
+export type ExpandAllApiMindmapServiceExpandAllPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceExpandAllPostError = HandlerApiMindmapServiceExpandAllPostErrors[keyof HandlerApiMindmapServiceExpandAllPostErrors];
+export type ExpandAllApiMindmapServiceExpandAllPostError = ExpandAllApiMindmapServiceExpandAllPostErrors[keyof ExpandAllApiMindmapServiceExpandAllPostErrors];
 
-export type HandlerApiMindmapServiceExpandAllPostResponses = {
+export type ExpandAllApiMindmapServiceExpandAllPostResponses = {
     /**
      * Successful Response
      */
     204: void;
 };
 
-export type HandlerApiMindmapServiceExpandAllPostResponse = HandlerApiMindmapServiceExpandAllPostResponses[keyof HandlerApiMindmapServiceExpandAllPostResponses];
+export type ExpandAllApiMindmapServiceExpandAllPostResponse = ExpandAllApiMindmapServiceExpandAllPostResponses[keyof ExpandAllApiMindmapServiceExpandAllPostResponses];
 
-export type HandlerApiMindmapServiceSetFoldLevelPostData = {
+export type SetFoldLevelApiMindmapServiceSetFoldLevelPostData = {
     body: MindmapServiceSetFoldLevelRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/set_fold_level';
 };
 
-export type HandlerApiMindmapServiceSetFoldLevelPostErrors = {
+export type SetFoldLevelApiMindmapServiceSetFoldLevelPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceSetFoldLevelPostError = HandlerApiMindmapServiceSetFoldLevelPostErrors[keyof HandlerApiMindmapServiceSetFoldLevelPostErrors];
+export type SetFoldLevelApiMindmapServiceSetFoldLevelPostError = SetFoldLevelApiMindmapServiceSetFoldLevelPostErrors[keyof SetFoldLevelApiMindmapServiceSetFoldLevelPostErrors];
 
-export type HandlerApiMindmapServiceSetFoldLevelPostResponses = {
+export type SetFoldLevelApiMindmapServiceSetFoldLevelPostResponses = {
     /**
      * Successful Response
      */
     204: void;
 };
 
-export type HandlerApiMindmapServiceSetFoldLevelPostResponse = HandlerApiMindmapServiceSetFoldLevelPostResponses[keyof HandlerApiMindmapServiceSetFoldLevelPostResponses];
+export type SetFoldLevelApiMindmapServiceSetFoldLevelPostResponse = SetFoldLevelApiMindmapServiceSetFoldLevelPostResponses[keyof SetFoldLevelApiMindmapServiceSetFoldLevelPostResponses];
 
-export type HandlerApiMindmapServiceApplyOutlinePostData = {
+export type ApplyOutlineApiMindmapServiceApplyOutlinePostData = {
     body: MindmapServiceApplyOutlineRequest;
     path?: never;
     query?: never;
     url: '/api/mindmap_service/apply_outline';
 };
 
-export type HandlerApiMindmapServiceApplyOutlinePostErrors = {
+export type ApplyOutlineApiMindmapServiceApplyOutlinePostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type HandlerApiMindmapServiceApplyOutlinePostError = HandlerApiMindmapServiceApplyOutlinePostErrors[keyof HandlerApiMindmapServiceApplyOutlinePostErrors];
+export type ApplyOutlineApiMindmapServiceApplyOutlinePostError = ApplyOutlineApiMindmapServiceApplyOutlinePostErrors[keyof ApplyOutlineApiMindmapServiceApplyOutlinePostErrors];
 
-export type HandlerApiMindmapServiceApplyOutlinePostResponses = {
+export type ApplyOutlineApiMindmapServiceApplyOutlinePostResponses = {
     /**
      * Successful Response
      */
     200: MapDetail;
 };
 
-export type HandlerApiMindmapServiceApplyOutlinePostResponse = HandlerApiMindmapServiceApplyOutlinePostResponses[keyof HandlerApiMindmapServiceApplyOutlinePostResponses];
+export type ApplyOutlineApiMindmapServiceApplyOutlinePostResponse = ApplyOutlineApiMindmapServiceApplyOutlinePostResponses[keyof ApplyOutlineApiMindmapServiceApplyOutlinePostResponses];
 
 export type GraphiqlGraphqlGetData = {
     body?: never;
