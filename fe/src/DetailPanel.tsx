@@ -25,6 +25,7 @@ interface Props {
   onResize: (w: number) => void
   pinned: boolean // pin 住：选中变到别处不收起（内容跟随 / 空态兜底）
   onTogglePin: () => void
+  closing: boolean // 播收回动画（父组件延迟卸载期间为 true）
   // note 为 '' 即清空；返回是否成功（失败时面板保留脏态可重试）
   onSaveNote: (nodeId: number, note: string) => Promise<boolean>
 }
@@ -37,7 +38,7 @@ const PinIcon = () => (
   </svg>
 )
 
-export function DetailPanel({ node, width, onResize, pinned, onTogglePin, onSaveNote }: Props) {
+export function DetailPanel({ node, width, onResize, pinned, onTogglePin, closing, onSaveNote }: Props) {
   const { t } = useI18n()
   // 源码/预览偏好跨会话记忆（面板常驻：开着不随选节点重挂，切换即持久化）
   const [mode, setMode] = useState<'preview' | 'source'>(
@@ -122,7 +123,7 @@ export function DetailPanel({ node, width, onResize, pinned, onTogglePin, onSave
   }
 
   return (
-    <div className="detail-panel" style={{ width }} aria-label={t('note.title')}>
+    <div className={`detail-panel${closing ? ' closing' : ''}`} style={{ width }} aria-label={t('note.title')}>
       {/* 右缘拖拽调宽（面板贴左缘，鼠标右移宽度增大；280px ~ min(90vw, 760px)） */}
       <div
         className="detail-resize"

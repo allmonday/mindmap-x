@@ -65,8 +65,36 @@
   /* 让出左上组件区（map-title bottom≈49 / canvas-tools bottom≈87，实测）：
      组件原地不动，面板从它们下方展开——不做推挤避让 */
   top: 110px;
-  border-top: 1px solid var(--hairline); /* 顶部悬空（不再贴满），补上边界 */
+  bottom: 40px; /* 底部留呼吸空白，浮层不压到底 */
+  border-top: 1px solid var(--hairline); /* 悬空的边补边界（上/下不再贴满） */
+  border-bottom: 1px solid var(--hairline);
   border-right: 1px solid var(--hairline);
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px; /* 左侧贴屏缘不圆，右侧两角收弧 */
+  /* 翻书动画：绕左边缘翻转（面板贴屏幕左缘=书脊），从左往右翻开/向左合上
+    （挂载自动播展开；关闭 class 播收回，见 MindMapEditor 的延迟卸载）。
+     transform+opacity 走合成器；box-shadow 从悬空大影收到无影，增强"翻开"感 */
+  transform-origin: 0 50%;
+  animation: note-unfold 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.detail-panel.closing {
+  animation: note-fold 0.26s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+  pointer-events: none; /* 消失途中不再可交互 */
+}
+@keyframes note-unfold {
+  from {
+    transform: perspective(1400px) rotateY(-85deg);
+    opacity: 0;
+    box-shadow: 24px 0 48px rgba(15, 23, 42, 0.28);
+  }
+}
+@keyframes note-fold {
+  to {
+    /* 收回的透视距离加倍（2800px）：翻转中近端的透视放大约减半，合上更安静 */
+    transform: perspective(2800px) rotateY(-85deg);
+    opacity: 0;
+    box-shadow: 24px 0 48px rgba(15, 23, 42, 0.28);
+  }
 }
 
 /* 拖拽调宽柄：贴边面板的内缘（右面板=左缘，左面板=右缘） */

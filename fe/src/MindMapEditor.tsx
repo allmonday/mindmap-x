@@ -227,7 +227,7 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
                   data.onOpenNote(n.display_id)
                 }}
               >
-                <StickyNoteIcon />
+                <StickyNoteIcon size={11} />
               </button>
             )}
             {!isRoot && hasChildren && (
@@ -469,9 +469,9 @@ const LayoutRightIcon = () => (
 
 // 备注角标（lucide sticky-note：折角便签——"这里贴了张纸"）。
 // 画线而非文本字符：字形留白随平台字体回退漂移（✎ 在部分系统偏左上），
-// 与 FoldPlusIcon 同一教训
-const StickyNoteIcon = () => (
-  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+// 与 FoldPlusIcon 同一教训。size 参数：节点角标 9（默认），按钮行 11
+const StickyNoteIcon = ({ size = 9 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11l5-5V5a2 2 0 0 0-2-2Z" />
     <path d="M15 3v4a2 2 0 0 0 2 2h4" />
   </svg>
@@ -643,6 +643,18 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   // 一变即收起。关闭（Esc/工具栏/d）一律同时解除 pin
   const [noteOpen, setNoteOpen] = useState(false)
   const [notePinned, setNotePinned] = useState(false)
+  // 渲染挂载与逻辑开合分离：关闭时先播收回动画（closing class）再卸载——
+  // 条件渲染直接卸载没有退出动画可播。展开动画由挂载自动播放（CSS animation）
+  const [noteMounted, setNoteMounted] = useState(false)
+  useEffect(() => {
+    if (noteOpen) {
+      setNoteMounted(true)
+      return
+    }
+    // 关闭：等收回动画播完（0.26s，留余量）再卸载；期间 closing class 生效
+    const t = window.setTimeout(() => setNoteMounted(false), 300)
+    return () => window.clearTimeout(t)
+  }, [noteOpen])
   const [noteWidth, setNoteWidth] = useState(() => {
     const saved = Number(localStorage.getItem('noteWidth'))
     return saved >= 280 && saved <= 760 ? saved : 480
@@ -1509,13 +1521,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         {chatOpen && agentOk && (
           <ChatPanel mapId={mapId} width={chatWidth} onResize={setChatWidth} onClose={() => setChatOpen(false)} />
         )}
-        {noteOpen && (
+        {noteMounted && (
           <DetailPanel
             node={noteNode}
             width={noteWidth}
             onResize={setNoteWidth}
             pinned={notePinned}
             onTogglePin={() => setNotePinned((v) => !v)}
+            closing={!noteOpen}
             onSaveNote={saveNote}
           />
         )}
