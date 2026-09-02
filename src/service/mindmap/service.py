@@ -42,10 +42,9 @@ def _resolve_actor(actor: str, source: str | None) -> str:
 class MindmapService(UseCaseService):
     """人 + Agent 协同脑图：同一棵树的读写与整树重构。
 
-    compose_query 调用约束（当前 nexusx 限制，详见 KLR-Pattern/nexusx#140）：
-    一次调用只发一个 mutation 字段。GraphQL 别名多字段（a1: m(...) a2: m(...)）
-    会被服务端静默折叠——只有最后一个字段执行，其余丢弃且不报错。
-    批量写节点用 apply_outline 一次完成，不要别名循环 add_node。
+    compose_query：别名多字段（a1: m(...) a2: m(...)）自 nexusx 6.2 起全部
+    执行并按别名返回（旧版会被静默折叠只剩最后一个，KLR-Pattern/nexusx#140
+    已修复）。批量写仍优先 apply_outline 一次完成（语义即整树，且少往返）。
 
     客户端建议（支持子代理的调用方）：建图、整树重构等多往返 MCP 批量任务
     建议委托 sub agent 执行——中间的树读取与逐次返回不占主 agent 上下文，
@@ -161,7 +160,7 @@ class MindmapService(UseCaseService):
         source: Annotated[str | None, FromContext()] = None,
     ) -> NodeDTO:
         """在 parent 下新增子节点（position=None 追加到末尾；可带初始 note，空串归一为无备注）。parent_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
-        禁止用别名在一次 mutation 里调多个 add_node（会被静默折叠，只执行最后一个）；批量新增请用 apply_outline。"""
+        批量新增（≥2 个）仍优先 apply_outline 一次完成（少往返）。"""
         node = await methods.add_node(
             map_id, parent_id, content, position=position, note=note, actor=_resolve_actor(actor, source)
         )
