@@ -80,6 +80,11 @@ class Node(BaseEntity, table=True):
         description="父节点全局主键（内部使用）；根节点为 None（每棵 Map 恰有一个根节点）",
     )
     content: str = Field(description="节点文本内容")
+    note: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.Text, nullable=True),
+        description="节点备注（markdown 长文，Agent 生成内容的主要落点）；null = 无备注，空串写入时归一为 null",
+    )
     position: int = Field(
         default=0,
         description="同级节点中的排序序号，越小越靠前",
@@ -113,24 +118,22 @@ class Node(BaseEntity, table=True):
 
 
 class MapRevision(BaseEntity, table=True):
-    """一棵脑图在某次 mutation 提交后的整树快照（方案 A：快照表，不做重放）。
+    """一次 mutation 的版本元数据行（MVCC 化：整树内容在 NodeRevision，见下）。
 
-    每次 mutation 与树变更同事务写入一行，(map_id, version) 唯一——
-    「每个 version 都有恰好一个快照」是版本时间线面板的依赖不变式。
-    snapshot 为整树 JSON（display_id 语义，parent 用 display_id 引用，
-    见 methods._build_snapshot）。不设 Relationship、不进 Map/Node 的
-    关系图：只按 map_id 直查的附属记录表。
-    存量图（migration 前已存在 / seed 直写）不回填历史——
-    从下一个 mutation 起开始有快照。
+    (map_id, version) 唯一——「每个 version 恰好一行」是版本时间线面板的
+    依赖不变式。行内容：action/actor/detail 时间线展示 + title（restore
+    恢复标题用）。树内容按节点存 NodeRevision（每次只落触碰节点），
+    任意版本的整树由物化查询组装（methods.materialize_tree）。
+    不设 Relationship、不进 Map/Node 的关系图：按 map_id 直查的附属表。
     """
 
     # SQLModel 自动表名是类名小写（maprevision）非蛇形——与 migration 的
     # map_revision 对不上，显式指定（Map/Node 无驼峰不受影响）
     __tablename__ = "map_revision"
 
-    id: Optional[int] = Field(default=None, primary_key=True, description="快照行主键")
+    id: Optional[int] = Field(default=None, primary_key=True, description="版本行主键")
     map_id: int = Field(foreign_key="map.id", description="所属脑图 ID")
-    version: int = Field(description="该快照对应的树版本号（mutation 提交后的 version）")
+    version: int = Field(description="该版本对应的树版本号（mutation 提交后的 version）")
     action: str = Field(
         description="产生该版本的动作：'map_created' / 'node_added' / … / 'revision_restored'"
     )
@@ -138,18 +141,45 @@ class MapRevision(BaseEntity, table=True):
     detail: Optional[str] = Field(
         default=None, description="人类可读改动摘要（时间线展示用，与 publish_change 的 detail 同文）"
     )
-    snapshot: dict = Field(
-        sa_column=sa.Column(sa.JSON, nullable=False),
-        description=(
-            "整树快照 JSON：{title, nodes:[{display_id,parent,content,position,"
-            "collapsed,updated_by,updated_at}]}（parent 为父节点 display_id，根为 null；"
-            "updated_at 为 ISO 字符串）"
-        ),
+    title: Optional[str] = Field(
+        default=None, description="该版本时刻的图标题（restore 恢复用；轻量随版本行走）"
     )
-    created_at: datetime = Field(default_factory=_utcnow, description="快照产生时间（UTC）")
+    created_at: datetime = Field(default_factory=_utcnow, description="版本产生时间（UTC）")
 
     __table_args__ = (
         sa.UniqueConstraint("map_id", "version", name="uq_map_revision_map_version"),
+    )
+
+
+class NodeRevision(BaseEntity, table=True):
+    """节点版本行（undo log）：行存该节点本次变更**前**的状态（before JSON），天然 append。
+
+    最小充分集：after(v) = 同节点下一行的 before / 最新 node 表态，可推导
+    不落盘。物化（任意版本整树）= 从 node 表当前态出发，把 version > target
+    的行按版本降序逐行撤销（before IS NULL → 删除节点；否则设值——删除行
+    的 before 即复活值，与修改行同构）。
+
+    before 是 JSON dict（sa.JSON 自动序列化）：Node 字段演进**零 DDL**——
+    新字段只需进 methods._DIFF_FIELDS 语义清单（哪些字段参与版本/忽略规则
+    是业务知识，与存储无关）。行编码三种：新增（before=NULL）/ 修改（变更前
+    状态）/ 删除（deleted=True，before 存被删前状态=复活值）。同号重用由
+    主键合并为一条修改行。行来源：调用方在变更应用前显式快照 before 传给
+    _commit_with_revision（诚实契约：漏报不破坏最新态，只是历史缺一步 undo）。
+
+    原型验证与设计记录：scripts/undo_prototype.py、specs/007。
+    WITHOUT ROWID：主键即定位键，聚簇存储。
+    """
+
+    __tablename__ = "node_revision"
+    __table_args__ = {"sqlite_with_rowid": False}
+
+    map_id: int = Field(foreign_key="map.id", primary_key=True, description="所属脑图 ID")
+    version: int = Field(primary_key=True, description="该行产生时的树版本号")
+    display_id: int = Field(primary_key=True, description="节点编号（map 内，跨版本稳定）")
+    deleted: bool = Field(default=False, description="本行是删除操作（before 存被删前状态，undo 它 = 复活）")
+    before: Optional[dict] = Field(
+        default=None, sa_column=sa.Column(sa.JSON),
+        description="变更前状态 JSON（_DIFF_FIELDS 字段集）；NULL = 本行是新增（before 不存在）",
     )
 
 
@@ -169,6 +199,8 @@ def mount_method():
         delete_node,
         expand_all,
         get_revision,
+        get_revision_changes,
+        get_node,
         get_tree,
         list_maps,
         list_revisions,
@@ -189,6 +221,7 @@ def mount_method():
     _mount(Map, list_maps, query)
     _mount(Map, create_map, mutation)
     _mount(Map, get_tree, query)
+    _mount(Map, get_node, query)
     _mount(Map, add_node, mutation)
     _mount(Map, update_node, mutation)
     _mount(Map, set_node_collapsed, mutation)
@@ -200,6 +233,7 @@ def mount_method():
     _mount(Map, apply_outline, mutation)
     _mount(Map, list_revisions, query)
     _mount(Map, get_revision, query)
+    _mount(Map, get_revision_changes, query)
     _mount(Map, restore_revision, mutation)
 
 

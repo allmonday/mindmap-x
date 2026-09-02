@@ -14,7 +14,11 @@ from src.service.mindmap.dtos import (
     MapDetail,
     MapSummary,
     NodeDTO,
+    RevisionChangeRowDTO,
+    RevisionChangesDTO,
     RevisionDetail,
+    RevisionNodeDTO,
+    RevisionSnapshotDTO,
     RevisionSummary,
 )
 
@@ -83,6 +87,16 @@ class MindmapService(UseCaseService):
         return await methods.get_tree(map_id)
 
     @query
+    async def get_node(cls, map_id: int, node_id: int) -> NodeDTO:
+        """读单个节点全文（content + note markdown）。node_id 为 map 内 display_id。
+
+        Agent 写 note 后的读回入口——get_tree/outline 行协议不含 note。
+        """
+        node = await methods.get_node(map_id, node_id)
+        dto = NodeDTO.model_validate(node)
+        return await Resolver().resolve(dto)
+
+    @query
     async def list_revisions(cls, map_id: int) -> list[RevisionSummary]:
         """版本时间线：某图全部快照，version 降序（最新在前）。
         v{N} 角标点开的面板数据源；不含快照体（列表轻量）。
@@ -92,10 +106,34 @@ class MindmapService(UseCaseService):
 
     @query
     async def get_revision(cls, map_id: int, version: int) -> RevisionDetail:
-        """取某版本的整树快照（title + nodes 列表，节点带
-        display_id/parent/content/position/collapsed）。version 不存在时报错。"""
-        rev = await methods.get_revision(map_id, version)
-        return RevisionDetail.model_validate(rev)
+        """取某版本（title + nodes 列表，节点带
+        display_id/parent/content/note/position/collapsed）。version 不存在时报错。
+
+        树内容由 node_revision 行物化（MVCC；对外 shape 与整树快照时代一致）。"""
+        rev, snap = await methods.get_revision(map_id, version)
+        return RevisionDetail(
+            id=rev.id, map_id=rev.map_id, version=rev.version, action=rev.action,
+            actor=rev.actor, detail=rev.detail, created_at=rev.created_at,
+            snapshot=RevisionSnapshotDTO(
+                title=snap["title"],
+                nodes=[RevisionNodeDTO(**n) for n in snap["nodes"]],
+            ),
+        )
+
+    @query
+    async def get_revision_changes(cls, map_id: int, version: int) -> RevisionChangesDTO:
+        """该版本相对上一版本的节点级变更（git log 风格）。
+
+        注意语义：这是"这个版本当时改了什么"，不是回滚影响预览（与旧前端的
+        快照 vs 当前树比较相反）。首版本（无更早版本）全部按 added。
+        kind：added / removed / changed(old_content=改前) / note / moved / folded。
+        """
+        changes = await methods.get_revision_changes(map_id, version)
+        return RevisionChangesDTO(
+            title_change=changes["title_change"],
+            old_title=changes.get("old_title"),
+            rows=[RevisionChangeRowDTO(**r) for r in changes["rows"]],
+        )
 
     # ── mutations ─────────────────────────────────────────────────────
 
@@ -118,13 +156,14 @@ class MindmapService(UseCaseService):
         parent_id: int,
         content: str,
         position: int | None = None,
+        note: str | None = None,
         actor: str = "agent",
         source: Annotated[str | None, FromContext()] = None,
     ) -> NodeDTO:
-        """在 parent 下新增子节点（position=None 追加到末尾）。parent_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
+        """在 parent 下新增子节点（position=None 追加到末尾；可带初始 note，空串归一为无备注）。parent_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
         禁止用别名在一次 mutation 里调多个 add_node（会被静默折叠，只执行最后一个）；批量新增请用 apply_outline。"""
         node = await methods.add_node(
-            map_id, parent_id, content, position=position, actor=_resolve_actor(actor, source)
+            map_id, parent_id, content, position=position, note=note, actor=_resolve_actor(actor, source)
         )
         dto = NodeDTO.model_validate(node)
         return await Resolver().resolve(dto)
@@ -136,12 +175,17 @@ class MindmapService(UseCaseService):
         node_id: int,
         content: str | None = None,
         collapsed: bool | None = None,
+        note: str | None = None,
         actor: str = "agent",
         source: Annotated[str | None, FromContext()] = None,
     ) -> NodeDTO:
-        """部分更新节点（content / collapsed）。node_id 为 map 内 display_id。若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。"""
+        """部分更新节点（content / collapsed / note）。node_id 为 map 内 display_id。
+
+        note 语义：None=不动；空串 ""=清空（存 null）。长内容写 note 而非撑长 content。
+        若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树。
+        """
         node = await methods.update_node(
-            map_id, node_id, content=content, collapsed=collapsed, actor=_resolve_actor(actor, source)
+            map_id, node_id, content=content, collapsed=collapsed, note=note, actor=_resolve_actor(actor, source)
         )
         dto = NodeDTO.model_validate(node)
         return await Resolver().resolve(dto)
@@ -288,6 +332,13 @@ class MindmapService(UseCaseService):
     ) -> MapDetail:
         """Agent 批量写法：按缩进 outline 整树写入。
 
+        ⚠ 这是**全量结构写入**，不是局部补丁：outline 描述的是写入后整棵子树
+        应有的样子。两条最常见的误用：
+        - 只改一个节点的内容/备注 → 用 update_node，不要用本方法
+        - **缩进即父子关系**：锚定 [id:N] 行的层级必须精确还原该节点在树中的
+          真实深度（照抄 get_tree 输出的缩进）——写浅了节点会被**移动**到新父
+          之下（如写在根下第二层 = 挂到根节点下方），写深了同理
+
         outline 格式（与 get_tree 输出同构，行级语法必须遵守）：
         - 每行以 "- " 开头：`- 内容` 或 `- [id:N] 内容`（N=display_id；
           有 id 锚定已有节点，无 id 新建）
@@ -300,7 +351,8 @@ class MindmapService(UseCaseService):
               - 孙节点（4 空格缩进 = 第二层）
 
         merge：[id:N] 锚定更新 + 无 id 新建 + 未提及保留（不误删）；
-        replace：保留根节点，其余全删重建。
+        replace：保留根节点，其余全删重建。outline 行不含 note——锚定 [id:N]
+        节点的 note 自动保留（replace 下按旧号带回），不会因此丢失。
         若无 <external_changes> 注入（外部调用方即是），写前先 get_tree 核对最新树（本方法整树重写，过期认知的破坏面最大）。
         """
         m = await methods.apply_outline(map_id, outline, mode=mode, actor=_resolve_actor(actor, source))

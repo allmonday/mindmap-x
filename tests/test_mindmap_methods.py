@@ -88,6 +88,141 @@ async def test_update_node_wrong_map(session_factory, seeded_map):
     assert n.content == "别图的 #2"
 
 
+# ── note（节点 markdown 备注）──────────────────────────────────────────
+
+
+async def test_update_node_note_roundtrip(session_factory, seeded_map):
+    md = "## 背景\n\n- 要点一\n- 要点二\n\n**结论**：`note` 存长文"
+    n = await mm.update_node(100, 2, note=md, actor="agent")
+    assert n.note == md
+    assert n.content == "a"  # note 不动 content
+    got = await mm.get_node(100, 2)
+    assert got.note == md  # get_node 是 Agent 写后的读回入口
+
+
+async def test_update_node_note_empty_clears_to_null(session_factory, seeded_map):
+    await mm.update_node(100, 2, note="有备注")
+    n = await mm.update_node(100, 2, note="", actor="human")
+    assert n.note is None  # "" 归一 NULL
+    from sqlmodel import select
+
+    async with session_factory() as s:
+        row = (await s.exec(select(Node).where(Node.map_id == 100, Node.display_id == 2))).one()
+        assert row.note is None  # DB 直查同样为 NULL（不是空串）
+
+
+async def test_update_node_note_none_keeps(session_factory, seeded_map):
+    await mm.update_node(100, 2, note="保留我")
+    n = await mm.update_node(100, 2, content="renamed", actor="agent")
+    assert n.content == "renamed"
+    assert n.note == "保留我"  # 不传 note = 不动
+
+
+async def test_update_node_note_only_is_content_change(session_factory, seeded_map):
+    # 仅 note 变更也走内容变更分支：version+1、updated_by 刷新、落版本
+    async with session_factory() as s:
+        before = (await s.get(Map, 100)).version
+    n = await mm.update_node(100, 3, note="only note", actor="agent")
+    assert n.updated_by == "agent"
+    async with session_factory() as s:
+        m = await s.get(Map, 100)
+        assert m.version == before + 1
+    from src.models import MapRevision
+
+    from sqlmodel import select
+
+    async with session_factory() as s:
+        revs = (
+            await s.exec(select(MapRevision).where(MapRevision.map_id == 100))
+        ).all()
+    latest = max(revs, key=lambda r: r.version)
+    assert latest.action == "node_updated"
+    _, snap = await mm.get_revision(100, latest.version)
+    by = {nd["display_id"]: nd for nd in snap["nodes"]}
+    assert by[3]["note"] == "only note"
+
+
+async def test_mutation_writes_single_node_row(session_factory, seeded_map):
+    # undo log 行形态（before 语义）：单节点编辑恰好 1 行且存【变更前】值；
+    # 新增行值列全 NULL。seed 直写无历史 → 首个 mutation 也只落触碰行
+    from sqlmodel import select
+
+    from src.models import NodeRevision
+
+    await mm.update_node(100, 2, content="单点变更")  # v2 = 1 行（before="a"）
+    async with session_factory() as s:
+        rows = (
+            await s.exec(
+                select(NodeRevision).where(NodeRevision.map_id == 100, NodeRevision.version == 2)
+            )
+        ).all()
+    assert len(rows) == 1
+    r = rows[0]
+    assert (r.display_id, r.deleted, r.before["content"]) == (2, False, "a")  # before dict！
+
+    await mm.add_node(100, 1, "新节点", note="带备注")  # v3：1 行 insert（before=NULL）
+    async with session_factory() as s:
+        rows = (
+            await s.exec(
+                select(NodeRevision).where(NodeRevision.map_id == 100, NodeRevision.version == 3)
+            )
+        ).all()
+    assert [(r.display_id, r.deleted, r.before) for r in rows] == [(4, False, None)]
+
+    # undo 往返：物化 v2 = v2 末态（撤销 v3 的 insert；v2 自己的行不撤）
+    _, snap = await mm.get_revision(100, 2)
+    assert [(n["display_id"], n["content"]) for n in snap["nodes"]] == [
+        (1, "root"), (2, "单点变更"), (3, "a1"),
+    ]
+    _, snap3 = await mm.get_revision(100, 3)
+    assert [n["display_id"] for n in snap3["nodes"]] == [1, 2, 3, 4]
+
+
+async def test_delete_subtree_writes_tombstones(session_factory, seeded_map):
+    # 删子树 → 每个被删节点一行（deleted=True，值列=被删前状态=复活值）
+    from sqlmodel import select
+
+    from src.models import NodeRevision
+
+    await mm.delete_node(100, 2)  # v2：删 a 及其子 a1（seed：#2→#3）
+    async with session_factory() as s:
+        rows = (
+            await s.exec(
+                select(NodeRevision).where(NodeRevision.map_id == 100, NodeRevision.version == 2)
+            )
+        ).all()
+    assert sorted((r.display_id, r.deleted, r.before["content"]) for r in rows) == [
+        (2, True, "a"), (3, True, "a1"),
+    ]
+    by = {r.display_id: r for r in rows}
+    assert by[3].before["parent"] == 2  # 复活值带父链（undo 它 = 原样回到树上）
+    # 物化 v1 之前不存在（seed 无版本）；当前树 #2/#3 已删
+    _, snap = await mm.get_revision(100, 2)
+    assert [n["display_id"] for n in snap["nodes"]] == [1]
+
+
+async def test_get_node_missing(session_factory, seeded_map):
+    with pytest.raises(ValueError, match="不存在节点 #999"):
+        await mm.get_node(100, 999)
+
+
+async def test_add_node_with_note(session_factory, seeded_map):
+    n = await mm.add_node(100, 1, "带备注的子节点", note="初始备注", actor="human")
+    assert n.note == "初始备注"
+    n2 = await mm.add_node(100, 1, "空串归一", note="")
+    assert n2.note is None
+
+
+async def test_node_ref_omits_note(session_factory, seeded_map):
+    # NodeRef（parent 引用）不带 note：markdown 长文不随全树 N 个引用膨胀
+    from src.service.mindmap.dtos import NodeRef
+
+    await mm.update_node(100, 2, note="很长的 markdown 备注" * 20)
+    ref = NodeRef.model_validate(await mm.get_node(100, 2))
+    assert "note" not in ref.model_dump()
+    assert "content" not in ref.model_dump()  # 既有 omit 不受影响
+
+
 async def test_set_node_collapsed_is_lightweight_and_correlates_event(
     session_factory, seeded_map
 ):
@@ -337,6 +472,34 @@ async def test_apply_outline_replace_renumbers(session_factory, seeded_map):
     assert lines[1] == "  - [id:2] fresh"
     assert lines[2] == "  - [id:3] nodes"
     assert "a1" not in text  # 旧子树全删
+
+
+async def test_apply_outline_replace_keeps_note_by_anchor(session_factory, seeded_map):
+    # replace 结构重建不丢内容资产：锚定 [id:N] 行按旧号带回 note
+    await mm.update_node(100, 2, note="#2 的旧备注")
+    await mm.apply_outline(
+        100,
+        "- [id:1] root\n  - [id:2] a 改名\n    - 新子级\n  - 新兄弟",
+        mode="replace",
+        actor="agent",
+    )
+    # replace 重排：#2（锚定，原号恰好一致）、新子级 #3、新兄弟 #4
+    kept = await mm.get_node(100, 2)
+    assert (kept.content, kept.note) == ("a 改名", "#2 的旧备注")
+    fresh_child = await mm.get_node(100, 3)
+    assert (fresh_child.content, fresh_child.note) == ("新子级", None)
+    fresh_sib = await mm.get_node(100, 4)
+    assert fresh_sib.note is None
+    # 根的 note（原本就没有）不受 replace 影响
+    assert (await mm.get_node(100, 1)).note is None
+
+
+async def test_apply_outline_merge_keeps_note(session_factory, seeded_map):
+    # merge 锚定节点走 ORM 更新，note 原样保留
+    await mm.update_node(100, 2, note="merge 备注不动")
+    await mm.apply_outline(100, "- [id:1] root\n  - [id:2] a renamed", mode="merge")
+    n = await mm.get_node(100, 2)
+    assert (n.content, n.note) == ("a renamed", "merge 备注不动")
 
 
 async def test_apply_outline_bad_indent(session_factory, seeded_map):

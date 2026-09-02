@@ -31,6 +31,7 @@ class NodeRef(DefineSubset):
             "map_id",
             "parent_id",
             "content",
+            "note",  # markdown 长文不随 parent 引用膨胀（全树 N 个节点 × N 个引用）
             "position",
             "collapsed",
             "updated_by",
@@ -80,6 +81,7 @@ class RevisionNodeDTO(BaseModel):
     display_id: int
     parent: Optional[int]
     content: str
+    note: Optional[str] = None  # 默认值兼容旧快照（无此 key 的历史 JSON）
     position: int
     collapsed: bool
     updated_by: str
@@ -92,6 +94,28 @@ class RevisionSnapshotDTO(BaseModel):
 
     title: str
     nodes: List[RevisionNodeDTO]
+
+
+class RevisionChangeRowDTO(BaseModel):
+    """版本间变更行：该版本相对上一版本，一个节点的一项变化。
+
+    kind 语义（注意与旧"回滚预览"视角相反——这是该版本当时发生的事）：
+    added=本版新增 / removed=本版删除 / changed=标题改（old_content 为改前）
+    / note=备注改 / moved=换父 / folded=收放。
+    """
+
+    display_id: int
+    kind: str
+    content: str
+    old_content: Optional[str] = None
+
+
+class RevisionChangesDTO(BaseModel):
+    """版本间变更集（get_revision_changes 返回体）。"""
+
+    title_change: bool
+    old_title: Optional[str] = None  # 上一版本的标题（title_change 时展示"旧 → 新"）
+    rows: List[RevisionChangeRowDTO]
 
 
 class RevisionDetail(DefineSubset):
