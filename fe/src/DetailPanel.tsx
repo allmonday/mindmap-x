@@ -5,12 +5,13 @@
 // 判脏基线是 savedRef 而非 node.note（WS 全量重拉会换对象身份，且外部
 // 变更与本地未保存编辑并存时本地优先）；显式保存（Ctrl+Enter / 按钮）
 // 只前移基线，卸载 flush 发现无脏即不再发第二次（避免多造一个版本快照）。
-import { useEffect, useRef, useState } from 'react'
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { mdComponents } from './Mermaid'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { useI18n } from './i18n'
 import type { NodeDTO } from './types'
+import type { VditorHandle } from './VditorEditor'
+
+// vditor（+其 CSS）独立 chunk：不开源码编辑就不加载
+const VditorEditor = lazy(() => import('./VditorEditor').then((m) => ({ default: m.VditorEditor })))
 
 // 保存按钮的勾（与节点操作行 CheckIcon 同款）
 const CheckIcon = () => (
@@ -39,7 +40,7 @@ const PinIcon = () => (
 )
 
 export function DetailPanel({ node, width, onResize, pinned, onTogglePin, closing, onSaveNote }: Props) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   // 源码/预览偏好跨会话记忆（面板常驻：开着不随选节点重挂，切换即持久化）
   const [mode, setMode] = useState<'preview' | 'source'>(
     () => (localStorage.getItem('noteMode') as 'preview' | 'source') || 'preview',
@@ -47,10 +48,8 @@ export function DetailPanel({ node, width, onResize, pinned, onTogglePin, closin
   useEffect(() => {
     localStorage.setItem('noteMode', mode)
   }, [mode])
-  const editRef = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => {
-    if (mode === 'source') editRef.current?.focus()
-  }, [mode])
+  // 源码态编辑器句柄：node 切换 / 外部变更流入 / Esc 丢弃时经 setValue 同步内容
+  const vditorRef = useRef<VditorHandle | null>(null)
 
   const [draft, setDraft] = useState('')
   const draftRef = useRef('')
@@ -90,6 +89,7 @@ export function DetailPanel({ node, width, onResize, pinned, onTogglePin, closin
     draftRef.current = note
     setDraft(note)
     setDirtyState(false)
+    vditorRef.current?.setValue(note) // 编辑器活着的窗口内（source 态）同步换内容
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 按节点切换走此 effect；外部 note 变更由下方 effect 处理
   }, [node?.display_id])
 
@@ -101,6 +101,7 @@ export function DetailPanel({ node, width, onResize, pinned, onTogglePin, closin
     if (note !== savedRef.current) {
       savedRef.current = note
       applyDraft(note)
+      vditorRef.current?.setValue(note)
     }
   }, [node])
 
@@ -200,40 +201,38 @@ export function DetailPanel({ node, width, onResize, pinned, onTogglePin, closin
 
       {node == null ? (
         <div className="chat-empty">{t('note.noneSelected')}</div>
-      ) : mode === 'preview' ? (
-        // 预览渲染 draft（而非 node.note）：无脏时两者经上方 effect 保持一致，
-        // 有脏（源码编辑后未保存切回）时立即看到最新内容的渲染效果
-        draft ? (
-          <div className="chat-list">
-            <div className="md">
-              <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{draft}</Markdown>
-            </div>
-          </div>
-        ) : (
-          <div className="chat-empty">
-            {t('note.empty')}
-            <span className="note-hint">{t('note.emptyHint')}</span>
-            <button className="btn sm note-add" onClick={() => setMode('source')}>
-              {t('note.add')}
-            </button>
-          </div>
-        )
+      ) : mode === 'preview' && !draft ? (
+        <div className="chat-empty">
+          {t('note.empty')}
+          <span className="note-hint">{t('note.emptyHint')}</span>
+          <button className="btn sm note-add" onClick={() => setMode('source')}>
+            {t('note.add')}
+          </button>
+        </div>
       ) : (
-        <textarea
-          ref={editRef}
-          className="note-editor"
-          value={draft}
-          spellCheck={false}
-          onChange={(e) => applyDraft(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation() // 编辑态按键不冒泡到 window 快捷键（防 Tab/Enter 误触发）
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault()
-              void save()
-            }
-            if (e.key === 'Escape') applyDraft(savedRef.current) // 局部 Esc = 丢弃编辑回基线
-          }}
-        />
+        // 编辑/预览统一 Vditor 单实例双态：预览 = disabled + 工具栏隐藏，
+        // 编辑 = enabled + 工具栏。渲染效果两态同源（lute/content-theme/
+        // mermaid 同管线），mode 切换不卸载实例（React 分支不变即复用）。
+        // 预览显示 draft：有脏（编辑后未保存切回）时立即看到最新渲染效果
+        <Suspense
+          fallback={
+            <div className="chat-empty">{t('note.editorLoading')}</div>
+          }
+        >
+          <VditorEditor
+            ref={vditorRef}
+            initialValue={draftRef.current}
+            editable={mode === 'source'}
+            locale={lang === 'zh' ? 'zh_CN' : 'en_US'}
+            onInput={(v) => applyDraft(v)}
+            onCtrlEnter={() => void save()}
+            onEsc={() => {
+              applyDraft(savedRef.current)
+              vditorRef.current?.setValue(savedRef.current)
+            }}
+            uploadErrorText={t('note.uploadFailed')}
+          />
+        </Suspense>
       )}
     </div>
   )

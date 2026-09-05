@@ -7,6 +7,9 @@ requires-python = ">=3.12"
 dependencies = [
     "nexusx[cli,fastmcp]>=6,<7",
     "fastapi",
+    # multipart 表单解析（/api/uploads 图片上传）。venv 里一直是 mcp 的传递依赖，
+    # 显式声明防止依赖树变化后搭便车失效
+    "python-multipart",
     "uvicorn",
     "sqlmodel",
     "aiosqlite",

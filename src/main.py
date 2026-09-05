@@ -254,8 +254,17 @@ async def watch_map(ws: WebSocket, map_id: int):
 # ── 页内 Agent 对话通道（ChatPanel 用） ────────────────────────────────
 
 from src import chat  # noqa: E402
+from src import uploads  # noqa: E402
 
 app.include_router(chat.router)
+app.include_router(uploads.router)  # 备注图片上传（Vditor upload.handler 对接）
+
+# 上传图片的静态回显。必须在下方 Mount("/") 之前注册（它会吞掉一切未命中路径）；
+# check_dir=False：目录在首次上传时才创建（upload_image 里 mkdir）
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+uploads.UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(uploads.UPLOADS_DIR)), name="uploads")
 
 
 # ── 前端静态资源（fe/ 的 Vite 构建产物，构建后可用） ─────────────────

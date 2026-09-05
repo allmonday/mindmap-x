@@ -139,6 +139,7 @@ def main() -> None:
     os.environ.setdefault("DATABASE_URL_SYNC", f"sqlite:///{db_posix}")
     os.environ.setdefault("CHAT_SESSIONS_DIR", str(DATA_DIR / "sessions"))
     os.environ.setdefault("CHAT_ARCHIVE_DIR", str(DATA_DIR / "chat_history"))
+    os.environ.setdefault("MINDMAPX_UPLOADS_DIR", str(DATA_DIR / "uploads"))  # 备注图片上传落点
     # 端口运行时才确定，强制覆盖——.env 里的 SELF_MCP_URL 只会对着错误端口
     os.environ["SELF_MCP_URL"] = f"http://127.0.0.1:{port}/mcp/"
     # 桌面模式标记：chat health 接口透传给前端，配置指引文案按模式指向数据目录

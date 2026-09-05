@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8740',
       '/voyager': 'http://localhost:8740',
+      '/uploads': 'http://localhost:8740', // 备注图片静态回显
       '/mcp': {
         target: 'http://localhost:8740',
         ws: true, // streamable-http 可能升级 SSE/WS 长连接

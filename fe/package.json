@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "copy:vditor": "node scripts/copy-vditor.mjs",
+    "dev": "npm run copy:vditor && vite",
+    "build": "npm run copy:vditor && tsc -b && vite build",
     "generate-client": "curl -s http://127.0.0.1:8740/openapi.json > /tmp/mindmap-openapi.json && OPENAPI_INPUT=/tmp/mindmap-openapi.json openapi-ts",
     "lint": "oxlint",
     "preview": "vite preview"
@@ -16,7 +17,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "vditor": "^4.0.0"
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "0.99.0",
