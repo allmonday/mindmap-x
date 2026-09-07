@@ -604,6 +604,8 @@ body.chat-resizing {
   font-size: 17px;
   white-space: nowrap;
 }
+/* 地图 ID 前缀（#N，全局 ID）：与 v{N} 同款弱化样式；与节点 display_id 的 #N 语义区分见 types.ts */
+.map-title .map-id { color: var(--ink-3); font-size: 14px; }
 .map-title .ver { color: var(--ink-3); font-size: 14px; }
 /* v{N} 角标 = 版本历史入口（map-title 整体 pointer-events:none，此处局部恢复，同 crumbs 法） */
 .map-title button.ver {

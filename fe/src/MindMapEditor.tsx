@@ -1372,6 +1372,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           {/* 标题悬浮于画板左上角，独立于工具栏；pointer-events:none 不挡画布交互
               （面包屑在 .crumbs 上局部恢复 pointer-events:auto） */}
           <div className="map-title">
+            <span className="map-id">#{detail.id}</span>
             <span className="name" title={detail.title}>{detail.title}</span>
             <button
               className="ver"
