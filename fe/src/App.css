@@ -377,6 +377,43 @@ body.chat-resizing {
   padding: 10px 14px;
   border-top: 1px solid #ededec;
 }
+
+/* Agent 形式切换条（strands / 本地 Claude Code）：贴输入区上方 */
+.chat-agent-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid #ededec;
+}
+.chat-agent-hint {
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 工具调用轨迹 chip（本地 Claude Code 的 tool_use 事件）：等宽小标签，
+   悬浮 title 展示入参预览；一轮多次调用横向换行排列 */
+.chat-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.chat-tool-chip {
+  font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ink-3);
+  background: var(--bg-side);
+  border: 1px solid #e6e5e3;
+  border-radius: 4px;
+  padding: 0 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .chat-input {
   flex: 1;
   border: 1px solid #e3e2e0;

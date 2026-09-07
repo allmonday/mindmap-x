@@ -254,9 +254,11 @@ async def watch_map(ws: WebSocket, map_id: int):
 # ── 页内 Agent 对话通道（ChatPanel 用） ────────────────────────────────
 
 from src import chat  # noqa: E402
+from src import local_agent  # noqa: E402
 from src import uploads  # noqa: E402
 
 app.include_router(chat.router)
+app.include_router(local_agent.router)  # 本地 Claude Code（ChatPanel 第二种 Agent 形式）
 app.include_router(uploads.router)  # 备注图片上传（Vditor upload.handler 对接）
 
 # 上传图片的静态回显。必须在下方 Mount("/") 之前注册（它会吞掉一切未命中路径）；

@@ -92,6 +92,13 @@ const zh = {
   'chat.historyAria': '历史对话',
   'chat.close': '收起对话',
 
+  // ── Agent 形式切换（strands 页内 / 本地 Claude Code） ──
+  'chat.agentSelect': '选择 Agent 形式',
+  'chat.agentStrands': 'Strands',
+  'chat.agentLocal': 'Claude Code',
+  'chat.localUnavailable': '未找到本地 claude 命令（安装 Claude Code 或设 LOCAL_AGENT_CMD 后重启服务）',
+  'chat.localHint': '本地 Agent · 可读写本机文件与执行命令',
+
   // ── 节点备注面板（DetailPanel） ──
   'note.title': '节点备注',
   'note.viewMode': '备注视图切换',
@@ -122,6 +129,7 @@ const zh = {
   'chat.send': '发送',
   'chat.stop': '停止',
   'chat.stopping': '正在停止…',
+  'chat.resumed': '仍在执行（切图期间未中断）…',
   'chat.interrupted': '⏹ 已中断',
   // ── 版本历史（快照/时间线/回滚） ──
   'rev.open': '查看版本历史（时间线与回滚）',
@@ -232,6 +240,13 @@ const en: Record<I18nKey, string> = {
   'chat.historyAria': 'Chat history',
   'chat.close': 'Hide chat',
 
+  // ── Agent kind switch (in-page strands / local Claude Code) ──
+  'chat.agentSelect': 'Select agent kind',
+  'chat.agentStrands': 'Strands',
+  'chat.agentLocal': 'Claude Code',
+  'chat.localUnavailable': 'Local claude command not found (install Claude Code or set LOCAL_AGENT_CMD, then restart)',
+  'chat.localHint': 'Local agent · can read/write local files and run commands',
+
   // ── 节点备注面板（DetailPanel） ──
   'note.title': 'Node note',
   'note.viewMode': 'Note view mode',
@@ -262,6 +277,7 @@ const en: Record<I18nKey, string> = {
   'chat.send': 'Send',
   'chat.stop': 'Stop',
   'chat.stopping': 'Stopping…',
+  'chat.resumed': 'Still running (kept alive while away)…',
   'chat.interrupted': '⏹ Interrupted',
   'rev.open': 'Version history (timeline & restore)',
   'rev.title': 'Version history',

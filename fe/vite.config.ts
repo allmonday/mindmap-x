@@ -52,6 +52,7 @@ export default defineConfig({
       },
       '/ws': { target: 'ws://localhost:8740', ws: true },
       '/chat': { target: 'ws://localhost:8740', ws: true },
+      '/local-chat': { target: 'ws://localhost:8740', ws: true }, // 本地 Claude Code 对话通道
     },
   },
   build: {

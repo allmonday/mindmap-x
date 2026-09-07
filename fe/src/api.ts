@@ -235,3 +235,16 @@ export const chatApi = {
   archive: (mapId: number, id: string) => get<ArchiveDoc>(`/api/chat/archives/${id}?map_id=${mapId}`),
   status: () => get<ChatGateStatus>('/api/chat/status'),
 }
+
+// 本地 Claude Code 可用性（spawn `claude --version` 探测，服务端缓存 30s）
+export interface LocalAgentStatus {
+  available: boolean
+  enabled: boolean // 全局开关（LOCAL_AGENT_ENABLED，默认关）：false = 前端隐藏入口
+  cmd: string
+  version: string | null
+  reason_code?: string
+}
+
+export const localAgentApi = {
+  status: () => get<LocalAgentStatus>('/api/local-agent/status'),
+}

@@ -29,7 +29,14 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from src.service.mindmap.events import drain_pending
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # root 默认 WARNING 会吞掉观测日志（stop_reason 等）
+# uvicorn 默认只配置 uvicorn.* logger，应用 logger 传播到 root 无 handler 时
+# INFO 会被 lastResort(WARNING) 吞掉——显式挂 handler 才能落进 uvicorn.log
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    logger.addHandler(_h)
+logger.setLevel(logging.INFO)
+logger.propagate = False
 
 
 def _utc_iso(s: str) -> str:
@@ -385,43 +392,106 @@ def _new_interrupt_ctl() -> dict:
     return ctl
 
 
-async def _run_agent(ws: WebSocket, map_id: int, text: str, ctl: dict) -> None:
+# ── 在跑轮次注册表：一轮对话的存活与 WS 连接解耦 ───────────────────────
+#
+# 切图/关面板只是「离场」（摘订阅者），任务继续跑完并照常落盘；回到该图重连
+# WS 时重新附着（重放缓冲 + 续流 + busy 态）。一轮结束（done/error/超时）经
+# 身份守卫从表中摘除——clear/busy/interrupt 也以本表为权威（跨连接生效）。
+
+
+class _Turn:
+    """一轮进行中的对话（map 级单例：同图同时至多一轮，busy 拒绝保证）。"""
+
+    def __init__(self) -> None:
+        self.ctl = _new_interrupt_ctl()
+        self.task: asyncio.Task | None = None
+        # 订阅者可空 = 无人观看（所有连接都已离场），后台继续执行
+        self.subscribers: set[WebSocket] = set()
+        # 当前未完成消息的 delta/reasoning（附着重放用）。消息收尾（complete）
+        # 即清空：重放内容与磁盘历史（FileSessionManager 逐消息落盘）不重叠
+        self.buffer: list[dict] = []
+        # 重放 vs 续流互斥：附着重放期间工作泵不得插队，防文本增量乱序
+        self.lock = asyncio.Lock()
+
+
+_turns: dict[int, _Turn] = {}  # map_id → in-flight turn
+
+
+async def _send_all(turn: _Turn, msg: dict) -> None:
+    """发给全部订阅者；发送失败（连接已死）即摘除该订阅者。须持 turn.lock 调用。"""
+    dead: list[WebSocket] = []
+    for ws in turn.subscribers:
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        turn.subscribers.discard(ws)
+
+
+async def _broadcast(turn: _Turn, msg: dict) -> None:
+    """一次性事件（done/error 等，不重放）。"""
+    async with turn.lock:
+        await _send_all(turn, msg)
+
+
+async def _replayable(turn: _Turn, msg: dict) -> None:
+    """可重放事件（delta/reasoning）：入缓冲 + 广播（同一把锁内，原子有序）。"""
+    async with turn.lock:
+        turn.buffer.append(msg)
+        await _send_all(turn, msg)
+
+
+def _turn_done(turn: _Turn, map_id: int) -> None:
+    """轮次终态（done/error/超时）摘表；身份守卫防摘掉后来的新轮次。"""
+    if _turns.get(map_id) is turn:
+        _turns.pop(map_id, None)
+
+
+async def _run_agent(turn: _Turn, map_id: int, text: str) -> None:
     """一轮对话：strands Agent（工作线程）经 loopback MCP 操作脑图。
 
     并发模型（关键）：strands 的 MCPClient 是同步 API——`__enter__` 起后台线程
     后**阻塞当前线程**等初始化。若直接在协程里调用，会卡死事件循环，而它等待的
     MCP 响应又需要本进程的事件循环服务（loopback）→ 死锁（实测踩过）。
     因此整轮 agent 丢 `asyncio.to_thread`，同步 streaming 回调经
-    `loop.call_soon_threadsafe` 桥回事件循环转发 WS。
+    `loop.call_soon_threadsafe` 桥回事件循环转发订阅者。
 
-    会话延续：FileSessionManager 持久化（构造恢复 / 每轮 sync_agent 落盘）。
-    超时：空闲语义——流式输出（delta/reasoning）持续到达就永不触发，仅当
-    连续 AGENT_TIMEOUT_S 无输出才放弃；工作线程不可强杀，但中断/超时/断开
-    都会经 ctl 递刀，Agent 在下一个取消检查点（通常亚秒级，最坏 = 当前
-    LLM 请求首字节）优雅停止，不再孤儿化跑完整轮。
+    与连接解耦：事件经 turn 的订阅者广播（无人订阅 = 后台继续跑）；轮次终态
+    经 _turn_done 摘表。会话延续：FileSessionManager 持久化（构造恢复 /
+    每轮 sync_agent 落盘）。超时：空闲语义——流式输出（delta/reasoning）持续
+    到达就永不触发，仅当连续 AGENT_TIMEOUT_S 无输出才放弃；工作线程不可强杀，
+    但中断/超时都会经 ctl 递刀，Agent 在下一个取消检查点（通常亚秒级，最坏 =
+    当前 LLM 请求首字节）优雅停止，不再孤儿化跑完整轮。
     """
+    ctl = turn.ctl
+
     # 局部 import：启动期不依赖 strands（未配 env 时服务其余功能照常）
     from strands import Agent
     from strands.models.openai import OpenAIModel
     from strands.tools.mcp import MCPClient
 
     loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+    queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
 
     def on_event(**kwargs) -> None:
         """strands 同步流式回调（工作线程内执行，事件 dict 以 kwargs 展开）。
 
         文本增量 = delta + data（TextStreamEvent）；思考增量 = delta + reasoning +
         reasoningText（ReasoningTextStreamEvent，GLM 推理模型先思考后作答）；
-        complete=True 是消息收尾（完整文本重复送达，跳过）。
+        complete=True 是消息收尾（完整文本重复送达，不转发）——但它是重放
+        缓冲的清空信号：该消息已完整落盘，重放只剩历史，缓冲不 overlaps。
         """
+        if kwargs.get("complete"):
+            loop.call_soon_threadsafe(queue.put_nowait, ("flush", None))
+            return
         if "delta" in kwargs and kwargs.get("reasoning"):
-            text = kwargs.get("reasoningText")
-            if isinstance(text, str) and text:
-                loop.call_soon_threadsafe(queue.put_nowait, ("reasoning", text))
+            rtext = kwargs.get("reasoningText")
+            if isinstance(rtext, str) and rtext:
+                loop.call_soon_threadsafe(queue.put_nowait, ("reasoning", rtext))
             return
         data = kwargs.get("data")
-        if "delta" in kwargs and isinstance(data, str) and data and not kwargs.get("complete"):
+        if "delta" in kwargs and isinstance(data, str) and data:
             loop.call_soon_threadsafe(queue.put_nowait, ("delta", data))
 
     def work() -> None:
@@ -490,17 +560,23 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str, ctl: dict) -> None:
                 continue  # 工作线程仍在跑，回来看 task 状态
             last_activity = time.monotonic()
             if kind == "delta":
-                await ws.send_json({"type": "delta", "text": payload})
+                await _replayable(turn, {"type": "delta", "text": payload})
             elif kind == "reasoning":
-                await ws.send_json({"type": "reasoning", "text": payload})
+                await _replayable(turn, {"type": "reasoning", "text": payload})
+            elif kind == "flush":
+                async with turn.lock:
+                    turn.buffer.clear()
     except asyncio.CancelledError:
-        # 连接关闭：事件循环侧退出，同时给工作线程递刀（不留孤儿继续写库写盘）
+        # 服务关闭等强制取消：给工作线程递刀（不留孤儿继续写库写盘）。
+        # 断连不再走这里——订阅者离场只摘订阅，轮次继续
         ctl["request"]()
         raise
+    finally:
+        _turn_done(turn, map_id)
     if timed_out:
         ctl["request"]()  # 切断工作线程：孤儿窗口从"跑完整轮"缩到下一检查点
-        await ws.send_json(
-            {"type": "error", "message": f"Agent 空闲超时（{AGENT_TIMEOUT_S:.0f}s 无输出），已放弃等待"}
+        await _broadcast(
+            turn, {"type": "error", "message": f"Agent 空闲超时（{AGENT_TIMEOUT_S:.0f}s 无输出），已放弃等待"}
         )
         return
     interrupted = ctl.get("stop_reason") == "cancelled"
@@ -509,11 +585,11 @@ async def _run_agent(ws: WebSocket, map_id: int, text: str, ctl: dict) -> None:
             # 中断引发的异常（如取消后的 MCP 会话清理失败）：按已中断汇报，
             # 不给用户报"执行失败"
             logger.warning("agent turn ended with exception after interrupt: %r", exc)
-            await ws.send_json({"type": "done", "interrupted": True})
+            await _broadcast(turn, {"type": "done", "interrupted": True})
         else:
-            await ws.send_json({"type": "error", "message": f"Agent 执行失败: {type(exc).__name__}: {exc}"})
+            await _broadcast(turn, {"type": "error", "message": f"Agent 执行失败: {type(exc).__name__}: {exc}"})
     else:
-        await ws.send_json({"type": "done", "interrupted": interrupted})
+        await _broadcast(turn, {"type": "done", "interrupted": interrupted})
 
 
 # ── WS 端点 ───────────────────────────────────────────────────────────
@@ -534,7 +610,20 @@ async def chat(ws: WebSocket, map_id: int):
     if history:
         await ws.send_json({"type": "history", "messages": history})
 
-    task: asyncio.Task | None = None
+    # 附着到在跑的一轮（切图回来 / 断线重连）：重放当前未完成消息的缓冲，
+    # 之后与在场连接同权续流。持 turn.lock 保证重放与续流不乱序
+    turn = _turns.get(map_id)
+    if turn is not None and turn.task is not None and not turn.task.done():
+        async with turn.lock:
+            await ws.send_json({"type": "resume"})
+            for msg in turn.buffer:
+                await ws.send_json(msg)
+            turn.subscribers.add(ws)
+
+    def running() -> _Turn | None:
+        t = _turns.get(map_id)
+        return t if t is not None and t.task is not None and not t.task.done() else None
+
     try:
         while True:
             raw = await ws.receive_text()
@@ -545,7 +634,7 @@ async def chat(ws: WebSocket, map_id: int):
             if msg.get("type") == "clear":
                 # busy 时必须拒绝：in-flight 删除会被工作线程的落盘
                 # makedirs(exist_ok=True) 静默重建目录并写回本轮对话（"复活"）
-                if task is not None and not task.done():
+                if running() is not None:
                     await ws.send_json({"type": "busy", "message": "Agent 正在思考，稍后再清空"})
                     continue
                 def clear_all() -> dict | None:
@@ -557,17 +646,18 @@ async def chat(ws: WebSocket, map_id: int):
                 continue
             if msg.get("type") == "interrupt":
                 # 前端"停止"按钮。不回执：前端本地置 stopping 防重复点击，
-                # 权威信号是随后的 done.interrupted。task 已结束（含两轮之间
-                # 的空档）→ 静默忽略；重复 interrupt 幂等无害。
-                if task is not None and not task.done():
-                    ctl["request"]()
+                # 权威信号是随后的 done.interrupted。轮次已结束（含两轮之间
+                # 的空档）→ 静默忽略；重复 interrupt 幂等无害。注册表为权威
+                # → 附着连接也能停掉"你不在时"启动/继续的那一轮
+                if (t := running()) is not None:
+                    t.ctl["request"]()
                 continue
             if msg.get("type") != "user":
                 continue
             text = str(msg.get("text", "")).strip()
             if not text:
                 continue
-            if task is not None and not task.done():
+            if running() is not None:
                 await ws.send_json({"type": "busy", "message": "Agent 正在处理上一条消息…"})
                 continue
             # 外部改动通知：你不在时别人改了树（用户手改 / 外部 Agent 写入）→
@@ -590,12 +680,17 @@ async def chat(ws: WebSocket, map_id: int):
                         + "\n".join(f"- {d}" for d in by_agent)
                     )
                 text += "\n\n<external_changes>\n" + "\n".join(sections) + "\n</external_changes>"
-            # 不 await：主循环继续收消息（busy 拒绝可达）；空闲超时由 runner 内部处理
-            # ctl 先于 create_task 武装：消灭"发送后瞬间点停止"的丢包窗口
-            ctl = _new_interrupt_ctl()
-            task = asyncio.create_task(_run_agent(ws, map_id, text, ctl))
+            # 不 await：主循环继续收消息（busy 拒绝可达）；空闲超时由 runner 内部处理。
+            # 订阅者/注册表都先于 create_task 就位：消灭"发送后瞬间点停止"的
+            # 丢包窗口，也保证最早的事件不会漏发发起连接
+            turn = _Turn()
+            turn.subscribers.add(ws)
+            _turns[map_id] = turn
+            turn.task = asyncio.create_task(_run_agent(turn, map_id, text))
     except WebSocketDisconnect:
         pass
     finally:
-        if task is not None and not task.done():
-            task.cancel()  # 浏览器关面板/切图：带走正在跑的 Agent
+        # 离场只摘订阅，不杀任务：切图/关面板后本轮继续跑完并落盘，
+        # 回来重连即附着（见入口的 attach 逻辑）
+        if (t := _turns.get(map_id)) is not None:
+            t.subscribers.discard(ws)

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { mdComponents } from './Mermaid'
-import { chatApi, gateReasonText, type ArchiveDoc, type ArchiveMeta } from './api'
+import { chatApi, gateReasonText, localAgentApi, type ArchiveDoc, type ArchiveMeta } from './api'
 import { fmtTime, useI18n } from './i18n'
 
 interface ChatMsg {
@@ -12,7 +12,16 @@ interface ChatMsg {
   streaming?: boolean
   error?: boolean
   interrupted?: boolean // 本轮被用户中断（done.interrupted），仅前端呈现
+  tools?: ToolChip[] // 工具调用轨迹（本地 Claude Code 的 tool_use 事件，chip 展示）
 }
+
+interface ToolChip {
+  name: string
+  preview?: string
+}
+
+// Agent 形式：strands = 页内 SDK Agent；local = 服务端 spawn 的本机 Claude Code
+type AgentKind = 'strands' | 'local'
 
 interface Props {
   mapId: number
@@ -59,9 +68,35 @@ const HistoryIcon = () => (
 // 页内 Agent 对话面板：变更即时反馈由画布的 /ws 通道负责，这里只做对话文本。
 export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
   const { t, locale } = useI18n()
+  // Agent 形式跨会话记忆；两套通道历史独立（strands 落盘 / local 服务端内存），
+  // 切换时各自重连重推 history
+  const [agent, setAgent] = useState<AgentKind>(
+    () => (localStorage.getItem('chatAgent') as AgentKind) || 'strands',
+  )
+  useEffect(() => {
+    localStorage.setItem('chatAgent', agent)
+  }, [agent])
+  // 本地 Claude Code 全局开关（LOCAL_AGENT_ENABLED，默认关）：关 = 隐藏形式
+  // 切换条、localStorage 残留 'local' 回退 strands；探测失败也按关处理（入口
+  // 不亮比误亮安全——打磨期特性宁可藏拙）
+  const [localEnabled, setLocalEnabled] = useState(false)
+  useEffect(() => {
+    let alive = true
+    localAgentApi
+      .status()
+      .then((s) => { if (alive) setLocalEnabled(s.enabled !== false) })
+      .catch(() => { /* 网络异常：保持隐藏 */ })
+    return () => { alive = false }
+  }, [])
+  useEffect(() => {
+    if (!localEnabled && agent === 'local') setAgent('strands')
+  }, [localEnabled, agent])
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  // 附着到"你不在时启动/继续的一轮"（服务端 resume 消息）：状态栏用专属文案
+  // 区分于本轮发起的思考；done/error/断线时与 busy 一同复位
+  const [resumed, setResumed] = useState(false)
   const [stopping, setStopping] = useState(false) // 已发 interrupt、等待 done（防重复点击）
   const [healthErr, setHealthErr] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
@@ -84,6 +119,9 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
   useEffect(() => {
     setMessages([])
     setHealthErr(null)
+    setBusy(false)
+    setResumed(false)
+    setStopping(false)
     setView({ kind: 'chat' })
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
 
@@ -92,21 +130,49 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
     let closed = false // 组件卸载/换图：停止重连
     let ws: WebSocket | null = null
     let timer: number | undefined
+    let heartbeat: number | undefined
     let attempt = 0
+    // 断连观测：close 时经 sendBeacon 上报服务端落日志
+    // （1000 正常关 / 1001 going away / 1006 网络异常——移动端问题的铁证）
+    let lastClose: { code: number; reason: string } | null = null
 
     const connect = () => {
       if (closed) return
-      ws = new WebSocket(`${proto}://${location.host}/chat/${mapId}`)
+      // 两种 Agent 形式各自的通道：strands /chat（SDK 进程内）；
+      // local /local-chat（服务端 spawn 本机 claude -p）
+      const path = agent === 'local' ? `/local-chat/${mapId}` : `/chat/${mapId}`
+      ws = new WebSocket(`${proto}://${location.host}${path}`)
       wsRef.current = ws
 
       ws.onopen = () => {
         attempt = 0
         setConnected(true)
+        // 应用层心跳：局域网/移动网络路径上中间设备常不透传协议层 ping/pong，
+        // 只对真实数据流量重置空闲计时——25s 一跳把空闲连接续命
+        heartbeat = window.setInterval(() => {
+          if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
+        }, 25000)
       }
-      ws.onclose = () => {
+      ws.onclose = (ev: CloseEvent) => {
         setConnected(false)
         setBusy(false) // 旧连接上在跑的一轮已不可达（done 发不到这里），解锁输入
+        setResumed(false)
         setStopping(false)
+        window.clearInterval(heartbeat)
+        if (!closed) {
+          lastClose = { code: ev.code, reason: ev.reason }
+          console.warn(`[chat-ws] closed: code=${ev.code} reason=${ev.reason || '(empty)'}`)
+          // 立即走 HTTP 上报（不能搭 WS：重连失败循环里 WS 永远发不出去——
+          // 恰是最需要观测的场景）；sendBeacon 页面卸载也能到达
+          try {
+            navigator.sendBeacon?.(
+              '/api/ws-close-report',
+              JSON.stringify({ channel: agent, map_id: mapId, ...lastClose }),
+            )
+          } catch {
+            /* 观测性上报：失败即忽略 */
+          }
+        }
         if (closed) return
         const delay = Math.min(1000 * 2 ** attempt, 8000)
         attempt += 1
@@ -119,13 +185,30 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
     function onMessage(e: MessageEvent) {
       const msg = JSON.parse(e.data)
       if (msg.type === 'status') {
+        // 两套端点形状不同：strands {ok, reason_code…} / local {available, version}
         setHealthErr(
-          msg.ok
-            ? null
-            : msg.reason_code
-              ? gateReasonText(t, msg.reason_code, msg.reason_detail)
-              : t('chat.unavailable'),
+          agent === 'local'
+            ? msg.available
+              ? null
+              : t('chat.localUnavailable')
+            : msg.ok
+              ? null
+              : msg.reason_code
+                ? gateReasonText(t, msg.reason_code, msg.reason_detail)
+                : t('chat.unavailable'),
         )
+        return
+      }
+      if (msg.type === 'tool') {
+        // 本地 Claude Code 的工具调用（tool_use 块）：chip 追加到当前流式气泡
+        const chip = { name: String(msg.name ?? '?'), preview: msg.input_preview }
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last?.role === 'agent' && last.streaming) {
+            return [...prev.slice(0, -1), { ...last, tools: [...(last.tools ?? []), chip] }]
+          }
+          return [...prev, { role: 'agent' as const, text: '', tools: [chip], streaming: true }]
+        })
         return
       }
       if (msg.type === 'history') {
@@ -137,6 +220,13 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             thinking: m.thinking,
           })),
         )
+        return
+      }
+      if (msg.type === 'resume') {
+        // 附着到在跑的一轮（切图回来/断线重连时服务端先发此标记再重放缓冲）：
+        // busy 态让输入禁用、停止按钮出现，随后 delta/reasoning 续流照常追加
+        setBusy(true)
+        setResumed(true)
         return
       }
       if (msg.type === 'reasoning') {
@@ -179,6 +269,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
           return prev
         })
         setBusy(false)
+        setResumed(false)
         setStopping(false)
       } else if (msg.type === 'busy') {
         setMessages((prev) => [...prev, { role: 'agent', text: msg.message, error: true }])
@@ -192,6 +283,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
           return [...prev, { role: 'agent', text: msg.message, error: true }]
         })
         setBusy(false)
+        setResumed(false)
         setStopping(false) // 超时/异常与中断竞态时也要复位，防停止按钮卡死
       }
     }
@@ -199,9 +291,20 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
     return () => {
       closed = true
       window.clearTimeout(timer)
-      ws?.close()
+      window.clearInterval(heartbeat)
+      if (ws) {
+        // 摘掉旧连接全部回调再关闭：close() 是异步握手，close 事件可能晚于
+        // 新连接的 onopen 到达（移动端网络慢/键盘扰动时必现）——僵尸 onclose
+        // 会把新连接刚置好的 connected 打成 false，且再无事件能拉回（卡死
+        // "连接中"）。解绑后旧连接静默终结，UI 状态完全由新 effect 驱动
+        ws.onopen = null
+        ws.onmessage = null
+        ws.onclose = null
+        ws.onerror = null
+        ws.close()
+      }
     }
-  }, [mapId]) // eslint-disable-line react-hooks/exhaustive-deps -- view/loadArchives 只在 cleared 分支读取，避免重连循环
+  }, [mapId, agent]) // eslint-disable-line react-hooks/exhaustive-deps -- view/loadArchives 只在 cleared 分支读取，避免重连循环
 
   // 流式追加时自动滚到底
   useEffect(() => {
@@ -265,6 +368,20 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
       {msgs.map((m, i) => (
         <div key={i} className={`bubble-row ${m.role}`}>
           <div className={`bubble ${m.role} ${m.error ? 'err' : ''}`}>
+            {m.tools && m.tools.length > 0 && (
+              // 工具调用轨迹（本地 Claude Code）：名字做 chip，悬浮看入参预览
+              <div className="chat-tools">
+                {m.tools.map((tool, j) => (
+                  <span
+                    key={j}
+                    className="chat-tool-chip"
+                    title={tool.preview || undefined}
+                  >
+                    ⚙ {tool.name.replace(/^mcp__mindmap__/, '')}
+                  </span>
+                ))}
+              </div>
+            )}
             {m.thinking && (
               <details className="thinking" open={streaming && m.streaming && !m.text}>
                 <summary>{t('chat.thinkingProcess')}</summary>
@@ -322,7 +439,9 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
                 : busy
                   ? stopping
                     ? t('chat.stopping')
-                    : t('chat.thinking')
+                    : resumed
+                      ? t('chat.resumed')
+                      : t('chat.thinking')
                   : connected
                     ? t('chat.ready')
                     : t('chat.connecting')}
@@ -351,14 +470,17 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             <ClearIcon />
           </button>
         )}
-        <button
-          className={`btn icon ${view.kind !== 'chat' ? 'active' : ''}`}
-          onClick={showArchives}
-          title={view.kind === 'chat' ? t('chat.viewHistory') : t('chat.backToCurrent')}
-          aria-label={t('chat.historyAria')}
-        >
-          <HistoryIcon />
-        </button>
+        {/* 归档是 strands 会话的功能（local 通道内存历史，无归档落盘） */}
+        {agent === 'strands' && (
+          <button
+            className={`btn icon ${view.kind !== 'chat' ? 'active' : ''}`}
+            onClick={showArchives}
+            title={view.kind === 'chat' ? t('chat.viewHistory') : t('chat.backToCurrent')}
+            aria-label={t('chat.historyAria')}
+          >
+            <HistoryIcon />
+          </button>
+        )}
         <button className="btn icon" onClick={onClose} title={t('chat.close')} aria-label={t('chat.close')}>▸</button>
       </div>
 
@@ -419,6 +541,31 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
       )}
 
       {view.kind === 'chat' && (
+        <>
+        {/* Agent 形式切换：strands（页内 SDK）/ Claude Code（本机 spawn）。
+            放输入区上方——"你正在跟谁说话"的语义在这里最直观。
+            localEnabled=false（全局开关关/探测失败）整条隐藏，只留 strands */}
+        {localEnabled && (
+        <div className="chat-agent-bar">
+          <div className="seg" role="group" aria-label={t('chat.agentSelect')}>
+            <button
+              className={`btn sm${agent === 'strands' ? ' active' : ''}`}
+              aria-pressed={agent === 'strands'}
+              onClick={() => setAgent('strands')}
+            >
+              {t('chat.agentStrands')}
+            </button>
+            <button
+              className={`btn sm${agent === 'local' ? ' active' : ''}`}
+              aria-pressed={agent === 'local'}
+              onClick={() => setAgent('local')}
+            >
+              {t('chat.agentLocal')}
+            </button>
+          </div>
+          {agent === 'local' && <span className="chat-agent-hint">{t('chat.localHint')}</span>}
+        </div>
+        )}
         <div className="chat-input-row">
           <textarea
             className="chat-input"
@@ -457,6 +604,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             </button>
           )}
         </div>
+        </>
       )}
     </div>
   )
