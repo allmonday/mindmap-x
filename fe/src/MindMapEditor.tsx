@@ -850,21 +850,36 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     [mapId, queueFoldMutation],
   )
 
+  // 层级收放（刻度条/全部展开）后节点大批增删 + 布局重排，原视口常对空白（图
+  // "消失"感）——动画落定后拉回全图。连点重置计时（以最后一次为准）；单节点
+  // 收放（space）不触发——视口就在该节点上，无需打断
+  const foldFitTimerRef = useRef<number | undefined>(undefined)
+  const scheduleFoldFit = useCallback(() => {
+    window.clearTimeout(foldFitTimerRef.current)
+    foldFitTimerRef.current = window.setTimeout(
+      () => rfRef.current?.fitView({ padding: 0.25, maxZoom: 1 }),
+      320,
+    )
+  }, [])
   const setFoldLevel = useCallback(
-    (level: number) =>
+    (level: number) => {
       queueFoldMutation(
         (current) => foldToLevelOptimistically(current, level),
         (clientRequestId) => api.setFoldLevel(mapId, level, clientRequestId),
-      ),
-    [mapId, queueFoldMutation],
+      )
+      scheduleFoldFit()
+    },
+    [mapId, queueFoldMutation, scheduleFoldFit],
   )
   const expandAll = useCallback(
-    () =>
+    () => {
       queueFoldMutation(
         expandAllOptimistically,
         (clientRequestId) => api.expandAll(mapId, clientRequestId),
-      ),
-    [mapId, queueFoldMutation],
+      )
+      scheduleFoldFit()
+    },
+    [mapId, queueFoldMutation, scheduleFoldFit],
   )
 
 
