@@ -49,6 +49,15 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
 ) {
   const hostRef = useRef<HTMLDivElement>(null)
   const vditorRef = useRef<Vditor | null>(null)
+  // vditor 构造是异步两段的：new 完成时 this.vditor 仍是 undefined，i18n 脚本
+  // 加载完 init() 跑完（after 回调）后实例才真正可用。ready 前任何实例方法
+  // （destroy/setValue/...）要么抛 TypeError 要么静默丢失，因此：
+  // - ready 前 setValue/focus 挂起到 pendingRef，after 里补放；
+  // - ready 前 unmount 不调 destroy（半初始化实例会抛错），标记 disposed，
+  //   after 迟到时由它补销毁（此时实例已完整，销毁安全，且先于下一个实例 init）
+  const readyRef = useRef(false)
+  const disposedRef = useRef(false)
+  const pendingRef = useRef<{ value?: string; focus?: boolean }>({})
   // 事件回调经 ref 转发，避免回调身份变化触发编辑器重建
   const cbRef = useRef({ onInput, onCtrlEnter, onEsc, uploadErrorText })
   cbRef.current = { onInput, onCtrlEnter, onEsc, uploadErrorText }
@@ -67,6 +76,9 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
     const el = hostRef.current
     if (!el) return
     let vditor: Vditor | null = null
+    readyRef.current = false
+    disposedRef.current = false
+    pendingRef.current = {}
     // handler 模式：上传完全自定义（fetch 我们的 /api/uploads），不依赖
     // Vditor 的 url 模式响应格式；成功后 insertValue 插入相对 URL 的 md 图片，
     // 失败经 vditor.tip 提示（handler 返回类型要求 Promise<string>/Promise<null>
@@ -129,20 +141,45 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
       },
       after: () => {
         if (!vditor) return
+        // unmount 已发生在 init 完成前（StrictMode 双挂载 / 快速开关面板）：
+        // 此刻实例才完整、销毁才安全；顺手把宿主元素清回 init 前状态，
+        // 不挡下一个实例在同一元素上重建
+        if (disposedRef.current) {
+          vditor.destroy()
+          return
+        }
         vditorRef.current = vditor
+        readyRef.current = true
         applyEditable(vditor, editableRef.current)
+        // 补放 ready 前挂起的调用（首个 source 态挂载的 setValue / focus）
+        const pending = pendingRef.current
+        if (pending.value !== undefined) vditor.setValue(pending.value, true)
+        if (pending.focus) vditor.focus()
       },
     })
     return () => {
+      disposedRef.current = true
       vditorRef.current = null
-      vditor?.destroy()
+      const wasReady = readyRef.current
+      readyRef.current = false
+      // ready 前不销毁（半初始化实例 destroy 会抛 TypeError）；disposedRef
+      // 已标记，迟到的 after 会补销毁
+      if (vditor && wasReady) vditor.destroy()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- locale 变化整体重建可接受（罕见）；value 类变化经 setValue 走 ref
   }, [locale])
 
   useImperativeHandle(ref, () => ({
-    setValue: (markdown: string) => vditorRef.current?.setValue(markdown, true),
-    focus: () => vditorRef.current?.focus(),
+    setValue: (markdown: string) => {
+      const v = vditorRef.current
+      if (v && readyRef.current) v.setValue(markdown, true)
+      else pendingRef.current.value = markdown // init 未完成：挂起，after 里补放
+    },
+    focus: () => {
+      const v = vditorRef.current
+      if (v && readyRef.current) v.focus()
+      else pendingRef.current.focus = true
+    },
   }))
 
   // 预览/编辑切换（实例 ready 后走这里；ready 前由 after 回调按 editableRef 应用）
