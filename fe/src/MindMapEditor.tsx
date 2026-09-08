@@ -1164,10 +1164,13 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   // Ctrl/Cmd+P = 编号跳转面板开关。capture 阶段独立挂：先于各输入框自己的
   // keydown stopPropagation（聊天/备注/outline 输入态也能触发，VS Code 式全局
   // 命令键）——这是对"输入区隔离快捷键"惯例的唯一刻意例外。
-  // preventDefault 压掉浏览器打印
+  // preventDefault 压掉浏览器打印（打印是 Ctrl+P keydown 的默认动作，Docs/
+  // vscode.dev 同款机制）；判定用 e.code（物理键位）：e.key 在非拉丁布局
+  // （俄语等）下不是 'p'，漏判会让打印真弹出来
   useEffect(() => {
     const onGotoKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'p') {
+      if (e.repeat) return // 按住不放：不反复开合
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyP') {
         e.preventDefault()
         setGotoText('')
         setGotoActiveRaw(0)
