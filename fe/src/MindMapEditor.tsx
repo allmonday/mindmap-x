@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   BaseEdge,
   Controls,
@@ -37,10 +38,11 @@ type MindNodeData = {
   isEditing: boolean
   isAdding: boolean
   addingDir: 'child' | 'sibling' // 输入框方位与提交语义（child=挂锚点下，sibling=挂锚点父）
-  selectedByPointer: boolean // 选中来源：点击亮按钮行，键盘导航只高亮
+  selectedByPointer: boolean // 选中来源：长按激活亮按钮行，单击/键盘导航只高亮
   hasChildren: boolean
   hasNote: boolean // 带 markdown 备注（角标 ✎ 的显隐源）
-  onSelect: (id: number, hasNote?: boolean) => void // hasNote 驱动备注面板开合
+  onSelect: (id: number) => void // 静默选中：只高亮（方向键/快捷键的锚点），不弹任何 UI
+  onActivate: (id: number, hasNote: boolean) => void // 长按激活：亮按钮行 + 备注面板按需开合
   onStartEdit: (id: number) => void
   onToggleCollapse: (lnode: LNode) => void
   onCommitEdit: (id: number, text: string) => void
@@ -54,6 +56,12 @@ type MindNodeData = {
 }
 
 type MindNode = Node<MindNodeData, 'mind'>
+
+// 长按阈值（ms）：setTimeout 与进度环动画共用同一数值——环画满即触发
+const HOLD_MS = 480
+// 环显示延迟（ms）：按住超过它环才出现（快速点击不闪环）；环动画以
+// -REVEAL_MS 的 delay 起步，reveal 时进度 = 已真实按住的时长
+const REVEAL_MS = 100
 
 function MindNodeView({ data, selected }: NodeProps<MindNode>) {
   const { lnode, isEditing, isAdding, addingDir, selectedByPointer, hasChildren, hasNote } = data
@@ -82,8 +90,46 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
     if (!selected) setConfirmDel(false) // 选中丢失即解除 armed 态，不留悬亮红
   }, [selected])
   useEffect(() => () => window.clearTimeout(delTimer.current), [])
-  // 按钮行只认点击选中；键盘导航选中只做高亮定位（操作走快捷键）
+  // 按钮行只认长按激活；单击/键盘导航选中只做高亮定位（操作走快捷键）
   const showActions = !isEditing && selected && selectedByPointer
+
+  // ── 长按激活（480ms）：亮按钮行 + 备注面板。三防 ─────────────────────
+  // 1) 拖拽取消：按住节点拖动 = 平移画布（nodesDraggable=false），移动超
+  //    8px 即取消长按，想平移时不会满屏误亮按钮
+  // 2) click 吞除：浏览器在松手才发 click，长按已触发激活后这个 click 会
+  //    再跑一次静默选中——consumed 标记跳过并在下一次按下复位
+  // 3) 编辑/加节点态豁免：textarea 覆盖节点，指针事件在输入上下文无意义
+  // 进度环：lp 非 null = 按住中且已过 REVEAL_MS（驱动节点按压态 + 环渲染）。
+  // 环动画时长 = HOLD_MS（模块级同源常量），CSS 动画画满的一刻正是 setTimeout
+  // 触发的一刻；REVEAL_MS 内的快速点击不显示环（干扰感来源），reveal 时环以
+  // 负 animation-delay 起步——出现即已画 REVEAL_MS/HOLD_MS（进度语义真实）。
+  // dx/dy = 隐藏期内的微挪量（reveal 时环直接落在当前指针处，不回跳）
+  const [lp, setLp] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null)
+  const lpRingRef = useRef<HTMLDivElement>(null)
+  const lpTimer = useRef<number | undefined>(undefined)
+  const lpRevealTimer = useRef<number | undefined>(undefined)
+  const lpMove = useRef<((ev: PointerEvent) => void) | null>(null)
+  const lpStart = useRef<{ x: number; y: number } | null>(null)
+  const lpNow = useRef<{ x: number; y: number } | null>(null) // 最新指针位置（隐藏期也要记）
+  const lpConsumed = useRef(false)
+  const lpClear = () => {
+    window.clearTimeout(lpTimer.current)
+    window.clearTimeout(lpRevealTimer.current)
+    if (lpMove.current) window.removeEventListener('pointermove', lpMove.current)
+    lpMove.current = null
+    lpStart.current = null
+    lpNow.current = null
+    setLp(null) // 环随取消立即消失（CSS 动画随元素移除而中断，无需单独清理）
+  }
+  // 卸载兜底：只清定时器/监听器（不动 state）
+  useEffect(
+    () => () => {
+      window.clearTimeout(lpTimer.current)
+      window.clearTimeout(lpRevealTimer.current)
+      if (lpMove.current) window.removeEventListener('pointermove', lpMove.current)
+    },
+    [],
+  )
 
   const clickDelete = () => {
     if (confirmDel) {
@@ -98,13 +144,54 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
 
   return (
     <div
-      className={`rf-node ${isRoot ? 'root' : ''} ${selected ? 'sel' : ''}`}
+      className={`rf-node ${isRoot ? 'root' : ''} ${selected ? 'sel' : ''} ${lp ? 'holding' : ''}`}
       // 编辑中放开高度（min-height 保底不缩）：节点随 textarea 内容向下生长，
       // commit 后由布局重排归位；期间 z-index 抬升盖住下方节点（见 App.css）
       style={{ width: lnode.w, height: isEditing ? 'auto' : lnode.h, minHeight: isEditing ? lnode.h : undefined }}
+      onPointerDown={(e) => {
+        if (isEditing || isAdding) return
+        lpConsumed.current = false
+        lpStart.current = { x: e.clientX, y: e.clientY }
+        lpNow.current = { x: e.clientX, y: e.clientY }
+        // 环延迟 REVEAL_MS 才出现（快速点击不打扰）；激活计时立即开始——
+        // 环的动画负延迟与之配合，reveal 时进度直接对齐真实已按时长
+        lpRevealTimer.current = window.setTimeout(() => {
+          const s = lpStart.current
+          if (!s) return
+          const p = lpNow.current ?? s
+          setLp({ x: s.x, y: s.y, dx: p.x - s.x, dy: p.y - s.y })
+        }, REVEAL_MS)
+        const onMove = (ev: PointerEvent) => {
+          const s = lpStart.current
+          if (!s) return
+          lpNow.current = { x: ev.clientX, y: ev.clientY }
+          if (Math.hypot(ev.clientX - s.x, ev.clientY - s.y) > 8) {
+            lpClear()
+            return
+          }
+          // 阈值内的微挪：环跟手。ref 直改 style 不走 setState，60fps 无重渲染
+          if (lpRingRef.current) lpRingRef.current.style.translate = `${ev.clientX - s.x}px ${ev.clientY - s.y}px`
+        }
+        lpMove.current = onMove
+        window.addEventListener('pointermove', onMove)
+        lpTimer.current = window.setTimeout(() => {
+          window.removeEventListener('pointermove', onMove)
+          lpMove.current = null
+          setLp(null)
+          lpConsumed.current = true
+          data.onActivate(n.display_id, data.hasNote)
+        }, HOLD_MS)
+      }}
+      onPointerUp={lpClear}
+      onPointerLeave={lpClear}
+      onPointerCancel={lpClear}
       onClick={(e) => {
         e.stopPropagation()
-        data.onSelect(n.display_id, data.hasNote)
+        if (lpConsumed.current) {
+          lpConsumed.current = false // 长按已激活：吞掉松手 click，不再静默选中
+          return
+        }
+        data.onSelect(n.display_id)
       }}
       onDoubleClick={(e) => {
         e.stopPropagation()
@@ -274,6 +361,32 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
           {n.collapsed ? <FoldPlusIcon /> : <FoldMinusIcon />}
         </button>
       )}
+
+      {/* 长按进度环：Portal 到 body——React Flow 节点位于 transform 容器内，
+          position:fixed 在其内部会被 transform 祖先劫持成定位锚（fixed 失效），
+          必须跳出节点树。环随指针（微挪经 ref 直改 translate），画满即触发；
+          负 animation-delay = reveal 时已画到真实进度（见 REVEAL_MS 注释） */}
+      {lp &&
+        createPortal(
+          <div
+            ref={lpRingRef}
+            className="lp-ring"
+            style={{ left: lp.x, top: lp.y, translate: `${lp.dx}px ${lp.dy}px` }}
+          >
+            <svg viewBox="0 0 36 36" aria-hidden="true">
+              <circle className="lp-ring-track" cx="18" cy="18" r="15" />
+              <circle
+                className="lp-ring-bar"
+                cx="18"
+                cy="18"
+                r="15"
+                pathLength={100}
+                style={{ animationDuration: `${HOLD_MS}ms`, animationDelay: `-${REVEAL_MS}ms` }}
+              />
+            </svg>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
@@ -898,17 +1011,13 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const layoutRef = useRef(layout)
   layoutRef.current = layout
 
-  // 落点动作（方向键导航 / Ctrl+P 跳转共用）：选中 + 备注面板按目标有无备注
-  // 开合（pin 恒开）+ 视口出界（60px 边距）才平移到中心（保持 zoom）。
-  // 60ms 等 React 渲染出目标 DOM（展开场景新节点要一轮 render 才出现）
+  // 落点动作（方向键导航 / Ctrl+P 跳转共用）：静默选中（不弹备注面板——
+  // 弹出只认显式入口：长按/角标/d/pin）+ 视口出界（60px 边距）才平移到中心
+  // （保持 zoom）。60ms 等 React 渲染出目标 DOM（展开场景新节点要一轮 render）
   const revealAndSelect = useCallback(
-    (target: number, opts?: { byPointer?: boolean }) => {
+    (target: number) => {
       setSelectedId(target)
-      setSelectedByPointer(opts?.byPointer ?? false)
-      if (!notePinned) {
-        const tnode = detail?.nodes.find((n) => n.display_id === target)
-        setNoteOpen(!!tnode?.note)
-      }
+      setSelectedByPointer(false)
       window.setTimeout(() => {
         const el = document.querySelector(`.react-flow__node[data-id="${target}"]`)
         const wrap = document.querySelector('.rf-wrap')
@@ -923,7 +1032,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         rfRef.current.setCenter(ln.x + ln.w / 2, ln.y, { duration: 300, zoom: rfRef.current.getZoom() })
       }, 60)
     },
-    [detail, notePinned],
+    [detail],
   )
 
   // Ctrl+P 跳转：折叠目标先乐观展开祖链（数据在 detail.nodes，折叠只是渲染
@@ -950,7 +1059,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           (clientRequestId) => api.setNodeCollapsed(mapId, id, false, clientRequestId),
         )
       }
-      revealAndSelect(target, { byPointer: true })
+      revealAndSelect(target)
     },
     [detail, focusId, mapId, queueFoldMutation, revealAndSelect],
   )
@@ -1275,11 +1384,17 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
   const callbacks = useMemo(
     () => ({
-      onSelect: (id: number, hasNote?: boolean) => {
+      // 单击 = 静默选中：只高亮（方向键/F2/Tab/Delete 的锚点），不弹任何 UI。
+      // 弹出类（按钮行/备注面板）只认显式入口：长按 / 角标 / d 键 / pin
+      onSelect: (id: number) => {
+        setSelectedId(id)
+        setSelectedByPointer(false)
+      },
+      // 长按 = 激活：亮按钮行 + 备注面板按"有无备注"开合（无备注节点不弹
+      // 空面板，创建入口走按钮行的添加备注按钮 / d 键 / 工具栏）。pin 恒开不动
+      onActivate: (id: number, hasNote: boolean) => {
         setSelectedId(id)
         setSelectedByPointer(true)
-        // 点击节点 = 选中 + 备注面板按"有无备注"开合（无备注节点不弹空面板，
-        // 创建入口走按钮行的添加备注按钮 / d 键 / 工具栏）。pin 时恒开不动
         if (!notePinned) setNoteOpen(!!hasNote)
       },
       onStartEdit: (id: number) => setEditingId(id),
