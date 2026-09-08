@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from src.service.mindmap.events import drain_pending
 
@@ -296,12 +297,8 @@ def _agent_model() -> str:
     return os.getenv("AGENT_MODEL") or os.getenv("OPENAI_MODEL", "")
 
 
-def _read_provider_cfg() -> dict | None:
-    """读 provider.json → 白名单四键的非空子集；不存在/损坏返回 None（不抛）。
-
-    读侧容错：损坏文件等价于"没有文件"，env 兜底，服务不挂。provider_type
-    非法值（旧文件/手改坏）直接丢弃该键，落回 env/默认。
-    """
+def _read_provider_file() -> dict | None:
+    """原始 JSON（含 updated_at 等元数据）；不存在/损坏返回 None（不抛）。"""
     try:
         with open(PROVIDER_CFG_PATH, encoding="utf-8") as f:
             data = json.load(f)
@@ -310,8 +307,17 @@ def _read_provider_cfg() -> dict | None:
     except (OSError, json.JSONDecodeError) as e:
         logger.warning("provider config unreadable, fallback to env: %r", e)
         return None
-    if not isinstance(data, dict):
-        logger.warning("provider config not a json object, fallback to env")
+    return data if isinstance(data, dict) else None
+
+
+def _read_provider_cfg() -> dict | None:
+    """读 provider.json → 白名单四键的非空子集；不存在/损坏返回 None。
+
+    读侧容错：损坏文件等价于"没有文件"，env 兜底，服务不挂。provider_type
+    非法值（旧文件/手改坏）直接丢弃该键，落回 env/默认。
+    """
+    data = _read_provider_file()
+    if data is None:
         return None
     out = {
         k: data[k].strip()
@@ -500,6 +506,78 @@ async def health_check() -> dict:
 @router.get("/api/chat/status")
 async def chat_status() -> dict:
     return await health_check()
+
+
+# ── Provider 配置端点（UI 弹窗） ───────────────────────────────────────
+
+
+class ProviderCfgIn(BaseModel):
+    provider_type: str = "openai"
+    base_url: str
+    api_key: str = ""  # 空/掩码回显 = 保持旧值
+    model: str
+
+
+def _config_payload() -> dict:
+    """GET/PUT/DELETE 共用回显体：生效值 + 来源 + 掩码 key（明文永不出服务端）。"""
+    cfg = _effective_provider_cfg()
+    file_raw = _read_provider_file()
+    return {
+        "configured": all(cfg[k] for k in ("base_url", "api_key", "model")),
+        "source": _cfg_source(cfg),
+        "provider_type": cfg["provider_type"],
+        "base_url": cfg["base_url"],
+        "api_key_masked": _mask_key(cfg["api_key"]) if cfg["api_key"] else "",
+        "model": cfg["model"],
+        "updated_at": file_raw.get("updated_at") if file_raw else None,
+    }
+
+
+@router.get("/api/chat/config")
+async def get_chat_config() -> dict:
+    return _config_payload()
+
+
+@router.put("/api/chat/config")
+async def save_chat_config(body: ProviderCfgIn) -> dict:
+    """保存前严格校验：用提交值真实探测网关，失败拒绝落盘。"""
+    provider_type = body.provider_type.strip() or "openai"
+    base_url = body.base_url.strip().rstrip("/")
+    model = body.model.strip()
+    if provider_type not in _PROVIDER_TYPES:
+        raise HTTPException(400, "provider_type must be openai or anthropic")
+    if not base_url.startswith(("http://", "https://")):
+        raise HTTPException(400, "base_url must start with http:// or https://")
+    if not model:
+        raise HTTPException(400, "model is required")
+
+    api_key = body.api_key.strip()
+    if not api_key or api_key.startswith("***"):  # 空/掩码回显 = 保持旧值（文件优先，env 兜底）
+        api_key = _effective_provider_cfg()["api_key"]
+    if not api_key:
+        raise HTTPException(400, "api_key required (no previous value to keep)")
+
+    cfg = {
+        "provider_type": provider_type,
+        "base_url": base_url,
+        "api_key": api_key,
+        "model": model,
+    }
+    ok, reason_code, detail, model_unverified = await _probe_gateway(cfg)
+    if not ok:
+        raise HTTPException(400, detail={"reason_code": reason_code, "reason_detail": detail})
+    _write_provider_cfg(cfg)
+    return {**_config_payload(), "model_unverified": model_unverified}
+
+
+@router.delete("/api/chat/config")
+async def clear_chat_config() -> dict:
+    """删除 UI 配置，回退 env / 未配置态。"""
+    try:
+        os.remove(PROVIDER_CFG_PATH)
+    except FileNotFoundError:
+        pass
+    return _config_payload()
 
 
 # ── strands Agent runner（进程内） ─────────────────────────────────────
