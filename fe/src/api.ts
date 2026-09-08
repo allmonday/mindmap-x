@@ -209,6 +209,7 @@ export interface ChatGateStatus {
   ok: boolean
   reason_code: string | null
   reason_detail: Record<string, string | number> | null
+  source?: 'file' | 'env' | 'none'
   desktop?: boolean
 }
 
@@ -230,10 +231,56 @@ export function gateReasonText(
   return key ? t(key, detail ?? undefined) : t('chat.unavailable')
 }
 
+// Provider 配置（UI 可配，文件 > env 兜底；api_key 回显永远掩码，明文不出服务端）
+export interface ProviderConfig {
+  configured: boolean
+  source: 'file' | 'env' | 'none'
+  provider_type: 'openai' | 'anthropic'
+  base_url: string
+  api_key_masked: string
+  model: string
+  updated_at: string | null
+}
+
+export interface ProviderConfigInput {
+  provider_type: 'openai' | 'anthropic'
+  base_url: string
+  api_key: string // 空 = 保持旧值
+  model: string
+}
+
+/** PUT 失败时抛的 Error 带 .detail = {reason_code, reason_detail}（可经 gateReasonText 渲染） */
+export class ProviderConfigError extends Error {
+  detail?: { reason_code: string; reason_detail: Record<string, string | number> }
+}
+
 export const chatApi = {
   archives: (mapId: number) => get<ArchiveMeta[]>(`/api/chat/archives?map_id=${mapId}`),
   archive: (mapId: number, id: string) => get<ArchiveDoc>(`/api/chat/archives/${id}?map_id=${mapId}`),
   status: () => get<ChatGateStatus>('/api/chat/status'),
+  config: () => get<ProviderConfig & { model_unverified?: boolean }>('/api/chat/config'),
+  saveConfig: async (body: ProviderConfigInput): Promise<ProviderConfig & { model_unverified?: boolean }> => {
+    const res = await fetch('/api/chat/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const err = new ProviderConfigError(`PUT /api/chat/config failed: HTTP ${res.status}`)
+      try {
+        err.detail = (await res.json())?.detail
+      } catch {
+        /* 非 JSON 响应：保留纯状态码信息 */
+      }
+      throw err
+    }
+    return res.json()
+  },
+  clearConfig: async (): Promise<ProviderConfig> => {
+    const res = await fetch('/api/chat/config', { method: 'DELETE' })
+    if (!res.ok) throw new Error(`DELETE /api/chat/config failed: HTTP ${res.status}`)
+    return res.json()
+  },
 }
 
 // 本地 Claude Code 可用性（spawn `claude --version` 探测，服务端缓存 30s）
