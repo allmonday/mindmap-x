@@ -725,6 +725,79 @@ button.crumb:hover { color: var(--ink); }
   right: 0;
   height: 6px;
 }
+
+/* ── Ctrl+P 编号跳转面板（palette 式：不遮暗画布，边看边输） ──
+   视觉语言同 .crumb-menu（白底 hairline 圆角投影）；透明点击层收关闭职责 */
+.goto-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9; /* 盖画布、让出侧栏面板(z-6)之上的弹层区(z-10 modal)之下 */
+}
+.goto-palette {
+  position: absolute;
+  top: 15vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 92vw);
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+.goto-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.goto-hash { color: var(--ink-3); font-size: 15px; font-weight: 600; }
+.goto-input {
+  flex: 1;
+  min-width: 0; /* flex item 长数字不撑破（同 note-editor-wrap 教训） */
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+}
+.goto-result {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.goto-list { max-height: 320px; overflow-y: auto; }
+.goto-result:hover,
+.goto-result.active { background: var(--bg-hover); }
+.goto-result .goto-id { color: var(--ink-3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.goto-result .goto-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+/* 折叠目标提示：跳转时将自动展开祖先 */
+.goto-result .goto-flag { flex-shrink: 0; font-size: 11px; color: var(--ink-3); }
+.goto-result.miss { cursor: default; color: var(--ink-3); font-size: 13px; }
+.goto-result.miss:hover { background: none; }
+.goto-hint {
+  padding: 6px 14px;
+  border-top: 1px solid var(--hairline);
+  font-size: 11px;
+  color: var(--ink-3);
+}
 .crumb-menu button {
   display: flex;
   align-items: baseline;

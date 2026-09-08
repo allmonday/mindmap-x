@@ -553,6 +553,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [revOpen, setRevOpen] = useState(false)
   const [outlineText, setOutlineText] = useState('')
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('merge')
+  // Ctrl+P 编号跳转面板（gotoResults 派生值见 layout memo 后）
+  const [gotoOpen, setGotoOpen] = useState(false)
+  const [gotoText, setGotoText] = useState('')
+  // 结果列表激活行（↑↓ 移动 / hover 跟随；渲染处对越界做钳制）
+  const [gotoActiveRaw, setGotoActiveRaw] = useState(0)
   const [chatOpen, setChatOpen] = useState(false)
   // Agent 入口守门：模型网关未配置时按钮保留但置灰（aria-disabled，真 disabled
   // 收不到 click），点击弹窗说明缺什么配置；null = 检查中暂不渲染（防闪跳）。
@@ -888,6 +893,105 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     () => (detail ? layoutMap(detail, layoutMode, focusId) : null),
     [detail, layoutMode, focusId],
   )
+  // 最新布局给 setTimeout 延迟回调用：闭包里的 layout 是发起时刻的旧值，
+  // 展开祖先后的新节点在旧布局里查不到坐标，平移会静默失效
+  const layoutRef = useRef(layout)
+  layoutRef.current = layout
+
+  // 落点动作（方向键导航 / Ctrl+P 跳转共用）：选中 + 备注面板按目标有无备注
+  // 开合（pin 恒开）+ 视口出界（60px 边距）才平移到中心（保持 zoom）。
+  // 60ms 等 React 渲染出目标 DOM（展开场景新节点要一轮 render 才出现）
+  const revealAndSelect = useCallback(
+    (target: number, opts?: { byPointer?: boolean }) => {
+      setSelectedId(target)
+      setSelectedByPointer(opts?.byPointer ?? false)
+      if (!notePinned) {
+        const tnode = detail?.nodes.find((n) => n.display_id === target)
+        setNoteOpen(!!tnode?.note)
+      }
+      window.setTimeout(() => {
+        const el = document.querySelector(`.react-flow__node[data-id="${target}"]`)
+        const wrap = document.querySelector('.rf-wrap')
+        if (!el || !wrap || !rfRef.current) return
+        const er = el.getBoundingClientRect()
+        const wr = wrap.getBoundingClientRect()
+        const outside =
+          er.left < wr.left + 60 || er.right > wr.right - 60 || er.top < wr.top + 60 || er.bottom > wr.bottom - 60
+        if (!outside) return
+        const ln = layoutRef.current?.all.find((l) => l.node.display_id === target)
+        if (!ln) return
+        rfRef.current.setCenter(ln.x + ln.w / 2, ln.y, { duration: 300, zoom: rfRef.current.getZoom() })
+      }, 60)
+    },
+    [detail, notePinned],
+  )
+
+  // Ctrl+P 跳转：折叠目标先乐观展开祖链（数据在 detail.nodes，折叠只是渲染
+  // 裁剪）；聚焦模式下目标可能在聚焦子树外——视野外祖先不渲染，展开也无效，
+  // 先退回全图再落点
+  const gotoNode = useCallback(
+    (target: number) => {
+      if (!detail) return
+      const byId = new Map(detail.nodes.map((n) => [n.display_id, n]))
+      let inFocus = focusId == null
+      const toExpand: number[] = []
+      let cur = byId.get(target)
+      while (cur?.parent != null) {
+        const p = byId.get(cur.parent.display_id)
+        if (!p) break
+        if (p.display_id === focusId) inFocus = true
+        if (p.collapsed) toExpand.push(p.display_id)
+        cur = p
+      }
+      if (!inFocus) setFocusId(null)
+      for (const id of toExpand) {
+        queueFoldMutation(
+          (current) => patchCollapsed(current, id, false),
+          (clientRequestId) => api.setNodeCollapsed(mapId, id, false, clientRequestId),
+        )
+      }
+      revealAndSelect(target, { byPointer: true })
+    },
+    [detail, focusId, mapId, queueFoldMutation, revealAndSelect],
+  )
+  const gotoListRef = useRef<HTMLDivElement>(null)
+  // 跳转面板结果列表：纯数字（容错 # 前缀）= 编号直达放首行，其余按标题
+  // 子串匹配（不区分大小写，前缀命中优先、再按编号升序）；可见集来自 layout
+  // （折叠隐藏的行带"将展开祖先"标记——搜索的常见目标正是看不见的节点）。
+  // path = 祖先链文本（tooltip 里给同名节点消歧）
+  const gotoVisibleIds = useMemo(() => new Set(layout?.all.map((l) => l.node.display_id)), [layout])
+  const gotoResults = useMemo(() => {
+    const q = gotoText.trim()
+    if (!detail || !q) return [] as Array<{ node: NodeDTO; hidden: boolean; exact: boolean; path: string }>
+    const byId = new Map(detail.nodes.map((n) => [n.display_id, n]))
+    const pathOf = (n: NodeDTO) => {
+      const segs: string[] = []
+      let cur = n
+      while (cur.parent != null) {
+        const p = byId.get(cur.parent.display_id)
+        if (!p) break
+        segs.unshift(p.content)
+        cur = p
+      }
+      return segs.join(' / ')
+    }
+    const out: Array<{ node: NodeDTO; hidden: boolean; exact: boolean; path: string }> = []
+    const idHit = q.match(/^#?(\d+)$/)
+    if (idHit) {
+      const n = detail.nodes.find((x) => x.display_id === Number(idHit[1]))
+      if (n) out.push({ node: n, hidden: !gotoVisibleIds.has(n.display_id), exact: true, path: pathOf(n) })
+    }
+    const lower = q.toLowerCase()
+    const matches = detail.nodes
+      .filter((n) => n !== out[0]?.node && n.content.toLowerCase().includes(lower))
+      .map((n) => ({ n, prefix: n.content.toLowerCase().startsWith(lower) ? 0 : 1 }))
+      .sort((a, b) => a.prefix - b.prefix || a.n.display_id - b.n.display_id)
+      .slice(0, 9 - out.length)
+    for (const m of matches)
+      out.push({ node: m.n, hidden: !gotoVisibleIds.has(m.n.display_id), exact: false, path: pathOf(m.n) })
+    return out
+  }, [gotoText, detail, gotoVisibleIds])
+  const gotoActive = Math.min(gotoActiveRaw, Math.max(0, gotoResults.length - 1))
 
   // 方向键导航（物理方向语义：←→ 指哪打哪 / ↑↓ 层内流）。
   // ←→ 按屏幕方位路由：balanced 布局左半边的子节点在物理左侧——层级语义
@@ -943,42 +1047,48 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       }
       // 物理方向无目标（同侧叶子往同侧按）＝无操作：不清选中、不动画
       if (target == null) return
-      setSelectedId(target)
-      setSelectedByPointer(false)
-      // 键盘导航同款规则：面板开合跟随"目标节点有无备注"（pin 恒开）
-      if (!notePinned) {
-        const tnode = detail.nodes.find((n) => n.display_id === target)
-        setNoteOpen(!!tnode?.note)
-      }
-      // 视口跟随：目标出界（留 60px 边距）才平移到中心，不出界不动画面。
-      // 等 React 渲染出目标 DOM 再判（展开场景新节点要一轮 render 才出现）
-      window.setTimeout(() => {
-        const el = document.querySelector(`.react-flow__node[data-id="${target}"]`)
-        const wrap = document.querySelector('.rf-wrap')
-        if (!el || !wrap || !rfRef.current) return
-        const er = el.getBoundingClientRect()
-        const wr = wrap.getBoundingClientRect()
-        const outside =
-          er.left < wr.left + 60 || er.right > wr.right - 60 || er.top < wr.top + 60 || er.bottom > wr.bottom - 60
-        if (!outside) return
-        const ln = layout?.all.find((l) => l.node.display_id === target)
-        if (!ln) return
-        rfRef.current.setCenter(ln.x + ln.w / 2, ln.y, { duration: 300, zoom: rfRef.current.getZoom() })
-      }, 60)
+      revealAndSelect(target)
     },
-    [detail, selectedId, focusId, mapId, layout, queueFoldMutation, notePinned],
+    [detail, selectedId, focusId, mapId, layout, queueFoldMutation, revealAndSelect],
   )
+
+  // Ctrl/Cmd+P = 编号跳转面板开关。capture 阶段独立挂：先于各输入框自己的
+  // keydown stopPropagation（聊天/备注/outline 输入态也能触发，VS Code 式全局
+  // 命令键）——这是对"输入区隔离快捷键"惯例的唯一刻意例外。
+  // preventDefault 压掉浏览器打印
+  useEffect(() => {
+    const onGotoKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault()
+        setGotoText('')
+        setGotoActiveRaw(0)
+        setGotoOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onGotoKey, true)
+    return () => window.removeEventListener('keydown', onGotoKey, true)
+  }, [])
+
+  // 跳转列表激活行滚动可见（↑↓ 越出滚动区时贴边；键盘操作才需要，hover 自带视点）
+  useEffect(() => {
+    if (gotoOpen) gotoListRef.current?.querySelector('.goto-result.active')?.scrollIntoView({ block: 'nearest' })
+  }, [gotoActive, gotoOpen])
 
   // ── 快捷键（F2·Ctrl+Enter 编辑 / Tab 加子 / Enter 加兄弟 / Delete 删除 / Space 收放 / Esc 退聚焦 / 方向键导航）──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Esc 逐层退出：先关弹层（outline/版本面板），再退聚焦；
-      // 输入态（弹层内的编辑框等）让位给局部 Esc 处理
+      // Esc 逐层退出：先关跳转面板与弹层（goto/outline/版本面板），再退聚焦；
+      // 输入态（弹层内的编辑框等）让位给局部 Esc 处理（goto 输入框自带局部 Esc，
+      // 这里覆盖焦点不在输入框的窗口——如点了预览行之后）
       if (e.key === 'Escape') {
         const el = document.activeElement
         const typing =
           el instanceof HTMLElement &&
           (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+        if (!typing && gotoOpen) {
+          setGotoOpen(false)
+          return
+        }
         if (!typing && outlineOpen) {
           setOutlineOpen(false)
           return
@@ -1009,13 +1119,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         const typing =
           el instanceof HTMLElement &&
           (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
-        if (typing || editingId != null || outlineOpen || revOpen || chatGateOpen) return
+        if (typing || editingId != null || outlineOpen || revOpen || chatGateOpen || gotoOpen) return
         if (selectedId == null && !noteOpen) return // 无选中且未开：无可展示的对象
         e.preventDefault()
         toggleNote()
         return
       }
-      if (editingId != null || outlineOpen || revOpen || chatGateOpen || selectedId == null || !detail) return
+      if (editingId != null || outlineOpen || revOpen || chatGateOpen || gotoOpen || selectedId == null || !detail)
+        return
       // 聊天面板开着时：浏览类（方向键/空格收放）保留——边聊边看图是常态流；
       // 只禁会产生编辑界面的键（Enter/Tab 弹输入框、F2 进编辑、Delete 删子树）：
       // 输入框 disabled（Agent 处理中）会把焦点踢到 body、点面板非输入区焦点
@@ -1549,6 +1660,82 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           />
         )}
       </div>
+
+      {/* Ctrl+P 编号/标题跳转：透明点击层（不遮画布，点外关闭）+ 顶部悬浮小卡。
+          纯数字 = 编号直达（首行），任意文本 = 标题搜索；↑↓ 选行、Enter/点击跳转 */}
+      {gotoOpen && (
+        <div className="goto-backdrop" onClick={() => setGotoOpen(false)}>
+          <div
+            className="goto-palette"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label={t('editor.gotoTitle')}
+          >
+            <div className="goto-input-row">
+              <span className="goto-hash" aria-hidden="true">#</span>
+              <input
+                autoFocus
+                className="goto-input"
+                value={gotoText}
+                placeholder={t('editor.gotoPlaceholder')}
+                aria-label={t('editor.gotoTitle')}
+                onChange={(e) => {
+                  setGotoText(e.target.value)
+                  setGotoActiveRaw(0)
+                }}
+                onKeyDown={(e) => {
+                  e.stopPropagation() // 与其他输入区同款：按键不冒泡到全局快捷键
+                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    if (!gotoResults.length) return
+                    e.preventDefault() // 不动输入框光标
+                    setGotoActiveRaw((i) =>
+                      (i + (e.key === 'ArrowDown' ? 1 : gotoResults.length - 1)) % gotoResults.length,
+                    )
+                    return
+                  }
+                  if (e.key === 'Enter') {
+                    const hit = gotoResults[gotoActive]
+                    if (hit) {
+                      setGotoOpen(false)
+                      gotoNode(hit.node.display_id)
+                    }
+                  }
+                  if (e.key === 'Escape') setGotoOpen(false)
+                }}
+              />
+            </div>
+            {gotoResults.length > 0 ? (
+              <div className="goto-list" ref={gotoListRef}>
+                {gotoResults.map((r, i) => (
+                  <button
+                    key={r.node.display_id}
+                    className={`goto-result${i === gotoActive ? ' active' : ''}`}
+                    onMouseEnter={() => setGotoActiveRaw(i)}
+                    onClick={() => {
+                      setGotoOpen(false)
+                      gotoNode(r.node.display_id)
+                    }}
+                  >
+                    <span className="goto-id">#{r.node.display_id}</span>
+                    <span className="goto-content" title={r.path ? `${r.path} / ${r.node.content}` : r.node.content}>
+                      {r.node.content}
+                    </span>
+                    {r.exact && <span className="goto-flag">{t('editor.gotoExact')}</span>}
+                    {r.hidden && <span className="goto-flag">{t('editor.gotoCollapsed')}</span>}
+                  </button>
+                ))}
+              </div>
+            ) : gotoText.trim() ? (
+              <div className="goto-result miss">
+                {gotoText.trim().match(/^#?(\d+)$/)
+                  ? t('editor.gotoNotFound', { n: Number(gotoText.trim().replace(/^#/, '')), count: detail?.nodes.length ?? 0 })
+                  : t('editor.gotoNoResults')}
+              </div>
+            ) : null}
+            <div className="goto-hint">{t('editor.gotoHint')}</div>
+          </div>
+        </div>
+      )}
 
       {outlineOpen && (
         <div className="modal" onClick={() => setOutlineOpen(false)}>
