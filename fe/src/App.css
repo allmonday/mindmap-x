@@ -1027,23 +1027,21 @@ button.crumb:hover { color: var(--ink); }
   pointer-events: none; /* 角标不拦截节点的点击/双击 */
 }
 .id-badge.on-root { background: #cbd5e1; }
+/* 有备注：橙底白字（备注指示并入 ID 角标，替代原右上角圆点方案）。
+   此时角标是 button：可点直开备注面板，hover 加深给出可点暗示 */
+button.id-badge {
+  border: none;
+  cursor: pointer;
+  pointer-events: auto; /* 覆写 .id-badge 的 none（span 形态不拦截节点点击，button 形态是显式入口） */
+}
+.id-badge.noted {
+  background: #f59e0b;
+  color: #fff;
+}
+.id-badge.noted:hover { background: #d97706; }
 
 /* 备注 ✎ 角标：与 id-badge 镜像位（右上角），暖色与灰蓝的 id 区分；
    pointer-events:auto——本身就是"打开备注"的点击入口 */
-.note-mark {
-  position: absolute;
-  top: -9px;
-  right: -7px;
-  display: inline-flex;
-  align-items: center;
-  background: #fef3c7;
-  color: #92400e;
-  border-radius: 6px;
-  padding: 2.5px 4px; /* 9px SVG 图标（文本字符时代是 1px 5px + 10px 字号） */
-  border: 1.5px solid #fff;
-  cursor: pointer;
-}
-.note-mark:hover { background: #fde68a; }
 
 .fold {
   position: absolute;

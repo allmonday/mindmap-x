@@ -234,11 +234,12 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
         </span>
       )}
 
-      {/* 备注角标（折角便签）：有 markdown 长文的节点一眼可辨（点击直开备注面板）。
-          编辑态隐藏——textarea 盖满节点，角标叠上去无意义 */}
-      {hasNote && !isEditing && (
+      {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点。
+          有备注时变橙底白字（原右上角圆点方案，已并入此处）并接替其职责：
+          点击直开备注面板；编辑态退回纯展示（textarea 盖满节点） */}
+      {hasNote && !isEditing ? (
         <button
-          className="note-mark"
+          className={`id-badge noted ${isRoot ? 'on-root' : ''}`}
           title={t('note.markTitle')}
           aria-label={t('note.markTitle')}
           onClick={(e) => {
@@ -246,12 +247,11 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
             data.onOpenNote(n.display_id)
           }}
         >
-          <StickyNoteIcon />
+          #{n.display_id}
         </button>
+      ) : (
+        <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
       )}
-
-      {/* ID 角标：与 outline 协议 [id:N] 呼应，方便 Agent 精确锚定节点 */}
-      <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
 
       {/* 节点操作按钮：节点左下方，点击选中时显示（.show 由 selected 驱动，
           点画布/其他节点即消失）。加子模式 = 输入框 + 保存，确认后才创建节点 */}
