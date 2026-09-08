@@ -34,6 +34,7 @@ from sqlmodel import select
 
 from src.db import async_session
 from src.models import Map, MapRevision, Node, NodeRevision
+from src.service.mindmap.dtos import NoteInput
 from src.service.mindmap.events import drain_pending, publish_change
 
 _LINE_RE = re.compile(r"^-\s*(?:\[id:(\d+)\]\s*)?(.*)$")
@@ -562,6 +563,47 @@ async def update_node(
             )
         await session.refresh(node)
         return node
+
+
+@_serialized
+async def update_notes(
+    map_id: int,
+    notes: list[NoteInput],
+    actor: str = "agent",
+) -> list[Node]:
+    """批量更新节点备注：一次往返、单次 version 前进、原子生效。
+
+    agent 重写全部备注的高频路径（引号修正重发等）——逐节点 update_node
+    会产生 N 个版本号，并行调用还曾是版本撞号的触发场景。列表项
+    {node_id, note}：note 直赋值（""=清空；批量语义没有"不动"——不改的
+    节点不进列表）。重复 node_id / 节点不属于本图 → ValueError 整体
+    回滚（要么全改要么全不改）。
+    """
+    if not notes:
+        return []
+    async with async_session() as session:
+        m = await _get_map(session, map_id)
+        seen: set[int] = set()
+        nodes: list[Node] = []
+        for item in notes:
+            if item.node_id in seen:
+                raise ValueError(f"update_notes 重复节点 #{item.node_id}")
+            seen.add(item.node_id)
+            # 跨图/不存在 → _get_node 的 ValueError（原子失败）
+            nodes.append(await _get_node(session, map_id, item.node_id))
+        display_index = await _display_index(session, map_id)
+        before = {n.display_id: _fields_of(n, display_index) for n in nodes}
+        for n, item in zip(nodes, notes):
+            n.note = item.note or None  # "" 归一 NULL（与 update_node 一致）
+            n.updated_by = actor
+            n.updated_at = _now()
+        await _commit_with_revision(
+            session, m,
+            before=before,
+            action="notes_updated", actor=actor,
+            detail=f"update_notes ×{len(nodes)}（#{','.join(str(i) for i in sorted(seen))}）",
+        )
+        return nodes
 
 
 async def set_node_collapsed(

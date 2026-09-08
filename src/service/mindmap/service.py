@@ -14,6 +14,7 @@ from src.service.mindmap.dtos import (
     MapDetail,
     MapSummary,
     NodeDTO,
+    NoteInput,
     RevisionChangeRowDTO,
     RevisionChangesDTO,
     RevisionDetail,
@@ -188,6 +189,26 @@ class MindmapService(UseCaseService):
         )
         dto = NodeDTO.model_validate(node)
         return await Resolver().resolve(dto)
+
+    @mutation
+    async def update_notes(
+        cls,
+        map_id: int,
+        notes: list[NoteInput],
+        actor: str = "agent",
+        source: Annotated[str | None, FromContext()] = None,
+    ) -> list[NodeDTO]:
+        """批量更新备注：一次往返、单次版本前进、原子生效（要么全改要么全不改）。
+
+        notes=[{node_id, note}]，node_id 为 map 内 display_id；note ""=清空，
+        不改的节点不进列表。重写全部备注等批量场景优先本接口，勿逐节点
+        update_node（N 次版本号 + 并发撞号风险）。若无 <external_changes>
+        注入（外部调用方即是），写前先 get_tree 核对最新树。
+        """
+        nodes = await methods.update_notes(
+            map_id, notes, actor=_resolve_actor(actor, source)
+        )
+        return await Resolver().resolve([NodeDTO.model_validate(n) for n in nodes])
 
     @mutation
     async def set_node_collapsed(

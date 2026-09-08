@@ -3,9 +3,11 @@
 ID 语义：对外全部用 map 内 display_id（seed 树：root=#1, a=#2, a1=#3，map_id=100）。
 """
 import pytest
+from sqlmodel import select
 
-from src.models import Map, Node
+from src.models import Map, Node, NodeRevision
 from src.service.mindmap import methods as mm
+from src.service.mindmap.dtos import NoteInput
 from src.service.mindmap.events import drain_pending, publish_change, record_pending, subscribe, unsubscribe
 
 # ── create_map / list_maps ────────────────────────────────────────────
@@ -579,3 +581,65 @@ async def test_outline_multiline_content_roundtrip(session_factory, seeded_map):
         nodes = (await s.exec(select(Node).where(Node.map_id == 100))).all()
     n2 = next(n for n in nodes if n.display_id == 2)
     assert n2.content == "第一行\n第二行反斜杠\\路径"  # noqa: W605
+
+
+# ── update_notes（批量备注） ───────────────────────────────────────────
+
+
+async def test_update_notes_single_version_bump(session_factory, seeded_map):
+    """N 个节点一次调用：version 只 +1，NodeRevision 每节点一条，内容全落。"""
+    nodes = await mm.update_notes(
+        100,
+        [
+            NoteInput(node_id=1, note='含"双引号"的备注'),
+            NoteInput(node_id=2, note="普通备注"),
+            NoteInput(node_id=3, note=""),  # 清空（seed 树无备注，仍是一条显式清空）
+        ],
+        actor="agent",
+    )
+    assert [n.display_id for n in nodes] == [1, 2, 3]
+    async with session_factory() as s:
+        m = await s.get(Map, 100)
+        assert m.version == 2  # 单次前进
+        rows = (
+            await s.exec(
+                select(NodeRevision).where(
+                    NodeRevision.map_id == 100, NodeRevision.version == 2
+                )
+            )
+        ).all()
+        assert {r.display_id for r in rows} == {1, 2, 3}
+        n1 = (await s.exec(select(Node).where(
+            Node.map_id == 100, Node.display_id == 1))).first()
+        assert n1.note == '含"双引号"的备注'
+        n3 = (await s.exec(select(Node).where(
+            Node.map_id == 100, Node.display_id == 3))).first()
+        assert n3.note is None  # "" 归一 NULL
+
+
+async def test_update_notes_atomic_on_bad_node(session_factory, seeded_map):
+    """列表含不存在节点：整体回滚——已改的 #1 也不能落盘。"""
+    with pytest.raises(ValueError):
+        await mm.update_notes(
+            100,
+            [NoteInput(node_id=1, note="x"), NoteInput(node_id=999, note="y")],
+        )
+    async with session_factory() as s:
+        n1 = (await s.exec(select(Node).where(
+            Node.map_id == 100, Node.display_id == 1))).first()
+        m = await s.get(Map, 100)
+        assert n1.note is None and m.version == 1  # 无半吊子
+
+
+async def test_update_notes_duplicate_rejected(session_factory, seeded_map):
+    with pytest.raises(ValueError, match="重复节点"):
+        await mm.update_notes(
+            100,
+            [NoteInput(node_id=1, note="x"), NoteInput(node_id=1, note="y")],
+        )
+
+
+async def test_update_notes_empty_list_noop(session_factory, seeded_map):
+    assert await mm.update_notes(100, []) == []
+    async with session_factory() as s:
+        assert (await s.get(Map, 100)).version == 1

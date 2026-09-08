@@ -129,3 +129,14 @@ class RevisionDetail(DefineSubset):
     )
 
     snapshot: RevisionSnapshotDTO
+
+
+class NoteInput(BaseModel):
+    """update_notes 批量输入项（本文件唯一的请求侧 DTO）。
+
+    node_id 为 map 内 display_id；note 直赋值——批量语义没有"不动"，
+    不改的节点不进列表；""=清空（与 update_node 的 note 语义对齐）。
+    """
+
+    node_id: int
+    note: str

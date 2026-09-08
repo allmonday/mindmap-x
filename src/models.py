@@ -209,6 +209,7 @@ def mount_method():
         set_node_collapsed,
         set_fold_level,
         update_node,
+        update_notes,
     )
 
     def _mount(entity, fn, decorator):
@@ -224,6 +225,7 @@ def mount_method():
     _mount(Map, get_node, query)
     _mount(Map, add_node, mutation)
     _mount(Map, update_node, mutation)
+    _mount(Map, update_notes, mutation)
     _mount(Map, set_node_collapsed, mutation)
     _mount(Map, move_node, mutation)
     _mount(Map, delete_node, mutation)
