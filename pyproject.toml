@@ -14,7 +14,7 @@ dependencies = [
     "sqlmodel",
     "aiosqlite",
     "alembic>=1.13",
-    "strands-agents[openai]>=1.53.0",
+    "strands-agents[anthropic,openai]>=1.53.0",
     # sqlalchemy 的 greenlet 依赖标记漏了 macOS arm64（platform_machine=='arm64'），
     # async 引擎运行时必需，显式声明防止 uv 按标记剔除
     "greenlet>=3",

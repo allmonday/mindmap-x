@@ -9,8 +9,9 @@
 
 为什么不用 stdio：见 specs/004（实时反馈退化到轮询兜底 + 引入第二个 DB 写进程）。
 
-环境变量：
-- OPENAI_BASE_URL / OPENAI_API_KEY / AGENT_MODEL  必填（OpenAI 兼容网关）
+环境变量（部署级默认，可被 UI 配置覆盖，见 Provider 配置小节）：
+- OPENAI_BASE_URL / OPENAI_API_KEY / AGENT_MODEL  OpenAI 兼容网关
+- AGENT_PROVIDER      openai | anthropic（API 风格，默认 openai）
 - SELF_MCP_URL        默认 http://127.0.0.1:8740/mcp/
 - AGENT_CHAT_TIMEOUT  默认 180 秒（空闲超时：连续无流式输出才算，输出不断则永不触发）
 """
@@ -18,6 +19,7 @@ import asyncio
 import json
 import logging
 import os
+import pathlib
 import re
 import threading
 import time
@@ -81,6 +83,12 @@ SESSION_AGENT_ID = "chat"
 # 「清除 context」的归档目录：当前对话 → var/chat_history/map{N}/chat_{时间戳}.json
 ARCHIVE_DIR = os.getenv("CHAT_ARCHIVE_DIR", "var/chat_history")
 _ARCHIVE_ID_RE = re.compile(r"chat_\d{8}-\d{6}")  # 归档 id 白名单（防路径穿越）
+
+# Provider 配置固化文件（UI 可配，路径对齐 SESSIONS_DIR 的 env 覆盖模式）。
+# 分层语义：.env = 部署级默认，本文件 = 用户级覆盖（逐字段生效，见
+# _effective_provider_cfg）；UI 清除配置即删本文件、回退 env。桌面版由
+# src/desktop.py 指到用户数据目录。api_key 明文落盘（与 .env 同级），回显永远掩码。
+PROVIDER_CFG_PATH = os.getenv("CHAT_PROVIDER_FILE", "var/provider.json")
 
 
 def _session_id(map_id: int) -> str:
@@ -277,10 +285,148 @@ apply_outline 的 outline 格式（与 get_tree 输出同构）：
 
 _MODEL_ENV = ("OPENAI_BASE_URL", "OPENAI_API_KEY", "AGENT_MODEL")
 
+# ── Provider 配置：文件固化（UI 可配）> env 兜底 ──────────────────────
+
+_PROVIDER_TYPES = ("openai", "anthropic")  # API 风格；DeepSeek/GLM/Kimi 等 OpenAI 兼容厂商走 openai + 自定义 base_url
+_CFG_KEYS = ("provider_type", "base_url", "api_key", "model")
+
 
 def _agent_model() -> str:
     """模型名：AGENT_MODEL 优先，回退 OPENAI_MODEL（沿用机器上已有的网关配置）。"""
     return os.getenv("AGENT_MODEL") or os.getenv("OPENAI_MODEL", "")
+
+
+def _read_provider_cfg() -> dict | None:
+    """读 provider.json → 白名单四键的非空子集；不存在/损坏返回 None（不抛）。
+
+    读侧容错：损坏文件等价于"没有文件"，env 兜底，服务不挂。provider_type
+    非法值（旧文件/手改坏）直接丢弃该键，落回 env/默认。
+    """
+    try:
+        with open(PROVIDER_CFG_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning("provider config unreadable, fallback to env: %r", e)
+        return None
+    if not isinstance(data, dict):
+        logger.warning("provider config not a json object, fallback to env")
+        return None
+    out = {
+        k: data[k].strip()
+        for k in _CFG_KEYS
+        if isinstance(data.get(k), str) and data[k].strip()
+    }
+    if out.get("provider_type") not in _PROVIDER_TYPES:
+        out.pop("provider_type", None)
+    return out or None
+
+
+def _write_provider_cfg(cfg: dict[str, str]) -> None:
+    """原子落盘：tmp → chmod 600 → os.replace（读方要么见旧要么见新，无半写态）。"""
+    payload = {**cfg, "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    path = pathlib.Path(PROVIDER_CFG_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        tmp.chmod(0o600)  # Windows 仅只读位语义，静默降级
+    except OSError:
+        pass
+    os.replace(tmp, path)
+
+
+def _mask_key(key: str) -> str:
+    """回显掩码：保留尾 4 位助辨认；短 key 不留尾（防整段回显）。"""
+    return f"***{key[-4:]}" if len(key) >= 8 else "***"
+
+
+def _effective_provider_cfg() -> dict[str, str]:
+    """生效配置 = env 兜底 + 文件逐字段覆盖；恒返回四键（值可为空串）。
+
+    这是 health_check / _probe_gateway / _run_agent 的唯一配置入口——
+    UI 保存后无需重启，下一轮现读即生效。
+    """
+    env = {
+        "provider_type": os.getenv("AGENT_PROVIDER", "openai"),
+        "base_url": os.getenv("OPENAI_BASE_URL", ""),
+        "api_key": os.getenv("OPENAI_API_KEY", ""),
+        "model": _agent_model(),
+    }
+    if env["provider_type"] not in _PROVIDER_TYPES:
+        env["provider_type"] = "openai"
+    return {**env, **(_read_provider_cfg() or {})}
+
+
+def _cfg_source(cfg: dict[str, str]) -> str:
+    """配置来源标签（UI 据此显示"文件配置/环境变量/未配置"与清除按钮显隐）。"""
+    if _read_provider_cfg():
+        return "file"  # 读者只返回非空字段，存在即至少覆盖了一项
+    if any(cfg[k] for k in ("base_url", "api_key", "model")):
+        return "env"
+    return "none"
+
+
+def _client_args(cfg: dict[str, str], timeout_s: float | None = None) -> dict:
+    """底层 SDK 客户端参数——生产（strands 适配器原样转发）与探测共用一份。
+
+    strands 1.53.0 的 OpenAIModel 不急切建 client，逐请求以 client_args 构造
+    AsyncOpenAI；AnthropicModel 构造期即建 AsyncAnthropic。timeout_s 仅探测传。
+    """
+    args: dict = {"base_url": cfg["base_url"], "api_key": cfg["api_key"]}
+    if timeout_s is not None:
+        args["timeout"] = timeout_s
+    return args
+
+
+def _build_model(cfg: dict[str, str], timeout_s: float | None = None):
+    """按 provider_type 构造 strands 模型适配器（探测/运行共用 client_args）。
+
+    anthropic 的 import 在函数内：未装 extra 时仅在真用到该风格才报错，
+    不影响 openai 部署。
+    """
+    client_args = _client_args(cfg, timeout_s)
+    if cfg["provider_type"] == "anthropic":
+        from strands.models.anthropic import AnthropicModel
+
+        return AnthropicModel(
+            model_id=cfg["model"],
+            max_tokens=8192,  # AnthropicConfig 必填项；页内对话给足上限
+            client_args=client_args,
+        )
+    from strands.models.openai import OpenAIModel
+
+    return OpenAIModel(model_id=cfg["model"], client_args=client_args)
+
+
+async def _probe_gateway(cfg: dict[str, str]) -> tuple[bool, str | None, dict, bool]:
+    """网关探活：以与生产相同的 client_args 构造底层 SDK 客户端 → models.list()。
+
+    两种风格的鉴权头/路径差异全由 SDK 承担。返回
+    (ok, reason_code, reason_detail, model_unverified)：异常映射沿用现有
+    reason_code（前端 gateReasonText 直接渲染）；list 成功且带 id 清单时
+    软校验 model 是否在列——不在列仅提示不拦截（中转站清单常不全）。
+    """
+    if cfg["provider_type"] == "anthropic":
+        from anthropic import AsyncAnthropic
+
+        client = AsyncAnthropic(**_client_args(cfg, timeout_s=5))
+    else:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(**_client_args(cfg, timeout_s=5))
+    try:
+        res = await client.models.list()
+    except Exception as e:
+        status = getattr(e, "status_code", None)
+        if status is not None:
+            return False, "gateway_http", {"status": status}, False
+        return False, "gateway_unreachable", {"error": type(e).__name__, "base": cfg["base_url"]}, False
+    finally:
+        await client.close()
+    ids = {m.id for m in (getattr(res, "data", None) or []) if getattr(m, "id", None)}
+    return True, None, {}, bool(ids) and cfg["model"] not in ids
 
 
 # ── 健康检查 ───────────────────────────────────────────────────────────
@@ -289,17 +435,18 @@ def _agent_model() -> str:
 async def health_check() -> dict:
     """面板打开时前端先调——在用户发消息之前暴露问题。
 
-    三级检查：环境变量完整性 → 模型网关探活 → MCP 握手。
+    三级检查：生效配置完整性（文件+env） → 模型网关探活 → MCP 握手。
     失败原因结构化返回（reason_code + reason_detail 插值参数），
     文案由前端按 UI 语言渲染——服务端不感知界面语言。
     """
 
+    cfg = _effective_provider_cfg()
     missing = [
         name
         for name, value in (
-            ("OPENAI_BASE_URL", os.getenv("OPENAI_BASE_URL")),
-            ("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY")),
-            ("AGENT_MODEL / OPENAI_MODEL", _agent_model()),
+            ("OPENAI_BASE_URL", cfg["base_url"]),
+            ("OPENAI_API_KEY", cfg["api_key"]),
+            ("AGENT_MODEL / OPENAI_MODEL", cfg["model"]),
         )
         if not value
     ]
@@ -308,21 +455,9 @@ async def health_check() -> dict:
     reason_detail: dict[str, str | int] = {}
 
     if not missing:
-        base = os.getenv("OPENAI_BASE_URL", "").rstrip("/")
-        key = os.getenv("OPENAI_API_KEY", "")
-        try:
-            async with httpx.AsyncClient(timeout=3) as client:
-                resp = await client.get(
-                    f"{base}/models", headers={"Authorization": f"Bearer {key}"}
-                )
-            checks["gateway"] = resp.status_code < 400
-            if not checks["gateway"]:
-                reason_code, reason_detail = "gateway_http", {"status": resp.status_code}
-        except Exception as e:
-            reason_code, reason_detail = "gateway_unreachable", {
-                "error": type(e).__name__,
-                "base": base,
-            }
+        checks["gateway"], rc, detail, _ = await _probe_gateway(cfg)
+        if not checks["gateway"]:
+            reason_code, reason_detail = rc, detail  # type: ignore[assignment]
     else:
         reason_code, reason_detail = "env_missing", {"missing": ", ".join(missing)}
 
@@ -355,7 +490,9 @@ async def health_check() -> dict:
         "checks": checks,
         "reason_code": reason_code,
         "reason_detail": reason_detail or None,
-        # 桌面入口（src/desktop.py）设置；前端按模式渲染 .env 配置位置指引
+        # 生效配置来源：file（UI 配置）| env（部署默认）| none（未配置）
+        "source": _cfg_source(cfg),
+        # 桌面入口（src/desktop.py）设置；前端按模式渲染配置指引
         "desktop": bool(os.getenv("MINDMAPX_DESKTOP")),
     }
 
@@ -468,7 +605,6 @@ async def _run_agent(turn: _Turn, map_id: int, text: str) -> None:
 
     # 局部 import：启动期不依赖 strands（未配 env 时服务其余功能照常）
     from strands import Agent
-    from strands.models.openai import OpenAIModel
     from strands.tools.mcp import MCPClient
 
     loop = asyncio.get_running_loop()
@@ -503,6 +639,11 @@ async def _run_agent(turn: _Turn, map_id: int, text: str) -> None:
         from strands.session import FileSessionManager
 
         sm = FileSessionManager(session_id=_session_id(map_id), storage_dir=SESSIONS_DIR)
+        # 每轮现读生效配置（文件 > env）：UI 改配置/清除后无需重连，下一轮即生效；
+        # 在跑轮次用读取到的旧配置跑完。不全（如清除后无 env 兜底）走 error 广播。
+        cfg = _effective_provider_cfg()
+        if not all(cfg[k] for k in ("base_url", "api_key", "model")):
+            raise RuntimeError("provider config incomplete (base_url/api_key/model)")
         # X-Mindmap-Source 标记自己是页内 Agent：服务端 context_extractor 提取
         # → FromContext 注入 → actor='page_agent' → 不进 <external_changes>
         # 待通知缓冲（自己的改动 toolResult 已自知，注入回去是回声噪音）。
@@ -514,13 +655,7 @@ async def _run_agent(turn: _Turn, map_id: int, text: str) -> None:
             agent = Agent(
                 agent_id=SESSION_AGENT_ID,
                 session_manager=sm,
-                model=OpenAIModel(
-                    model_id=_agent_model(),
-                    client_args={
-                        "base_url": os.environ["OPENAI_BASE_URL"],
-                        "api_key": os.environ["OPENAI_API_KEY"],
-                    },
-                ),
+                model=_build_model(cfg),
                 # with 内同步取工具快照（1.53.0 无 .tools 属性；也不能传 ToolProvider
                 # 形式 tools=[mcp]——Agent 会自行 start provider，与 with 冲突）
                 tools=list(mcp.list_tools_sync()),
