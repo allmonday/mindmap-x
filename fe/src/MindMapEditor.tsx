@@ -15,12 +15,13 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { api, chatApi, gateReasonText, type ChatGateStatus } from './api'
+import { api, chatApi, type ChatGateStatus } from './api'
 import { ChatPanel } from './ChatPanel'
 import { DetailPanel } from './DetailPanel'
 import { useI18n, type I18nKey } from './i18n'
 import { LangSwitch } from './LangSwitch'
 import { layoutMap, type LNode, type LayoutMode } from './layout'
+import { ProviderConfigModal } from './ProviderConfigModal'
 import { RevisionPanel } from './RevisionPanel'
 import type { MapDetail, NodeDTO, OutlineMode } from './types'
 import { useAnimatedLayout } from './useAnimatedLayout'
@@ -673,16 +674,24 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [gotoActiveRaw, setGotoActiveRaw] = useState(0)
   const [chatOpen, setChatOpen] = useState(false)
   // Agent 入口守门：模型网关未配置时按钮保留但置灰（aria-disabled，真 disabled
-  // 收不到 click），点击弹窗说明缺什么配置；null = 检查中暂不渲染（防闪跳）。
-  // 状态检查首步即 env 完整性，未配置时快速失败、无外呼
+  // 收不到 click），点击弹配置表单；null = 检查中暂不渲染（防闪跳）。
+  // 状态检查首步即配置完整性，未配置时快速失败、无外呼
   const [agentStatus, setAgentStatus] = useState<ChatGateStatus | null>(null)
   const [chatGateOpen, setChatGateOpen] = useState(false)
-  useEffect(() => {
-    void chatApi
-      .status()
-      .then(setAgentStatus)
-      .catch(() => setAgentStatus({ ok: false, reason_code: null, reason_detail: null }))
+  const refreshAgentStatus = useCallback(async (): Promise<ChatGateStatus> => {
+    try {
+      const s = await chatApi.status()
+      setAgentStatus(s)
+      return s
+    } catch {
+      const fallback: ChatGateStatus = { ok: false, reason_code: null, reason_detail: null }
+      setAgentStatus(fallback)
+      return fallback
+    }
   }, [])
+  useEffect(() => {
+    void refreshAgentStatus()
+  }, [refreshAgentStatus])
   const agentOk = agentStatus?.ok ?? false
   // 聚焦（下钻）：作为画布布局根的节点 display_id；null = 全图。
   // 会话级视图态——不进 localStorage，换图即清空
@@ -1877,27 +1886,24 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         </div>
       )}
 
-      {/* 未配置模型网关：点置灰的对话按钮弹出配置指引（服务端 reason_code 本地化渲染） */}
+      {/* 未配置/需重配模型网关：点置灰的对话按钮弹配置表单（保存即探测校验）。
+          reason_code 非配置类失败（如 MCP 挂了）也在此表单可见——表单错误区渲染。 */}
       {chatGateOpen && (
-        <div className="modal" onClick={() => setChatGateOpen(false)}>
-          <div className="modal-body gate" onClick={(e) => e.stopPropagation()}>
-            <h3>{t('chat.gatedTitle')}</h3>
-            <div className="gate-body">
-              <p>{t(agentStatus?.desktop ? 'chat.gatedBodyDesktop' : 'chat.gatedBody')}</p>
-              {agentStatus?.reason_code && (
-                <p className="gate-reason">
-                  {gateReasonText(t, agentStatus.reason_code, agentStatus.reason_detail)}
-                </p>
-              )}
-            </div>
-            <div className="modal-actions">
-              <div className="spacer" />
-              <button className="btn" onClick={() => setChatGateOpen(false)}>
-                {t('common.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ProviderConfigModal
+          reason={
+            agentStatus?.reason_code
+              ? { code: agentStatus.reason_code, detail: agentStatus.reason_detail }
+              : null
+          }
+          onClose={() => setChatGateOpen(false)}
+          onSaved={(s) => {
+            setAgentStatus(s) // 弹窗内已 refetch，这里直接采用其结果
+            if (s.ok) {
+              setChatGateOpen(false)
+              setChatOpen(true) // 首次配置成功：直接进入对话，省一次点击
+            }
+          }}
+        />
       )}
 
       {revOpen && (
