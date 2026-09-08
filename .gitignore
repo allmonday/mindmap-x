@@ -38,3 +38,6 @@ src/static/
 *.swp
 *.swo
 *~
+
+# macOS
+.DS_Store

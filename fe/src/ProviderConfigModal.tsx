@@ -27,9 +27,11 @@ interface Props {
   onClose: () => void
   /** 保存/清除成功后回调（组件内已 refetch status；父层据此关弹窗/开面板/重连） */
   onSaved: (status: ChatGateStatus) => void
+  /** 入口状态（gate 场景传入）：非配置类失败（如 MCP 挂）也可见，不拦表单 */
+  reason?: { code: string; detail: Record<string, string | number> | null } | null
 }
 
-export function ProviderConfigModal({ onClose, onSaved }: Props) {
+export function ProviderConfigModal({ onClose, onSaved, reason }: Props) {
   const { t } = useI18n()
   const [cfg, setCfg] = useState<ProviderConfig | null>(null)
   const [presetKey, setPresetKey] = useState('custom')
@@ -136,6 +138,9 @@ export function ProviderConfigModal({ onClose, onSaved }: Props) {
     <div className="modal" onClick={onClose}>
       <div className="modal-body cfg" onClick={(e) => e.stopPropagation()}>
         <h3>{t('chat.cfg.title')}</h3>
+        {reason && (
+          <p className="cfg-note">{gateReasonText(t, reason.code, reason.detail)}</p>
+        )}
         <div className="cfg-form">
           <label>{t('chat.cfg.preset')}</label>
           <select value={presetKey} onChange={(e) => applyPreset(e.target.value)}>
