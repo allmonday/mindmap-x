@@ -23,10 +23,13 @@
   - replace —— 保留根节点，删除其余全部，按 outline 顺序重排 display_id 为 1..n
 - 所有 mutation 成功后：map.version += 1，并 publish_change 广播。
 """
+import asyncio
+import functools
 import re
 from datetime import datetime, timezone
 
 from sqlalchemy import delete
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from src.db import async_session
@@ -305,6 +308,8 @@ async def _commit_with_revision(
     - publish_change 在 commit 之后调用（订阅者重拉必见已提交状态）
     - version 传值则直接赋值（仅 create_map 传 1），否则 +1
     - 任何一步抛异常 → 不 commit → 树变更一并回滚（行不会成为半吊子）
+    - IntegrityError（MapRevision UNIQUE(map_id,version)）：@_serialized 锁外的
+      并发写入（跨进程 CLI 直写 DB 等）最后防线，翻译成可执行的提示
     """
     new_version = version if version is not None else m.version + 1
     await _write_node_rows(session, m, new_version, before)
@@ -316,8 +321,46 @@ async def _commit_with_revision(
         )
     )
     session.add(m)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise ValueError("版本冲突：该图正被另一进程并发修改，请重读后重试")
     publish_change(m.id, m.version, action, actor, detail=detail)
+
+
+# ── 并发串行化（进程内 per-map 锁） ────────────────────────────────────
+# 背景：agent 常并行发多个 mutation；无锁时各方读同一 Map.version、各算出
+# 同一 +1，MapRevision 的 UNIQUE(map_id,version) 让 5/6 的提交撞死在裸
+# IntegrityError 上。锁住整个"读版本→改树→提交"区间（== 公开 mutation 函数
+# 全程），并行调用退化为排队，每次 version 正确前进。
+# 锁必须在版本读取**之前**获取——只锁 _commit_with_revision 不够：caller
+# 锁外拿到的 stale m 会让排队各方仍算出同一版本号。
+# 仅覆盖进程内入口（REST/MCP/compose GraphQL/页内 agent 同进程）；跨进程
+# CLI 直写 DB 由上方 IntegrityError 兜底。单进程架构（events hub 进程内）
+# 下无横向扩展诉求，锁表不做弱清理。
+
+_MAP_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+def _map_lock(map_id: int) -> asyncio.Lock:
+    return _MAP_LOCKS.setdefault(map_id, asyncio.Lock())
+
+
+def _serialized(fn):
+    """按第一位置参数（map_id）串行化 async mutation。
+
+    functools.wraps 保留 __name__/__doc__（mount_method 依赖前者）；
+    签名经 wrapper 收敛为 (map_id, *args, **kwargs)——本模块函数只被
+    service/mount 层按原签名调用，内省面不受影响。
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(map_id: int, *args, **kwargs):
+        async with _map_lock(map_id):
+            return await fn(map_id, *args, **kwargs)
+
+    return wrapper
 
 
 async def _commit_view_state(
@@ -412,6 +455,7 @@ async def create_map(title: str, actor: str = "agent") -> Map:
         return m
 
 
+@_serialized
 async def add_node(
     map_id: int,
     parent_id: int,
@@ -455,6 +499,7 @@ async def add_node(
         return node
 
 
+@_serialized
 async def update_node(
     map_id: int,
     node_id: int,
@@ -549,6 +594,7 @@ async def set_node_collapsed(
         return True
 
 
+@_serialized
 async def move_node(
     map_id: int,
     node_id: int,
@@ -591,6 +637,7 @@ async def move_node(
         return node
 
 
+@_serialized
 async def delete_node(map_id: int, node_id: int, actor: str = "agent") -> bool:
     """删除节点及其整棵子树。根节点不可删除（每棵图必须有根）。
 
@@ -620,6 +667,7 @@ async def delete_node(map_id: int, node_id: int, actor: str = "agent") -> bool:
         return True
 
 
+@_serialized
 async def delete_map(map_id: int, actor: str = "agent") -> bool:
     """软删除整张脑图：打 deleted_at 标记，行/节点/快照保留（可恢复，暂无入口）。
 
@@ -746,6 +794,7 @@ async def set_fold_level(
         return m
 
 
+@_serialized
 async def apply_outline(
     map_id: int,
     outline: str,
@@ -1022,6 +1071,7 @@ def _validate_snapshot(map_id: int, version: int, snap: dict) -> list[dict]:
     return nodes
 
 
+@_serialized
 async def restore_revision(map_id: int, version: int, actor: str = "agent") -> Map:
     """回滚到指定版本的快照：整树重建为该版本状态（节点编号 display_id 保留）。
 
