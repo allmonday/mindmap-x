@@ -66,7 +66,7 @@ xattr -cr /Applications/MindMapX.app   # or right-click → Open the first time
 ```
 
 - **Data lives in** `~/Library/Application Support/MindMapX/` — `mindmap.db`, chat sessions/archives, and `desktop.log` (the only log channel for the GUI build)
-- **Model config**: create `.env` in that data directory (same variables as the server mode: `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `AGENT_MODEL`), then restart the app
+- **Model config**: click the gray chat button and fill in the gateway right in the app (saved to `provider.json` in the data directory, no restart needed); `.env` in that data directory works as a fallback (same variables as server mode)
 - **Agent access**: the app serves MCP on a local port — read it from the window title (`MindMap X — MCP :8740`) and connect with `claude mcp add --transport http mindmap http://127.0.0.1:8740/mcp`. Port 8740 is preferred; if taken, a random free port is used
 - Known limits: macOS arm64 only; unsigned (hence the `xattr` step)
 
@@ -98,16 +98,11 @@ External agents (MCP / CLI / REST) have no such channel — MCP is request/respo
 
 ### In-page agent (embedded strands agents)
 
-The browser chat panel is backed by an embedded [strands agents](https://strandsagents.com/) agent: it operates the map through **the app's own MCP** (loopback streamable-http, the same interface external Claude Code uses), with any OpenAI-compatible gateway as the model — switching providers is a three-line `.env` change (gitignored, auto-loaded at startup, never overrides existing env vars):
+The browser chat panel is backed by an embedded [strands agents](https://strandsagents.com/) agent: it operates the map through **the app's own MCP** (loopback streamable-http, the same interface external Claude Code uses). The model gateway is configured **in the UI** — click the gray chat button (or the gear icon in the chat panel), pick a provider preset (OpenAI / Anthropic / DeepSeek / GLM / Kimi / Ollama) or custom, fill in base URL / API key / model, and save: the server probes the gateway with those exact credentials before persisting them (a bad URL or key is rejected with the reason). Config lives in `var/provider.json` (gitignored) and takes effect on the very next message — no restart.
 
-```bash
-# .env example — any OpenAI-compatible gateway works (OpenAI / DeepSeek / Qwen / Kimi / zhipu)
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=<OpenAI API key>
-AGENT_MODEL=<model id, e.g. gpt-4o>
-```
+Environment variables still work as a deployment-level fallback (`OPENAI_BASE_URL` / `OPENAI_API_KEY` / `AGENT_MODEL`, plus `AGENT_PROVIDER=anthropic` for Anthropic-style APIs; see `.env.example`); UI config always wins over env, and clearing it in the dialog falls back to env.
 
-When no model gateway is configured, the agent chat button stays visible but grayed out: clicking it pops a dialog listing the environment variables to configure (`OPENAI_BASE_URL` / `OPENAI_API_KEY` / `AGENT_MODEL`, see `.env.example`), and the panel never opens; a gateway failure mid-session shows an explicit banner inside the panel.
+When no model gateway is configured anywhere, the agent chat button stays visible but grayed out: clicking it opens the config dialog directly; a gateway failure mid-session shows an explicit banner inside the panel (with a shortcut to reopen the config).
 
 ### Interruptible while running
 

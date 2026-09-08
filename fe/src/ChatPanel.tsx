@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { mdComponents } from './Mermaid'
-import { chatApi, gateReasonText, localAgentApi, type ArchiveDoc, type ArchiveMeta } from './api'
+import { chatApi, gateReasonText, localAgentApi, type ArchiveDoc, type ArchiveMeta, type ChatGateStatus } from './api'
 import { fmtTime, useI18n } from './i18n'
+import { ProviderConfigModal } from './ProviderConfigModal'
 
 interface ChatMsg {
   role: 'user' | 'agent'
@@ -65,6 +66,13 @@ const HistoryIcon = () => (
   </svg>
 )
 
+const GearIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+  </svg>
+)
+
 // 页内 Agent 对话面板：变更即时反馈由画布的 /ws 通道负责，这里只做对话文本。
 export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
   const { t, locale } = useI18n()
@@ -100,6 +108,10 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
   const [stopping, setStopping] = useState(false) // 已发 interrupt、等待 done（防重复点击）
   const [healthErr, setHealthErr] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
+  // 配置弹窗 + 配置保存后的强制重连轮次：健康检查在 WS 握手时跑，改完配置
+  // 立即 bump 让 effect 重建连接（不等指数退避），服务端现读新配置即恢复
+  const [cfgOpen, setCfgOpen] = useState(false)
+  const [connEpoch, setConnEpoch] = useState(0)
   const [view, setView] = useState<View>({ kind: 'chat' })
   const [archives, setArchives] = useState<ArchiveMeta[]>([])
   const [archiveDoc, setArchiveDoc] = useState<ArchiveDoc | null>(null)
@@ -304,7 +316,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
         ws.close()
       }
     }
-  }, [mapId, agent]) // eslint-disable-line react-hooks/exhaustive-deps -- view/loadArchives 只在 cleared 分支读取，避免重连循环
+  }, [mapId, agent, connEpoch]) // eslint-disable-line react-hooks/exhaustive-deps -- view/loadArchives 只在 cleared 分支读取，避免重连循环
 
   // 流式追加时自动滚到底
   useEffect(() => {
@@ -481,10 +493,30 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
             <HistoryIcon />
           </button>
         )}
+        {/* 模型网关配置（仅 strands 通道走 provider 配置；local 是本机 claude） */}
+        {agent === 'strands' && (
+          <button
+            className="btn icon"
+            onClick={() => setCfgOpen(true)}
+            title={t('chat.providerSettings')}
+            aria-label={t('chat.providerSettings')}
+          >
+            <GearIcon />
+          </button>
+        )}
         <button className="btn icon" onClick={onClose} title={t('chat.close')} aria-label={t('chat.close')}>▸</button>
       </div>
 
-      {healthErr && view.kind === 'chat' && <div className="chat-banner">{healthErr}</div>}
+      {healthErr && view.kind === 'chat' && (
+        <div className="chat-banner">
+          {healthErr}
+          {agent === 'strands' && (
+            <button className="btn sm banner-action" onClick={() => setCfgOpen(true)}>
+              {t('chat.providerSettings')}
+            </button>
+          )}
+        </div>
+      )}
 
       {view.kind === 'chat' && (
         <div className="chat-list" ref={listRef}>
@@ -605,6 +637,25 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
           )}
         </div>
         </>
+      )}
+
+      {/* 模型网关配置（齿轮入口）：保存成功 → 立即重连（服务端 WS 握手时现读新
+          配置跑 health_check），错误横幅随新连接的 status 消息自然清除/更新 */}
+      {cfgOpen && (
+        <ProviderConfigModal
+          onClose={() => setCfgOpen(false)}
+          onSaved={(s: ChatGateStatus) => {
+            setHealthErr(
+              s.ok
+                ? null
+                : s.reason_code
+                  ? gateReasonText(t, s.reason_code, s.reason_detail)
+                  : t('chat.unavailable'),
+            )
+            setConnEpoch((e) => e + 1)
+            if (s.ok) setCfgOpen(false)
+          }}
+        />
       )}
     </div>
   )

@@ -145,7 +145,18 @@ body.chat-resizing {
   color: var(--danger);
   padding: 8px 14px;
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
+/* 横幅尾的"打开配置"入口：danger 色系里的幽灵按钮 */
+.chat-banner .banner-action {
+  flex: none;
+  color: var(--danger);
+  border-color: rgba(235, 87, 87, 0.4);
+  background: transparent;
+}
+.chat-banner .banner-action:hover { background: rgba(235, 87, 87, 0.1); }
 
 .chat-list {
   flex: 1;
