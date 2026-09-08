@@ -323,6 +323,9 @@ body.chat-resizing {
 }
 .note-editor-wrap .vditor {
   flex: 1;
+  /* flex item 默认 min-width:auto = 内容 min-content；备注里的长代码行/长英文串
+     min-content 可达上千 px，把整个编辑器撑破面板——必须显式放开收缩下限 */
+  min-width: 0;
   border: none;
   border-radius: 0;
   --panel-background-color: var(--bg);
@@ -348,6 +351,14 @@ body.chat-resizing {
   line-height: 1.7;
   color: var(--ink);
   background: transparent;
+}
+/* .vditor-content 自身是 flex 容器，ir/sv/wysiwyg 作为其 flex item 同样要放开
+   min-width 下限（外层 .vditor 修了这里不修会原地复发）；真正不可断行的内容
+   （代码块长行/表格）由 vditor 内部的 overflow 滚动承接，不再破出面板 */
+.note-editor-wrap .vditor-ir,
+.note-editor-wrap .vditor-wysiwyg,
+.note-editor-wrap .vditor-sv {
+  min-width: 0;
 }
 /* 预览态（disabled）去掉 Vditor 自带的 opacity .3 浅色遮罩 + not-allowed 光标——
    我们的预览是"只读浏览"语义而非"禁止操作"，内容应全清晰度展示 */
