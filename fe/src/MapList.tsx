@@ -77,6 +77,21 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
   const kw = query.trim().toLowerCase()
   const shown = (maps ?? []).filter((m) => m.title.toLowerCase().includes(kw))
 
+  // MCP 端点按当前部署地址拼（本地/桌面版/远程自适应）；尾斜杠不能省——
+  // 无斜杠的 POST /mcp 依赖服务端中间件重写到 /mcp/，部分 MCP 客户端
+  // 不跟随该重写，配置时会报错（chat.py 的 SELF_MCP_URL 同款带斜杠）
+  const mcpUrl = `${location.origin}/mcp/`
+  const [copied, setCopied] = useState(false)
+  const copyMcp = async () => {
+    try {
+      await navigator.clipboard.writeText(mcpUrl)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* 剪贴板不可用（非安全上下文等）——选中后手动复制 */
+    }
+  }
+
   return (
     <div className="map-list">
       <div className="list-actions">
@@ -84,6 +99,20 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
         <ThemeSwitch />
       </div>
       <h1>MindMap X</h1>
+      {/* 一句话定位 + MCP 端点（Agent 接入地址，点击复制） */}
+      <p className="map-subtitle">
+        {t('map.subtitle')}{' '}
+        <code
+          className="mcp-endpoint"
+          role="button"
+          tabIndex={0}
+          title={copied ? t('map.mcpCopied') : t('map.mcpCopy')}
+          onClick={() => void copyMcp()}
+          onKeyDown={(e) => e.key === 'Enter' && void copyMcp()}
+        >
+          {copied ? t('map.mcpCopied') : mcpUrl}
+        </code>
+      </p>
       <div className="search-row">
         <input
           value={query}
