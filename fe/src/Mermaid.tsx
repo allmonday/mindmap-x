@@ -5,21 +5,29 @@
 // mermaid 块时零成本，有则加载一次（模块级单例缓存）。vite 自动 code-split，
 // 主包不受影响。
 import { useEffect, useId, useState, type ReactElement } from 'react'
+import { useTheme } from './theme'
 
 let mermaidPromise: Promise<typeof import('mermaid').default> | null = null
+// 已应用的 mermaid 主题（幂等守卫）：initialize 可重复调用合并配置，
+// 但 StrictMode 双执行/多组件并发渲染时只在主题真变了才 re-initialize
+let appliedMermaidTheme: string | null = null
 
-function loadMermaid() {
+function ensureMermaid(theme: 'light' | 'dark') {
   if (!mermaidPromise) {
-    mermaidPromise = import('mermaid').then((m) => {
-      m.default.initialize({
+    mermaidPromise = import('mermaid').then((m) => m.default)
+  }
+  return mermaidPromise.then((mermaid) => {
+    const t = theme === 'dark' ? 'dark' : 'neutral' // neutral = 浅灰线条贴近 Notion 风
+    if (appliedMermaidTheme !== t) {
+      mermaid.initialize({
         startOnLoad: false,
-        theme: 'neutral', // 浅灰线条，贴近 Notion 风
+        theme: t,
         securityLevel: 'strict', // label 转义，防 SVG 注入（默认值，显式声明）
       })
-      return m.default
-    })
-  }
-  return mermaidPromise
+      appliedMermaidTheme = t
+    }
+    return mermaid
+  })
 }
 
 function Mermaid({ chart }: { chart: string }) {
@@ -27,18 +35,19 @@ function Mermaid({ chart }: { chart: string }) {
   const [failed, setFailed] = useState(false)
   // useId 含冒号（:r1:）——mermaid 的 id 选择器不允许，替换掉
   const domId = `mmd-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
+  const { resolved } = useTheme()
 
   useEffect(() => {
     let alive = true // 严格模式双执行 / 快速切内容时丢弃过期结果
     setFailed(false)
-    loadMermaid()
+    ensureMermaid(resolved)
       .then((mermaid) => mermaid.render(domId, chart))
       .then(({ svg }) => alive && setSvg(svg))
       .catch(() => alive && setFailed(true)) // 语法错误：降级显示原文，不炸整块 markdown
     return () => {
       alive = false
     }
-  }, [chart, domId])
+  }, [chart, domId, resolved]) // resolved 变化 → 已挂载的图全部按新主题重渲
 
   if (failed) {
     return <code className="language-mermaid mermaid-err">{chart}</code> // 原文兜底

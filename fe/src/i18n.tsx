@@ -30,6 +30,11 @@ const zh = {
   'ws.dead': '已断开',
   // ── 编辑器 ──
   'editor.agentChat': 'Agent 对话',
+  // ── 主题切换 ──
+  'theme.label': '外观',
+  'theme.light': '浅色',
+  'theme.dark': '深色',
+  'theme.system': '跟随系统',
   'editor.nodeNote': '节点备注（d）',
   'editor.outlineEdit': 'outline 编辑',
   'editor.backToFull': '返回全图',
@@ -222,6 +227,10 @@ const en: Record<I18nKey, string> = {
   'ws.connecting': 'Connecting',
   'ws.dead': 'Disconnected',
   'editor.agentChat': 'Agent chat',
+  'theme.label': 'Appearance',
+  'theme.light': 'Light',
+  'theme.dark': 'Dark',
+  'theme.system': 'Auto',
   'editor.nodeNote': 'Node notes (d)',
   'editor.outlineEdit': 'Outline edit',
   'editor.backToFull': 'Back to full map',

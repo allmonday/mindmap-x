@@ -5,6 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MindMap X</title>
+    <script>
+      // 防 FOUC：首帧 paint 前解析主题挂到 <html data-theme>。
+      // resolve 规则与 fe/src/theme.tsx 刻意双份（模块 JS 无法在首帧前共享），
+      // 修改判定逻辑时两处同步；异常一律回落 light
+      (function () {
+        try {
+          var s = localStorage.getItem('theme')
+          var dark =
+            s === 'dark' || (s !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light'
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

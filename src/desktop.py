@@ -181,6 +181,11 @@ def main() -> None:
         width=1440,
         height=900,
         min_size=(960, 600),
+        # WebView 内容加载前的窗口底色：深色（与 dark 主题主底 #191919 同值）。
+        # 深色用户夜间看到纯白首帧的亮度冲击 > 浅色用户短暂看到深底，
+        # 且前端 FOUC 脚本会在首帧 JS 执行时立即纠正。标题栏外观由 OS 决定
+        # （pywebview 6.x 无 dark titlebar 参数），与页内三态选择天然解耦
+        background_color="#191919",
     )
     webview.start()  # 阻塞主线程直到窗口关闭（GUI 必须在主线程）
 

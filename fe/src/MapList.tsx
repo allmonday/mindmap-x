@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { fmtTime, useI18n } from './i18n'
 import { LangSwitch } from './LangSwitch'
+import { ThemeSwitch } from './ThemeSwitch'
 import type { MapSummary } from './types'
 
 // 与 MindMapEditor 的 TrashIcon 同款（lucide trash）
@@ -78,7 +79,10 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
 
   return (
     <div className="map-list">
-      <LangSwitch />
+      <div className="list-actions">
+        <LangSwitch />
+        <ThemeSwitch />
+      </div>
       <h1>MindMap X</h1>
       <div className="search-row">
         <input

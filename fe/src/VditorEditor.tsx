@@ -12,6 +12,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
+import { useTheme } from './theme'
 
 export interface VditorHandle {
   setValue: (markdown: string) => void
@@ -65,6 +66,20 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
   const editableRef = useRef(editable)
   editableRef.current = editable
 
+  // 主题热切换：setTheme 只换 class + 重载 content-theme/hljs CSS（本地 /vditor），
+  // 不重建实例——initialValue 是挂载快照，重建会把未保存草稿回滚（最大的坑）。
+  // 构造 effect 的 deps 保持 [locale]：主题变化走这里的独立 effect 热切
+  const { resolved } = useTheme()
+  const themeRef = useRef(resolved)
+  themeRef.current = resolved
+  const applyTheme = (v: Vditor, dark: boolean) =>
+    v.setTheme(dark ? 'dark' : 'classic', dark ? 'dark' : 'light', dark ? 'github-dark' : 'github')
+  useEffect(() => {
+    const v = vditorRef.current
+    if (v && readyRef.current) applyTheme(v, resolved === 'dark')
+    // else：实例未 ready——after 回调里读 themeRef.current 补放（pending 同款思路）
+  }, [resolved])
+
   /** 预览态 = disabled + 工具栏隐藏（双态切换的唯一开关） */
   const applyEditable = (v: Vditor, on: boolean) => {
     v.updateToolbarConfig({ hide: !on })
@@ -106,7 +121,7 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
 
     vditor = new Vditor(el, {
       mode: 'ir',
-      theme: 'classic',
+      theme: resolved === 'dark' ? 'dark' : 'classic', // 挂载时按当前主题（后续热切见 applyTheme）
       icon: 'ant',
       lang: locale,
       // 本地化按需资源（mermaid/highlight/lute）：默认 unpkg 国内慢且桌面版离线不可用。
@@ -119,8 +134,8 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
       placeholder: '',
       toolbar: TOOLBAR,
       preview: {
-        theme: { path: '/vditor/dist/css/content-theme', current: 'light', list: {} },
-        hljs: { enable: true, lineNumber: false, style: 'github' },
+        theme: { path: '/vditor/dist/css/content-theme', current: resolved === 'dark' ? 'dark' : 'light', list: {} },
+        hljs: { enable: true, lineNumber: false, style: resolved === 'dark' ? 'github-dark' : 'github' },
       },
       input: (v) => cbRef.current.onInput(v),
       ctrlEnter: () => cbRef.current.onCtrlEnter(),
@@ -151,6 +166,8 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
         vditorRef.current = vditor
         readyRef.current = true
         applyEditable(vditor, editableRef.current)
+        // 挂载期间切过主题（effect 被跳过）：按最新值补放
+        applyTheme(vditor, themeRef.current === 'dark')
         // 补放 ready 前挂起的调用（首个 source 态挂载的 setValue / focus）
         const pending = pendingRef.current
         if (pending.value !== undefined) vditor.setValue(pending.value, true)

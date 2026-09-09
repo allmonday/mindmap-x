@@ -23,6 +23,7 @@ import { LangSwitch } from './LangSwitch'
 import { layoutMap, type LNode, type LayoutMode } from './layout'
 import { ProviderConfigModal } from './ProviderConfigModal'
 import { RevisionPanel } from './RevisionPanel'
+import { ThemeSwitch } from './ThemeSwitch'
 import type { MapDetail, NodeDTO, OutlineMode } from './types'
 import { useAnimatedLayout } from './useAnimatedLayout'
 
@@ -1628,6 +1629,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           <PencilIcon />
         </button>
         <LangSwitch />
+        <ThemeSwitch />
       </header>
 
       {error && <div className="toast editor-toast">{error}</div>}
@@ -1777,10 +1779,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               pannable
               zoomable
               className="rf-minimap"
-              nodeColor="#ffffff" /* 全部白底（与画布节点一致），形状靠描边呈现 */
+              /* 颜色传 CSS 变量：SVG presentation attribute 按 CSS 值解析，var()
+                 随 html[data-theme] 翻转，TSX 不感知主题、颜色单一来源在 token */
+              nodeColor="var(--canvas-panel)" /* 与画布节点同底，形状靠描边呈现 */
               nodeStrokeColor={(n) => {
                 const d = n.data as MindNodeData
-                return d.isLayoutRoot ? '#0f172a' : '#94a3b8' // 根用深描边保持可寻
+                return d.isLayoutRoot ? 'var(--canvas-ink)' : 'var(--canvas-line)' // 根用深描边保持可寻
               }}
             />
           </ReactFlow>
