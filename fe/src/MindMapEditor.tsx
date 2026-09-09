@@ -99,8 +99,8 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
   const showActions = !isEditing && selected && selectedByPointer
 
   // ── 长按激活（480ms）：亮按钮行 + 备注面板。三防 ─────────────────────
-  // 1) 拖拽取消：按住节点拖动 = 平移画布（nodesDraggable=false），移动超
-  //    8px 即取消长按，想平移时不会满屏误亮按钮
+  // 1) 拖拽取消：按住节点拖动 = 拖拽改挂载手势（nodesDraggable），移动超
+  //    8px 即取消长按，拖动时不会满屏误亮按钮
   // 2) click 吞除：浏览器在松手才发 click，长按已触发激活后这个 click 会
   //    再跑一次静默选中——consumed 标记跳过并在下一次按下复位
   // 3) 编辑/加节点态豁免：textarea 覆盖节点，指针事件在输入上下文无意义
@@ -722,6 +722,84 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     localStorage.setItem('layoutMode', layoutMode)
   }, [layoutMode])
   const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
+
+  // ── 拖拽改挂载（drag-to-reparent）──────────────────────────────────────
+  // 拖节点到另一节点上 = move_node 换父（XMind 同款手势）。跟手走 animPos
+  // 同款路子：dragPos 每帧驱动 rfNodes 重建（位置覆盖优先级 drag > 动画 > 布局）；
+  // 命中高亮直改目标 DOM class（不走 state，长按进度环同款手法）。落点提交
+  // 走 WS 重拉惯例（无乐观更新），松手→推送间隙节点停在落点、回来后滑正。
+  // 防环前端预检（后代目标标红拒放），服务端 move_node 兜底。空白落点=取消。
+  // 注意：开启后"拖节点=平移画布"的旧语义被替换——平移只能拖空白处
+  const [dragPos, setDragPos] = useState<Map<number, { x: number; y: number }> | null>(null)
+  const dragDescendants = useRef<Set<number>>(new Set())
+  const dropHighlight = useRef<{ el: HTMLElement; cls: string } | null>(null)
+  const dropTarget = useRef<{ id: number; ok: boolean } | null>(null)
+
+  const setDropHighlight = (el: HTMLElement | null, cls: string) => {
+    if (dropHighlight.current) dropHighlight.current.el.classList.remove(dropHighlight.current.cls)
+    dropHighlight.current = el ? { el, cls } : null
+    if (el) el.classList.add(cls)
+  }
+
+  /** 指针下的候选父节点（屏幕坐标 × 节点矩形）；自身跳过，后代命中标禁 */
+  const hitTest = (cx: number, cy: number, dragId: number): { el: HTMLElement; id: number; ok: boolean } | null => {
+    const els = document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')
+    for (const el of els) {
+      const id = Number(el.dataset.id)
+      if (id === dragId) continue
+      const r = el.getBoundingClientRect()
+      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+        return { el, id, ok: !dragDescendants.current.has(id) }
+      }
+    }
+    return null
+  }
+
+  const onDragStart = useCallback(
+    (_e: MouseEvent | TouchEvent, node: MindNode) => {
+      // 拖起时收集后代集合（防环预检用；树在拖动中不变）
+      const desc = new Set<number>()
+      const kidsOf = new Map<number, number[]>()
+      if (detail) {
+        for (const n of detail.nodes) {
+          if (n.parent != null) kidsOf.set(n.parent.display_id, [...(kidsOf.get(n.parent.display_id) ?? []), n.display_id])
+        }
+        const stack = [Number(node.id)]
+        while (stack.length) {
+          for (const k of kidsOf.get(stack.pop()!) ?? []) {
+            desc.add(k)
+            stack.push(k)
+          }
+        }
+      }
+      dragDescendants.current = desc
+    },
+    [detail],
+  )
+
+  const onDrag = useCallback((e: MouseEvent | TouchEvent, node: MindNode) => {
+    // RF 已算好拖动中的 position（左上角，与 rfNodes 同语义）
+    const dragId = Number(node.id)
+    setDragPos(new Map([[dragId, { x: node.position.x, y: node.position.y }]]))
+    const cx = e instanceof MouseEvent ? e.clientX : e.touches[0]?.clientX ?? 0
+    const cy = e instanceof MouseEvent ? e.clientY : e.touches[0]?.clientY ?? 0
+    const hit = hitTest(cx, cy, dragId)
+    setDropHighlight(hit?.el ?? null, hit ? (hit.ok ? 'drop-target' : 'drop-forbidden') : '')
+    dropTarget.current = hit
+  }, [])
+
+  const onDragStop = useCallback(
+    (_e: MouseEvent | TouchEvent, node: MindNode) => {
+      const hit = dropTarget.current
+      setDropHighlight(null, '')
+      dropTarget.current = null
+      setDragPos(null) // 取消/提交后清跟手位：提交场景 WS 推送动画滑正；取消场景瞬回布局位
+      if (hit?.ok) void guard(() => api.moveNode(mapId, Number(node.id), hit.id))
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- guard 无状态依赖（吞错+toast），旧闭包无害
+    [mapId],
+  )
+
   const foldQueueRef = useRef<Promise<void>>(Promise.resolve())
   const foldSequenceRef = useRef(0)
   const foldRefreshNeededRef = useRef(false)
@@ -1517,9 +1595,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     const result = layout.all.map((lnode) => {
       const id = String(lnode.node.display_id)
       const p = animPos?.get(lnode.node.display_id)
+      const dp = dragPos?.get(lnode.node.display_id) // 拖拽跟手位：优先于动画与布局
       const sel = lnode.node.display_id === selectedId
-      const x = p?.x ?? lnode.x
-      const y = (p?.y ?? lnode.y) - lnode.h / 2
+      const x = dp?.x ?? p?.x ?? lnode.x
+      const y = (dp?.y ?? p?.y ?? lnode.y) - lnode.h / 2
       const op = p ? p.op : 1
       // 节点内容签名：RF 与 MindNodeView 消费的全部字段（nodesSig 同源维度
       // + 交互态 + 动画位置/透明度）。签名相同 → 复用旧对象。
@@ -1570,8 +1649,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     })
     prevNodesRef.current = next
     return result
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 门卫注释见上；layout 由 nodesSig 表达
-  }, [nodesSig, animPos, callbacks])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 门卫注释见上；layout 由 nodesSig 表达；dragPos 拖拽逐帧驱动
+  }, [nodesSig, animPos, dragPos, callbacks])
 
   const rfEdges: Edge[] = useMemo(() => {
     if (!layout) return []
@@ -1800,7 +1879,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
             minZoom={0.1}
             maxZoom={2.5}
-            nodesDraggable={false}
+            nodesDraggable /* 拖节点到另一节点上 = 改挂载（onNodeDragStop 提交
+                move_node）；画布平移改为拖空白处。长按/双击/单击不受影响（拖动
+                超阈值才启动，移动 >8px 早已取消长按计时） */
+            onNodeDragStart={onDragStart}
+            onNodeDrag={onDrag}
+            onNodeDragStop={onDragStop}
             nodesConnectable={false}
             zoomOnDoubleClick={false}
             elementsSelectable
