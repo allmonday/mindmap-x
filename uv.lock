@@ -43,7 +43,7 @@ requires-dist = [
     { name = "fastapi" },
     { name = "greenlet", specifier = ">=3" },
     { name = "httpx", marker = "extra == 'test'" },
-    { name = "nexusx", extras = ["cli", "fastmcp"], specifier = ">=6,<7" },
+    { name = "nexusx", extras = ["cli", "fastmcp"], specifier = ">=6.3,<7" },
     { name = "platformdirs", marker = "extra == 'desktop'", specifier = ">=4" },
     { name = "pyinstaller", marker = "extra == 'desktop'", specifier = ">=6" },
     { name = "pytest", marker = "extra == 'test'" },
@@ -1068,7 +1068,7 @@ wheels = [
 
 [[package]]
 name = "nexusx"
-version = "6.2.0"
+version = "6.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiodataloader" },
@@ -1078,9 +1078,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "sqlmodel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/75/40/07800958c7a4a88c1d4e6ce9602ac6868a058d36d951970910383838261b/nexusx-6.2.0.tar.gz", hash = "sha256:45b305ee7f9b97757da98a51e347cc3ed03b9711a65a6d20b198713232c05380", size = 2104050, upload-time = "2026-09-02T07:36:27.437Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/8d/304be606cbc77d15e913e9dc4cc36fd484a75e5d65a8002630fb98a3b133/nexusx-6.3.0.tar.gz", hash = "sha256:0571b2813200b3483aca9623b76b769b5ebcbaac324f5514fd872aa73af8a96f", size = 2115963, upload-time = "2026-09-08T23:52:17.867Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1d/4e/2d97b42ec6863813d4f8ee48bdaea0d5fe8e44183bfee7ca4424e047835c/nexusx-6.2.0-py3-none-any.whl", hash = "sha256:d81c86e0a9e1e15062eda29244484e6e1d361b5b69be9a8501007672c29f0750", size = 847514, upload-time = "2026-09-02T07:36:26.131Z" },
+    { url = "https://files.pythonhosted.org/packages/13/0f/34c5cfbc63d0e99ea6103590554a57080f4a362a268ca19118d35a73ae32/nexusx-6.3.0-py3-none-any.whl", hash = "sha256:baae880f1e48189e51a69392a71f9fc82a8bc8e306f3bc222d04920ee1b47d1d", size = 852091, upload-time = "2026-09-08T23:52:16.512Z" },
 ]
 
 [package.optional-dependencies]

@@ -5,7 +5,7 @@ description = "人 + AI Agent 协同脑图工具：Human 浏览器编辑 / Agent
 license = "BUSL-1.1"
 requires-python = ">=3.12"
 dependencies = [
-    "nexusx[cli,fastmcp]>=6,<7",
+    "nexusx[cli,fastmcp]>=6.3,<7",
     "fastapi",
     # multipart 表单解析（/api/uploads 图片上传）。venv 里一直是 mcp 的传递依赖，
     # 显式声明防止依赖树变化后搭便车失效
