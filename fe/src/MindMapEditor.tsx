@@ -1366,12 +1366,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       if (editingId != null || outlineOpen || revOpen || chatGateOpen || gotoOpen || selectedId == null || !detail)
         return
       // 聊天面板开着时：浏览类（方向键/空格收放）保留——边聊边看图是常态流；
-      // 只禁会产生编辑界面的键（Enter/Tab 弹输入框、F2 进编辑、Delete 删子树）：
-      // 输入框 disabled（Agent 处理中）会把焦点踢到 body、点面板非输入区焦点
-      // 也不在 textarea，activeElement 推断失效，用户按 Enter 想发消息却会
-      // 触发画布"加兄弟"
-      if (chatOpen && (e.key === 'F2' || e.key === 'Tab' || e.key === 'Enter' || e.key === 'Delete'))
-        return
+      // 只禁"焦点在面板内"时的编辑类键（Enter/Tab 弹输入框、F2 进编辑、
+      // Delete 删子树）。曾按"面板开着即全禁"（焦点推断不可靠），但面板改
+      // 默认开启后用户进图快捷键全废（Tab 落进原生 focus 遍历）——收窄到
+      // 焦点区域判定；Agent 处理中输入框 disabled 的焦点踢丢由 ChatPanel
+      // 把焦点收进面板容器兜底，判定恢复可靠
+      if (chatOpen && (e.key === 'F2' || e.key === 'Tab' || e.key === 'Enter' || e.key === 'Delete')) {
+        if (document.activeElement?.closest?.('.chat-panel')) return
+      }
       // 焦点在任何输入元素上时快捷键一律失效（编辑框/聊天面板/outline 弹层）
       const el = document.activeElement
       if (

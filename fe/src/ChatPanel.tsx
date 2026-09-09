@@ -118,6 +118,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
   const wsRef = useRef<WebSocket | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   // 输入框随内容自动增高（上限 120px 后改内部滚动）；发送后 draft 清空自动缩回。
   // 空态固定 38px：placeholder 在窄面板折两行会虚高 scrollHeight。
@@ -355,6 +356,14 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
 
   const disabled = !!healthErr || busy || !connected
 
+  // 输入框 disabled（Agent 处理中/断连）会把焦点踢到 body——收进面板容器
+  // （tabIndex=-1 可编程聚焦）。MindMapEditor 的聊天守卫按"焦点是否在
+  // .chat-panel 内"判定，焦点不丢判定即可靠：用户此刻按 Enter 仍算聊天
+  // 语境（不会误触画布"加兄弟"），Agent 完成后点回输入框继续
+  useEffect(() => {
+    if (disabled && document.activeElement === inputRef.current) panelRef.current?.focus()
+  }, [disabled])
+
   const send = () => {
     const text = draft.trim()
     if (!text || disabled) return
@@ -420,7 +429,7 @@ export function ChatPanel({ mapId, width, onResize, onClose }: Props) {
   )
 
   return (
-    <div className="chat-panel" style={{ width }}>
+    <div className="chat-panel" ref={panelRef} tabIndex={-1} style={{ width }}>
       {/* 左缘拖拽调宽：面板贴右缘，鼠标左移宽度增大（280px ~ min(90vw, 760px)） */}
       <div
         className="chat-resize"
