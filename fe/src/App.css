@@ -645,6 +645,9 @@ body.chat-resizing {
 .editor-toast { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 20; }
 
 .rf-wrap { flex: 1; position: relative; background: var(--canvas-bg); }
+/* 点阵背景的点色：Background 的 color prop 走 svg fill attr（不解析
+   var()），用 CSS 规则覆盖到 token——主题切换由 --canvas-dot 驱动 */
+.rf-wrap .react-flow__background pattern circle { fill: var(--canvas-dot); }
 
 /* 画板左上角悬浮标题（独立于顶部工具栏）：无边框，靠半透明白底保证可读性。
    不设最大宽度——约束会把面包屑里的祖先项压到 0 宽"消失"（曾致二级聚焦时真根缺失） */

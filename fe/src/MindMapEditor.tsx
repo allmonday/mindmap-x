@@ -1,6 +1,8 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  Background,
+  BackgroundVariant,
   BaseEdge,
   Controls,
   getBezierPath,
@@ -653,7 +655,7 @@ const NoteIcon = () => (
 // ── editor ────────────────────────────────────────────────────────────
 
 export function MindMapEditor({ mapId, onBack }: Props) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [detail, setDetail] = useState<MapDetail | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   // 选中来源：点击=要操作这个节点（亮按钮行）；键盘导航=移动浏览焦点
@@ -1795,6 +1797,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           }}
             proOptions={{ hideAttribution: true }}
           >
+            {/* 点阵背景：init 期即有（ccd8154 Notion 重主题时误删，2026-09-09
+                应用户反馈恢复）——纯白画布太亮易疲劳，浅灰底 + 点阵给空间参照。
+                点色经 CSS 用 --canvas-dot token 化（fill attr 不解析 var()，
+                prop 传值仅作 CSS 缺席时的兜底） */}
+            <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} color="#cbd5e1" />
             <Controls showInteractive={false} />
             <MiniMap
               pannable

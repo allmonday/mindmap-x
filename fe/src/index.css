@@ -27,7 +27,7 @@
 
   /* ── 画布 token（ReactFlow 专用，slate 色系，不与 chrome token 混用） ──
      dark 映射规律：slate 标尺整体下移约 3 档（N00→N+300），文字色反向 */
-  --canvas-bg: #ffffff;     /* 画布底 */
+  --canvas-bg: #f8fafc;     /* 画布底（slate-50 浅灰：纯白太亮易疲劳，白节点浮其上有层次） */
   --canvas-panel: #ffffff;  /* 画布上的面板/浮层底（节点、minimap、controls、下拉） */
   --canvas-ink: #0f172a;    /* 画布强文字（根节点/minimap 根描边） */
   --canvas-edge: #cbd5e1;   /* 连线 */
@@ -36,6 +36,7 @@
   --canvas-muted: #64748b;  /* 画布弱化文字 */
   --canvas-sel: #0ea5e9;    /* 选中态 */
   --canvas-badge: #f59e0b;  /* id-badge 琥珀（amber 深浅底对比皆足，双态同值） */
+  --canvas-dot: #cbd5e1;    /* 点阵背景的点 */
   --canvas-minimap-mask: rgba(240, 240, 240, 0.6); /* minimap 非视口区蒙层（RF 默认值） */
   --radius: 6px;
 }
@@ -65,19 +66,20 @@ html[data-theme='dark'] {
   --bubble-user: #2f2f2f;
   --code-bg: #0f0f0f;
 
-  /* 画布 dark：底 #0f172a(slate-900) < 面板 #1e293b(slate-800)——
-     越浅越浮起，用明度替代 light 的阴影语言表达层级。
-     线系比首版整体提亮一档（#334155 起步实测过暗，连线在画布上几乎不可见） */
-  --canvas-bg: #0f172a;
-  --canvas-panel: #1e293b;
+  /* 画布 dark（2026-09-09 两轮调优：先降饱和→再提亮）：底提到与 chrome
+     #191919 相近的亮度——过深的底（亮度 <10%）配亮字是强对比，长时间
+     浏览易疲劳；节点再亮一档保持"越浅越浮起"的层级。线系随底同步微提 */
+  --canvas-bg: #1a1f29;
+  --canvas-panel: #262f3f;
   --canvas-ink: #e2e8f0;
-  --canvas-edge: #475569;
-  --canvas-line: #64748b;
-  --canvas-line-2: #94a3b8;
-  --canvas-muted: #94a3b8;
+  --canvas-edge: #52617a;
+  --canvas-line: #6e7d96;
+  --canvas-line-2: #9aa6ba;
+  --canvas-muted: #9aa6ba;
   --canvas-sel: #38bdf8;
   --canvas-badge: #f59e0b;
-  --canvas-minimap-mask: rgba(15, 23, 42, 0.55);
+  --canvas-dot: #313c52;
+  --canvas-minimap-mask: rgba(26, 31, 41, 0.55);
 }
 
 * { box-sizing: border-box; }
