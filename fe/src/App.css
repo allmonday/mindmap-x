@@ -1115,22 +1115,15 @@ button.id-badge {
   cursor: default !important;
 }
 
-/* 节点操作按钮：渲染在节点 DOM 内（随画布平移缩放），节点左下方、左右排列。
-   显示时机：hover 或 选中（.sel）常驻；默认 opacity/visibility 隐藏（不可点） */
+/* 节点操作按钮行：内容由 NodeToolbar 渲染到独立层（不随画布缩放，缩小时
+   仍可操作——定位/显隐/层级由 NodeToolbar 管），这里只管自身视觉 */
 .node-actions {
-  position: absolute;
-  top: calc(100% + 9px);
-  left: 0;
   display: flex;
   gap: 8px;
   background: var(--canvas-panel);
   padding: 3px;
   border-radius: 10px;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
-  z-index: 5;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.08s ease, visibility 0.08s ease;
 }
 /* 删除是破坏性操作且紧邻 Focus：额外左距拉开与 Focus 的间隔（8+4=12px），
    降低误触；armed 态（两步确认已点亮）红色实心提示"再点即删" */
@@ -1143,30 +1136,8 @@ button.id-badge {
   width: auto; /* 解除图标态的 30px 定宽，文字按钮按内容撑开 */
   padding: 0 10px;
 }
-/* 显示态由 React 驱动（.show = 点击选中 selected，见 MindNodeView）；
-   adding（加子输入态）常驻：焦点在输入框时鼠标可能已移开 */
-.node-actions.show,
-.node-actions.adding {
-  opacity: 1;
-  visibility: visible;
-}
-/* 悬停桥：节点底边与按钮行之间的 9px 空隙用伪元素覆盖，鼠标下移途中
-   悬停链不断（伪元素是 .node-actions 的一部分，也是 .rf-node 的后代）。
-   输入模式（.adding）不要桥——输入框 autoFocus 即焦点，且 as-child 方位
-   下桥反而悬空拦截点击 */
-.node-actions:not(.adding)::before {
-  content: '';
-  position: absolute;
-  top: -9px;
-  left: 0;
-  right: 0;
-  height: 9px;
-}
-/* 堆叠层级：.node-actions 的 z-index 只在节点自身 stacking context 内生效，
-   会被 DOM 靠后的兄弟节点盖住——按钮行可见（.show/.adding）时把整个节点
-   wrapper 抬高；编辑态同理（节点放开高度向下生长，要盖住下方相邻节点）；
-   !important 用于覆盖 ReactFlow 写在行内 style 的 zIndex */
-.rf-wrap .react-flow__node:has(.node-actions.show, .node-actions.adding),
+/* 编辑态节点放开高度向下生长，要盖住下方相邻节点（NodeToolbar 独立层
+   无此问题，但 textarea 还在节点内）；!important 覆盖 RF 行内 zIndex */
 .rf-wrap .react-flow__node:has(.rf-editor) {
   z-index: 1000 !important;
 }
@@ -1178,20 +1149,14 @@ button.id-badge {
   justify-content: center;
   padding: 0;
   box-shadow: none;
-  /* 外层 pill 已有白底+投影，按钮再描边显得冗余——静息态边框透明，
+  /* 外层 pill 已有底+投影，按钮再描边显得冗余——静息态边框透明，
      hover 反馈（底色/描边）不受影响；armed 态红框由 .danger.confirm 更高特异性保证 */
   border-color: transparent;
 }
 
-/* 加节点输入模式：+ 操作条变为 输入框 + 保存。
-   方位按语义：sibling = 锚点正下方（下一个兄弟的落位，即默认位置）；
-   child = 锚点右侧（子树生长方向） */
+/* 加节点输入模式：+ 操作条变为 输入框 + 保存（方位由 NodeToolbar 的
+   position/align 控制：sibling=下方左对齐，child=右侧居中） */
 .node-actions.adding { gap: 5px; }
-.node-actions.adding.as-child {
-  top: 50%;
-  left: calc(100% + 14px);
-  transform: translateY(-50%);
-}
 .add-input {
   width: 150px;
   height: 30px;

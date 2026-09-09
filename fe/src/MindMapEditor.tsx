@@ -8,6 +8,7 @@ import {
   getBezierPath,
   Handle,
   MiniMap,
+  NodeToolbar,
   Position,
   ReactFlow,
   type Edge,
@@ -257,11 +258,19 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
         <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
       )}
 
-      {/* 节点操作按钮：节点左下方，点击选中时显示（.show 由 selected 驱动，
-          点画布/其他节点即消失）。加子模式 = 输入框 + 保存，确认后才创建节点 */}
+      {/* 节点操作按钮：NodeToolbar 渲染在独立层、不随画布缩放（旧方案按钮
+          在节点 DOM 内，zoom 缩小时跟着缩小到不可点）。方位语义：按钮行与
+          sibling 输入态 = 节点下方左对齐（下一个兄弟的落位）；child 输入态
+          = 节点右侧（子树生长方向）。显隐 = isVisible（选中激活或输入态） */}
       {!isEditing && (
-        isAdding ? (
-          <div className={`node-actions adding as-${addingDir}`}>
+        <NodeToolbar
+          isVisible={isAdding || showActions}
+          position={isAdding && addingDir === 'child' ? Position.Right : Position.Bottom}
+          align={isAdding && addingDir === 'child' ? 'center' : 'start'}
+          offset={isAdding && addingDir === 'child' ? 14 : 9}
+        >
+          {isAdding ? (
+          <div className="node-actions adding">
             <input
               ref={addInputRef}
               className="add-input"
@@ -349,7 +358,8 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
               </button>
             )}
           </div>
-        )
+          )}
+        </NodeToolbar>
       )}
 
       {hasChildren && !isRoot && (
