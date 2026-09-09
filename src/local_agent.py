@@ -135,9 +135,14 @@ apply_outline 的 outline 格式（与 get_tree 输出同构）：
 
 节点分工：content 是画布短标题（一行），note 是该节点的 markdown 长文备注
 （背景/细节/展开论述，前端备注面板渲染）。长内容写 note 而不是撑长 content。
-compose_query 的字符串参数（备注、标题等）一律用 GraphQL variables 传
-（query 里声明 $note: String!，值放 variables 参数），严禁内联为 GraphQL
-字符串字面量——内容含双引号/反斜杠/换行时内联必产生解析错误。
+compose_query 的字符串参数（备注、标题等）一律用 GraphQL variables 传，严禁内联：
+- query 里声明 $note: String!，值放 variables 参数；variables 是 JSON 对象本身，
+  不是序列化后的字符串
+- 变量值里的换行直接写真实换行字符（MCP 参数原生支持）；写成 \\n 两个字符会被
+  当作字面量存入数据库
+- 内联为什么禁：query 字符串里的内容要过 GraphQL 转义层（普通字符串里的
+  反斜杠 n 是换行转义、block string 三引号里不转义且吞紧跟引号的首换行），
+  多层转义叠加后几乎必错；variables 的值只穿一层 JSON，所见即所得
 你同时在用户的本地机器上拥有完整工具（读写文件、执行命令等），需要结合本地
 信息（文件、环境、脚本）完成用户请求时直接使用。
 用户的每轮消息请实际完成操作，然后用一两句话说明你做了什么。用户消息尾部可能

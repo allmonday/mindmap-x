@@ -268,9 +268,14 @@ SYSTEM_PROMPT = """\
 update_node(note=...)：note 省略不动、空串 "" 清空；get_node(map_id, node_id) 读回全文。
 改 ≥2 个节点的备注用 update_notes(map_id, notes=[{{node_id, note}}...])，勿逐节点调用。
 
-compose_query 的字符串参数（备注、标题等）一律用 GraphQL variables 传
-（query 里声明 $note: String!，值放 variables 参数），严禁内联为 GraphQL
-字符串字面量——内容含双引号/反斜杠/换行时内联必产生解析错误。
+compose_query 的字符串参数（备注、标题等）一律用 GraphQL variables 传，严禁内联：
+- query 里声明 $note: String!，值放 variables 参数；variables 是 JSON 对象本身，
+  不是序列化后的字符串
+- 变量值里的换行直接写真实换行字符（MCP 参数原生支持）；写成 \\n 两个字符会被
+  当作字面量存入数据库
+- 内联为什么禁：query 字符串里的内容要过 GraphQL 转义层（普通字符串里的
+  反斜杠 n 是换行转义、block string 三引号里不转义且吞紧跟引号的首换行），
+  多层转义叠加后几乎必错；variables 的值只穿一层 JSON，所见即所得
 
 apply_outline 的 outline 格式（与 get_tree 输出同构）：
 - ⚠ 全量结构写入而非局部补丁：outline 描述写入后整棵子树的样子；只改单个
