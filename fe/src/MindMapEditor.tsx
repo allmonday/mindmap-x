@@ -742,6 +742,27 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   // 切换布局形态 / 聚焦：布局变化走动画，不再需要遮罩盖瞬移
   const toggleLayout = () => setLayoutMode((m) => (m === 'balanced' ? 'right' : 'balanced'))
 
+  // 备注面板首开预热（idle）：VditorEditor 是 lazy chunk + vditor 运行时
+  // （3.7MB lute 下载/解析）都要等面板打开才开始，首开内容要 ~1s——空闲时
+  // 提前拉齐（chunk 走 import 缓存、脚本靠 addScript 的 DOM id 去重），
+  // 首开近同步。成本：进编辑器页即预取（本地/桌面版带宽免费；远端部署
+  // 多 ~4MB 首访流量，换交互值得）。语言切换重跑：i18n 脚本按 lang 预挂
+  useEffect(() => {
+    const ric: (cb: () => void) => number =
+      typeof requestIdleCallback === 'function'
+        ? (cb) => requestIdleCallback(cb, { timeout: 3000 })
+        : (cb) => window.setTimeout(cb, 1500)
+    const handle = ric(() => {
+      void import('./VditorEditor').then((m) =>
+        m.prefetchVditorRuntime(lang === 'zh' ? 'zh_CN' : 'en_US'),
+      )
+    })
+    return () => {
+      if (typeof cancelIdleCallback === 'function') cancelIdleCallback(handle)
+      else window.clearTimeout(handle)
+    }
+  }, [lang])
+
   const switchFocus = useCallback(
     (id: number | null) => {
       if (id === focusId) return

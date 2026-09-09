@@ -44,6 +44,40 @@ const TOOLBAR: Array<string | { hotkey?: string; name: string; tip?: string }> =
   'edit-mode', 'preview', 'fullscreen',
 ]
 
+/** 备注面板首开预热：预挂 vditor 运行时脚本（3.7MB 的 lute.min.js 下载+解析
+ *  是首开 ~1s 的主因，实测 chunk 下载本身只占 5ms）。vditor 内部 addScript 以
+ *  DOM id 去重（存在同 id 元素即 resolve 跳过），预挂同 id <script> 后，
+ *  真正 init 时全部命中、近同步完成。URL 与下方构造参数 cdn/icon 同源，
+ *  改配置记得同步。 */
+export function prefetchVditorRuntime(locale: 'zh_CN' | 'en_US') {
+  const cdn = '/vditor'
+  const add = (id: string, src: string, onload?: () => void) => {
+    if (document.getElementById(id)) return
+    const s = document.createElement('script')
+    s.id = id
+    s.src = src
+    s.onload = onload ?? null
+    document.head.appendChild(s)
+  }
+  add('vditorLuteScript', `${cdn}/dist/js/lute/lute.min.js`, () => {
+    // JIT 预热：用 IR init 的真实路径（Md2VditorDOM）渲染一次。lute（Go
+    // 编译，3.7MB）首次执行后热点函数的优化编译还要后台跑数秒，此期间打开
+    // 备注面板的渲染走半优化路径（实测多 ~500ms）；预热让优化尽早排队。
+    // 注：实测本机冷窗口（进页 2s 内即开）改善有限——残留成本在 vditor
+    // init 的等待链而非纯执行；进页数秒后打开稳定 ~90ms（无预热对照 ~1s）
+    try {
+      type LuteApi = { Md2HTML?: (md: string) => string; Md2VditorDOM?: (md: string) => string }
+      const lute = (window as unknown as { Lute?: { New: () => LuteApi } }).Lute?.New()
+      lute?.Md2VditorDOM?.('# warm up\n\n**bold** `code`\n\n- list\n\n> quote')
+      lute?.Md2HTML?.('# warm up\n\n**bold** `code`')
+    } catch {
+      /* 预热失败无碍正常路径 */
+    }
+  })
+  add(`vditorI18nScript${locale}`, `${cdn}/dist/js/i18n/${locale}.js`)
+  add('vditorIconScript', `${cdn}/dist/js/icons/ant.js`)
+}
+
 export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEditor(
   { initialValue, locale, editable, onInput, onCtrlEnter, onEsc, uploadErrorText },
   ref,
