@@ -584,6 +584,8 @@ body.chat-resizing {
 .card.new-card input:focus { outline: none; }
 .card.new-card input::placeholder { color: var(--ink-3); font-weight: 400; }
 .card-title { font-weight: 600; margin-bottom: 6px; font-size: 15px; }
+/* 标题左侧 #id，与编辑器 .map-title .map-id 同款弱化风格 */
+.card-title .map-id { color: var(--ink-3); font-weight: 400; font-size: 13px; margin-right: 6px; }
 .card-meta { color: var(--ink-3); font-size: 12.5px; }
 /* 删除入口：hover 显示；两步确认——第一次点击变红色「确认删除」，3s 内再点执行 */
 .card-del {

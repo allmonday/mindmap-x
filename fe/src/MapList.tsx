@@ -122,7 +122,10 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
         )}
         {shown.map((m) => (
           <div key={m.id} className="card" onClick={() => confirmId === null && onOpen(m.id)}>
-            <div className="card-title">{m.title}</div>
+            <div className="card-title">
+              <span className="map-id">#{m.id}</span>
+              {m.title}
+            </div>
             <div className="card-meta">
               v{m.version} · {fmtTime(m.created_at, locale)}
             </div>
