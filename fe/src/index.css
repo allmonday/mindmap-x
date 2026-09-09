@@ -82,6 +82,23 @@ html[data-theme='dark'] {
   --canvas-minimap-mask: rgba(26, 31, 41, 0.55);
 }
 
+/* ── 主题切换过渡（theme.tsx 切换时临时挂 .theme-transitioning，360ms 摘除）──
+   通配 + !important 是刻意的：要盖过元素自带的 transition（.btn hover 等），
+   代价是过渡窗口内 hover 反馈同步变慢——窗口短可接受。只过渡颜色类属性，
+   fill/stroke 覆盖画布 SVG（节点/边/minimap/dots） */
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease,
+    border-color 0.3s ease,
+    fill 0.3s ease,
+    stroke 0.3s ease,
+    box-shadow 0.3s ease !important;
+}
+
 * { box-sizing: border-box; }
 
 body {
