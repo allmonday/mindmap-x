@@ -64,4 +64,5 @@ exe = EXE(
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="MindMapX")
 
-app = BUNDLE(coll, name="MindMapX.app", version=VERSION, console=False)  # icon 后续可加（favicon.svg 转 .icns）
+# 图标复用 Web favicon（X 四臂分叉树）：assets/app-icon.svg 派生 → MindMapX.icns
+app = BUNDLE(coll, name="MindMapX.app", version=VERSION, console=False, icon="assets/MindMapX.icns")

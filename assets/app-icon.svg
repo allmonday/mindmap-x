@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- macOS app 图标：形状复用 fe/public/favicon.svg（X 四臂分叉树），配色取该文件
+       深色模式方案（纸 #e3e2e0 / 墨 #0f172a）——烘焙固定底板，不依赖系统外观。
+       生成 icns：qlmanage 渲染 1024 → sips 缩放 → iconutil -c icns。 -->
+  <rect width="1024" height="1024" rx="242" fill="#e3e2e0"/>
+  <!-- 图形本体在 64 视窗内 bbox≈[13.3,50.7]（占 58%），故 scale=18 + 居中平移，
+       使成品 artwork ≈ 66% 画布（macOS Big Sur+ 图标常规占比） -->
+  <g transform="translate(-64 -64) scale(18)">
+    <g fill="none" stroke="#0f172a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M36.5 27.5 L41.2 22.8"/>
+      <path d="M41.2 22.8 L48.7 20"/>
+      <path d="M41.2 22.8 L43.9 15.3"/>
+      <path d="M36.5 36.5 L41.2 41.2"/>
+      <path d="M41.2 41.2 L48.7 44"/>
+      <path d="M41.2 41.2 L43.9 48.7"/>
+      <path d="M27.5 36.5 L22.8 41.2"/>
+      <path d="M22.8 41.2 L15.3 44"/>
+      <path d="M22.8 41.2 L20.1 48.7"/>
+      <path d="M27.5 27.5 L22.8 22.8"/>
+      <path d="M22.8 22.8 L15.3 20"/>
+      <path d="M22.8 22.8 L20.1 15.3"/>
+    </g>
+    <g fill="#0f172a">
+      <circle cx="32" cy="32" r="3.5"/>
+      <circle cx="48.7" cy="20" r="2"/>
+      <circle cx="43.9" cy="15.3" r="2"/>
+      <circle cx="48.7" cy="44" r="2"/>
+      <circle cx="43.9" cy="48.7" r="2"/>
+      <circle cx="15.3" cy="44" r="2"/>
+      <circle cx="20.1" cy="48.7" r="2"/>
+      <circle cx="15.3" cy="20" r="2"/>
+      <circle cx="20.1" cy="15.3" r="2"/>
+    </g>
+  </g>
+</svg>
