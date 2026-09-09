@@ -675,7 +675,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [gotoText, setGotoText] = useState('')
   // 结果列表激活行（↑↓ 移动 / hover 跟随；渲染处对越界做钳制）
   const [gotoActiveRaw, setGotoActiveRaw] = useState(0)
-  const [chatOpen, setChatOpen] = useState(false)
+  // 默认打开（2026-09-09 用户拍板）；localStorage 记忆手动开合——关过就不
+  // 再自动弹（layoutMode/chatWidth 同款惯例）。渲染仍受 agentOk 门控
+  const [chatOpen, setChatOpen] = useState(() => localStorage.getItem('chatOpen') !== 'false')
+  useEffect(() => {
+    localStorage.setItem('chatOpen', String(chatOpen))
+  }, [chatOpen])
   // Agent 入口守门：模型网关未配置时按钮保留但置灰（aria-disabled，真 disabled
   // 收不到 click），点击弹配置表单；null = 检查中暂不渲染（防闪跳）。
   // 状态检查首步即配置完整性，未配置时快速失败、无外呼
