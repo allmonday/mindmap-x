@@ -523,9 +523,13 @@ body.chat-resizing {
 .lang-switch, .theme-switch { display: inline-flex; }
 /* 与相邻的 .btn.icon 同高：图标按钮的 svg 行内基线空隙实测撑到 33px，
    显式对齐之（6px padding + 16px 行高本只有 30px） */
-.lang-switch .btn, .theme-switch .btn { padding: 6px 9px; font-size: 12px; line-height: 16px; height: 33px; display: inline-flex; align-items: center; justify-content: center; }
+.lang-switch .btn, .theme-switch .btn { padding: 6px 9px; font-size: 12px; line-height: 16px; height: 33px; display: inline-flex; align-items: center; justify-content: center; border-radius: 0; }
+/* 圆角只归两端：中间段无圆角（.btn + .btn 只去左框，右圆角交 .btn:last-child
+   ——曾用 + 通配右圆角，双段 LangSwitch 侥幸正确，三段 ThemeSwitch 的中间
+   段（dark）被误赋右圆角与末段相接处内凹，2026-09-09 修正，同 fold-steps） */
 .lang-switch .btn:first-child, .theme-switch .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
-.lang-switch .btn + .btn, .theme-switch .btn + .btn { border-left: none; border-radius: 0 var(--radius) var(--radius) 0; }
+.lang-switch .btn + .btn, .theme-switch .btn + .btn { border-left: none; }
+.lang-switch .btn:last-child, .theme-switch .btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
 .lang-switch .btn.active, .theme-switch .btn.active { background: var(--bg-hover); font-weight: 600; }
 
 
