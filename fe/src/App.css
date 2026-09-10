@@ -522,6 +522,8 @@ body.chat-resizing {
 /* 标题下定位说明：一句话 + MCP 端点（点击复制）。h1 下边距收窄让说明贴标题 */
 .map-subtitle { margin: 0 0 22px; font-size: 13px; color: var(--ink-3); }
 .mcp-endpoint {
+  display: inline-block; /* br 后独占一行；inline-block 保住 code 的边框/底色盒型 */
+  margin-top: 3px;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 12px;
   background: var(--bg-hover);

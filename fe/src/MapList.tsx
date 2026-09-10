@@ -101,7 +101,8 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
       <h1>MindMap X</h1>
       {/* 一句话定位 + MCP 端点（Agent 接入地址，点击复制） */}
       <p className="map-subtitle">
-        {t('map.subtitle')}{' '}
+        {t('map.subtitle')}
+        <br />
         <code
           className="mcp-endpoint"
           role="button"
