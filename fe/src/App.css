@@ -1149,9 +1149,9 @@ button.id-badge {
   position: absolute;
   left: -4px;
   right: -4px;
-  /* 单色块（高度/位置经用户两轮手感调优）：1/4 节点高、朝插入方向外移，
-     让出节点边缘——贴边时挡住节点文字 */
-  height: 25%;
+  /* 单色块（高度/位置经用户多轮手感调优）：固定高度不随目标节点高矮
+     变化（25% 时多行节点块过厚、单行过薄），朝插入方向外移让出节点边缘 */
+  height: 12px;
   background: color-mix(in srgb, var(--canvas-sel) 25%, transparent);
   border-radius: 6px;
   pointer-events: none;
