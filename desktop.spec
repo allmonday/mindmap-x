@@ -44,10 +44,15 @@ hiddenimports = [
     "greenlet",
 ]
 
+# 原生扩展（Rust/C 编译的 .pyd/.so）显式收集：Windows 实测 pydantic_core
+# 的 _pydantic_core.pyd 未随 Analysis 自动收进（纯 Python 部分在、二进制缺，
+# 运行时 ModuleNotFoundError）；greenlet 同为原生扩展一并防
+binaries = collect_dynamic_libs("pydantic_core") + collect_dynamic_libs("greenlet")
+
 a = Analysis(
     ["src/desktop.py"],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     excludes=["tkinter"],
