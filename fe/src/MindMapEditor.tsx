@@ -64,6 +64,9 @@ type MindNode = Node<MindNodeData, 'mind'>
 
 // 长按阈值（ms）：setTimeout 与进度环动画共用同一数值——环画满即触发
 const HOLD_MS = 480
+// 拖拽落点悬停确认（ms）：zone 需停稳此时长才生效（防拖动线扫过相邻节点
+// 的中部时瞬间误触挂子——分区怎么调都躲不开"扫过即触发"）
+const DWELL_MS = 150
 // 环显示延迟（ms）：按住超过它环才出现（快速点击不闪环）；环动画以
 // -REVEAL_MS 的 delay 起步，reveal 时进度 = 已真实按住的时长
 const REVEAL_MS = 100
@@ -746,6 +749,26 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     position: number // before/after 用：目标的当前序
   }
   const dropTarget = useRef<DropHit | null>(null)
+  // dwell 悬停确认：zone 键起算 + 到期定时器 + 已确认键 + 最新命中。
+  // onDrag 只在指针移动时发——停住不动没有事件推进时间，必须 timer 补位
+  const pendingZoneKey = useRef('none')
+  const dwellTimer = useRef<number | undefined>(undefined)
+  const confirmedZoneKey = useRef('none')
+  const pendingHit = useRef<DropHit | null>(null)
+
+  const applyDropHit = (hit: DropHit | null) => {
+    const cls = !hit
+      ? ''
+      : !hit.ok
+        ? 'drop-forbidden'
+        : hit.zone === 'child'
+          ? 'drop-target'
+          : hit.zone === 'before'
+            ? 'drop-before'
+            : 'drop-after'
+    setDropHighlight(hit?.el ?? null, cls)
+    dropTarget.current = hit
+  }
 
   const setDropHighlight = (el: HTMLElement | null, cls: string) => {
     if (dropHighlight.current) dropHighlight.current.el.classList.remove(dropHighlight.current.cls)
@@ -809,6 +832,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         }
       }
       dragDescendants.current = desc
+      // dwell 状态干净起步（上次拖拽的残留会误伤本次确认时序）
+      window.clearTimeout(dwellTimer.current)
+      pendingZoneKey.current = 'none'
+      confirmedZoneKey.current = 'none'
+      dropTarget.current = null
     },
     [detail],
   )
@@ -820,21 +848,38 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     const cx = e instanceof MouseEvent ? e.clientX : e.touches[0]?.clientX ?? 0
     const cy = e instanceof MouseEvent ? e.clientY : e.touches[0]?.clientY ?? 0
     const hit = hitTest(cx, cy, dragId)
-    const cls = !hit
-      ? ''
-      : !hit.ok
-        ? 'drop-forbidden'
-        : hit.zone === 'child'
-          ? 'drop-target'
-          : hit.zone === 'before'
-            ? 'drop-before'
-            : 'drop-after'
-    setDropHighlight(hit?.el ?? null, cls)
-    dropTarget.current = hit
+    pendingHit.current = hit
+    const key = hit ? `${hit.id}:${hit.zone}` : 'none'
+    // 悬停确认（dwell 150ms）：扫过即触发是误挂子的主因——动线（如下移上拖）
+    // 必然穿过相邻节点，指针滑过其中部的瞬间不该换目标。zone 变化起算、
+    // timer 到期确认（停住后没有 onDrag 事件推进，必须定时器补位）；空白
+    // 立即清除（无歧义）；已确认 zone 内的移动实时刷新
+    if (key === 'none') {
+      window.clearTimeout(dwellTimer.current)
+      pendingZoneKey.current = 'none'
+      confirmedZoneKey.current = 'none'
+      applyDropHit(null)
+      return
+    }
+    if (key === confirmedZoneKey.current) {
+      applyDropHit(hit)
+      return
+    }
+    if (pendingZoneKey.current !== key) {
+      pendingZoneKey.current = key
+      window.clearTimeout(dwellTimer.current)
+      dwellTimer.current = window.setTimeout(() => {
+        if (pendingZoneKey.current === key) {
+          confirmedZoneKey.current = key
+          applyDropHit(pendingHit.current)
+        }
+      }, DWELL_MS)
+    }
   }, [])
 
   const onDragStop = useCallback(
     (_e: MouseEvent | TouchEvent, node: MindNode) => {
+      window.clearTimeout(dwellTimer.current) // 未确认的 dwell 到期不再触发（拖拽已结束）
       const hit = dropTarget.current
       setDropHighlight(null, '')
       dropTarget.current = null
