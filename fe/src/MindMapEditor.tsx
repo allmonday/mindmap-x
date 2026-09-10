@@ -753,21 +753,37 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     if (el) el.classList.add(cls)
   }
 
-  /** 指针下的落点（屏幕坐标 × 节点矩形，纵向三区）；自身跳过，后代/根边缘标禁 */
+  /** 指针下的落点（屏幕坐标 × 节点矩形，纵向三区）；自身跳过，后代/根边缘标禁。
+   *  两遍匹配：严格矩形内（三区：上/下边缘 EDGE 比例 + 中间挂子）优先；
+   *  无命中再看矩形上下外扩 EXT——插入线画在节点边缘外，触发区跟着外扩
+   *  才点得中（36px 节点的 25% 边缘仅 9px，加上拖拽节点浮顶挡视线几乎
+   *  无法触发）。兄弟垂直间隙 32px > 2×EXT，扩展区不会串到邻居 */
   const hitTest = (cx: number, cy: number, dragId: number): DropHit | null => {
-    const els = document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')
-    for (const el of els) {
+    const EDGE = 0.3
+    const EXT = 14
+    const els = [...document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')]
+    const build = (el: HTMLElement, zone: 'child' | 'before' | 'after'): DropHit => {
       const id = Number(el.dataset.id)
-      if (id === dragId) continue
+      const target = detailRef.current?.nodes.find((n) => n.display_id === id)
+      const parentId = target?.parent?.display_id ?? null
+      // before/after 需要目标有父（布局根无兄弟——与 Delete 键的布局根特判同语义）
+      const ok = !dragDescendants.current.has(id) && (zone === 'child' || parentId != null)
+      return { el, id, zone, ok, parentId, position: target?.position ?? 0 }
+    }
+    for (const el of els) {
+      if (Number(el.dataset.id) === dragId) continue
       const r = el.getBoundingClientRect()
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
         const rel = (cy - r.top) / r.height
-        const zone = rel < 0.25 ? 'before' : rel > 0.75 ? 'after' : 'child'
-        const target = detailRef.current?.nodes.find((n) => n.display_id === id)
-        const parentId = target?.parent?.display_id ?? null
-        // before/after 需要目标有父（布局根无兄弟——与 Delete 键的布局根特判同语义）
-        const ok = !dragDescendants.current.has(id) && (zone === 'child' || parentId != null)
-        return { el, id, zone, ok, parentId, position: target?.position ?? 0 }
+        return build(el, rel < EDGE ? 'before' : rel > 1 - EDGE ? 'after' : 'child')
+      }
+    }
+    for (const el of els) {
+      if (Number(el.dataset.id) === dragId) continue
+      const r = el.getBoundingClientRect()
+      if (cx >= r.left && cx <= r.right) {
+        if (cy >= r.top - EXT && cy < r.top) return build(el, 'before')
+        if (cy > r.bottom && cy <= r.bottom + EXT) return build(el, 'after')
       }
     }
     return null
