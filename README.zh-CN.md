@@ -71,6 +71,14 @@ xattr -cr /Applications/MindMapX.app   # 或首次右键 → 打开
 - **Agent 接入**：应用在本机端口提供 MCP 服务——端口显示在窗口标题栏（`MindMap X — MCP :8740`），用 `claude mcp add --transport http mindmap http://127.0.0.1:8740/mcp` 连接。优先使用 8740，被占用则换随机空闲端口
 - 已知限制：仅 macOS arm64；未签名（因此需要 `xattr` 步骤）
 
+### 桌面版（Windows 11）
+
+从 [Releases](../../releases) 下载 `MindMapX-Windows-x64.zip`，解压到任意位置后运行 `MindMapX\MindMapX.exe`。构建未签名——首次运行 SmartScreen 会拦截，点 **更多信息 → 仍要运行**。
+
+- 仅支持 Win 11（WebView2 系统自带）；免安装、不写注册表
+- **数据目录**：`%APPDATA%\MindMapX\`——布局与 macOS 版一致（`mindmap.db`、会话、`desktop.log`）
+- 其余（模型配置、标题栏 MCP 端口）同 macOS 小节
+
 ## Agent 接入
 
 ```bash

@@ -1,11 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec：macOS 桌面应用（onedir + .app bundle）。
+"""PyInstaller spec：桌面应用（onedir；macOS 再包 .app bundle，Windows 出 exe）。
 
 datas 落点与运行时定位对齐：
 - src/static  → _MEIPASS/src/static（src/main.py 用 __file__ 定位）
 - alembic/*   → _MEIPASS/alembic/（src/desktop.py 用 _MEIPASS 定位 script_location；
                 versions/*.py 由 alembic ScriptDirectory 从磁盘读取，作数据文件即可）
 """
+import sys
 import tomllib
 from pathlib import Path
 
@@ -34,7 +35,8 @@ for _pkg in (
     datas += copy_metadata(_pkg)
 
 hiddenimports = [
-    "webview.platforms.cocoa",  # pywebview 按 sys.platform 字符串选 gui 后端
+    # pywebview 按 sys.platform 字符串选 gui 后端（cocoa=macOS / winforms=Windows）
+    "webview.platforms.cocoa" if sys.platform == "darwin" else "webview.platforms.winforms",
     *collect_submodules("uvicorn"),  # loop / ws 实现按字符串动态选择
     # sqlalchemy dialect 由 URL 字符串在运行时解析加载，静态分析不可见
     "sqlalchemy.dialects.sqlite.aiosqlite",
@@ -60,9 +62,11 @@ exe = EXE(
     exclude_binaries=True,
     name="MindMapX",
     console=False,  # windowed：无终端（日志落数据目录 desktop.log）
+    icon="assets/MindMapX.ico" if sys.platform == "win32" else None,  # Windows：exe 图标（标题栏随之）
     upx=False,
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="MindMapX")
 
-# 图标复用 Web favicon（X 四臂分叉树）：assets/app-icon.svg 派生 → MindMapX.icns
-app = BUNDLE(coll, name="MindMapX.app", version=VERSION, console=False, icon="assets/MindMapX.icns")
+# 图标复用 Web favicon（X 四臂分叉树）：assets/app-icon.svg 派生
+if sys.platform == "darwin":
+    app = BUNDLE(coll, name="MindMapX.app", version=VERSION, console=False, icon="assets/MindMapX.icns")

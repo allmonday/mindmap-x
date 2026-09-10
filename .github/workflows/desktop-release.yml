@@ -1,7 +1,8 @@
 name: Desktop Release
 
 # 桌面版构建与发布：tag v* 触发（也可手动），产物发 GitHub Releases。
-# 仅 macOS arm64；未签名——用户首次打开需 xattr -cr（见 README Desktop 小节）。
+# macOS arm64 + Windows x64（Win 11：WebView2 系统自带；未签名——SmartScreen
+# 首次运行会拦，点"仍要运行"）。macOS 未签名首次打开需 xattr -cr。
 
 on:
   push:
@@ -63,3 +64,57 @@ jobs:
           files: |
             MindMapX-macOS-arm64.dmg
             MindMapX-macOS-arm64.dmg.sha256
+
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version guard
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG 与 pyproject.toml version $PKG 不一致"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build frontend
+        working-directory: fe
+        run: |
+          npm ci
+          npm run build
+
+      - name: Sync dependencies
+        run: uv sync --frozen --extra desktop
+
+      - name: PyInstaller
+        run: uv run pyinstaller desktop.spec --noconfirm
+
+      - name: Smoke test  # 同 macOS：迁移 + 起服 + 探活（GUI 后端不在此路径）
+        env:
+          MINDMAPX_DATA_DIR: ${{ runner.temp }}/mmx-smoke
+        shell: bash
+        run: dist/MindMapX/MindMapX.exe --smoke
+
+      - name: Package  # onedir 打 zip（解压即用，免安装）
+        shell: bash
+        run: |
+          cd dist && 7z a -tzip ../MindMapX-Windows-x64.zip MindMapX && cd ..
+          sha256sum MindMapX-Windows-x64.zip > MindMapX-Windows-x64.zip.sha256
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            MindMapX-Windows-x64.zip
+            MindMapX-Windows-x64.zip.sha256

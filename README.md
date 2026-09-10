@@ -70,6 +70,14 @@ xattr -cr /Applications/MindMapX.app   # or right-click → Open the first time
 - **Agent access**: the app serves MCP on a local port — read it from the window title (`MindMap X — MCP :8740`) and connect with `claude mcp add --transport http mindmap http://127.0.0.1:8740/mcp`. Port 8740 is preferred; if taken, a random free port is used
 - Known limits: macOS arm64 only; unsigned (hence the `xattr` step)
 
+### Desktop app (Windows 11)
+
+Grab `MindMapX-Windows-x64.zip` from [Releases](../../releases), unzip anywhere, and run `MindMapX\MindMapX.exe`. The build is unsigned — SmartScreen will warn on first launch, click **More info → Run anyway**.
+
+- Win 11 only (WebView2 ships with the OS); no installer, no registry writes
+- **Data lives in** `%APPDATA%\MindMapX\` — same layout as macOS (`mindmap.db`, sessions, `desktop.log`)
+- Everything else (model config, MCP port in the window title) matches the macOS notes above
+
 ## Connecting Agents
 
 ```bash
