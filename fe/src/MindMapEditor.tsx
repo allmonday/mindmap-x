@@ -776,15 +776,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     if (el) el.classList.add(cls)
   }
 
-  /** 指针下的落点（屏幕坐标 × 节点矩形，纵向三区）；自身跳过，后代/根边缘标禁。
-   *  两遍匹配：严格矩形内（三区：上/下边缘 EDGE 比例 + 中间挂子）优先；
-   *  无命中再看矩形上下外扩 EXT——插入线画在节点边缘外，触发区跟着外扩
-   *  才点得中（36px 节点的 25% 边缘仅 9px，加上拖拽节点浮顶挡视线几乎
-   *  无法触发）。兄弟垂直间隙 32px > 2×EXT，扩展区不会串到邻居 */
+  /** 指针下的落点：节点本体（矩形内任意位置）= 挂为子；节点外部上下 EXT
+   *  = 插到它前/后（排序）。经典树形 DnD 语义（VS Code 文件树同款）——
+   *  曾用"内部边缘比例分区"，边缘区挤占挂子区致其只剩 25%，改纯外部后
+   *  排序带 = 兄弟间隙 32px 全宽（EXT 16×2 恰好覆盖，含 dwell 防扫过
+   *  误触），挂子区回到 100%。 */
   const hitTest = (cx: number, cy: number, dragId: number): DropHit | null => {
-    const EDGE = 0.375 // 边缘区比例（插入带优先）：中间挂子区收窄到 25%——
-    // 相邻节点间操作时指针离邻居中部的挂子区太近，插入意图极易误触成
-    // 挂子（用户对准被拖节点视觉，指针实际偏下半个节点高）
     const EXT = 16 // 矩形外扩：16×2 = 兄弟间隙 32px 全覆盖（14 时中间有 4px 死区）
     const els = [...document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')]
     const build = (el: HTMLElement, zone: 'child' | 'before' | 'after'): DropHit => {
@@ -799,8 +796,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       if (Number(el.dataset.id) === dragId) continue
       const r = el.getBoundingClientRect()
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-        const rel = (cy - r.top) / r.height
-        return build(el, rel < EDGE ? 'before' : rel > 1 - EDGE ? 'after' : 'child')
+        return build(el, 'child')
       }
     }
     for (const el of els) {
