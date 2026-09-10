@@ -648,7 +648,9 @@ body.chat-resizing {
 /* 删除入口：hover 显示；两步确认——第一次点击变红色「确认删除」，3s 内再点执行 */
 .card-del {
   position: absolute;
-  top: 10px;
+  /* 与标题首行垂直居中对齐：标题顶 = padding-top 16 + 行高 19/2 = 行中心
+     25.5；按钮高 = 14 图标 + 8 padding = 22 → top = 25.5 - 11 ≈ 14 */
+  top: 14px;
   right: 10px;
   display: none;
   border: none;
