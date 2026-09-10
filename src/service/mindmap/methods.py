@@ -199,6 +199,42 @@ async def _display_index(session, map_id: int) -> dict[int, int]:
     return {gid: did for gid, did in rows}
 
 
+async def _renormalize_siblings(session, parent_gid: int) -> None:
+    """同父兄弟按 (position, display_id) 重排为稠密 0..n-1（方案 B：逻辑收拢）。
+
+    position 语义升级为"父维护的子顺序下标"：任何写路径收尾时调用——
+    撞号/稀疏从根上不出现，前端/outline/MCP 看到的序号永远稠密。
+    插入位由 _shift_siblings_from 显式腾出，本函数只做兜底（幂等：
+    已稠密时零写入）与历史脏数据/删洞的自愈。SELECT 的 autoflush 会
+    带出 session 里挂起的新节点 → add 后调用即含新行。
+    """
+    rows = (
+        await session.exec(
+            select(Node).where(Node.parent_id == parent_gid).order_by(Node.position, Node.display_id)
+        )
+    ).all()
+    for i, n in enumerate(rows):
+        if n.position != i:
+            n.position = i
+
+
+async def _shift_siblings_from(session, parent_gid: int, position: int, exclude_gid: int | None = None) -> None:
+    """插入腾位：同父 position >= position 的兄弟整体 +1（新节点将占住 position）。
+
+    没有 shift 时"占位 P"靠 tie-break 落到同位老节点后面——before 语义
+    （插到目标前）会偏一格；显式腾位后 add/move 的 position 才是精确的
+    插入下标。exclude：move 场景排除被移动节点自身。
+    """
+    rows = (
+        await session.exec(
+            select(Node).where(Node.parent_id == parent_gid, Node.position >= position)
+        )
+    ).all()
+    for n in rows:
+        if exclude_gid is None or n.id != exclude_gid:
+            n.position += 1
+
+
 async def _current_tree(session, map_id: int) -> tuple[dict[int, dict], dict[int, int]]:
     """node 表当前态 → ({display_id: fields}, {全局id: display_id})。
 
@@ -480,6 +516,13 @@ async def add_node(
                 )
             ).all()
             position = max(siblings, default=-1) + 1
+        # before 快照含同父现有兄弟：插入腾位会 shift 它们，undo 需要旧值
+        display_of = await _display_index(session, map_id)
+        sibs = (
+            await session.exec(select(Node).where(Node.parent_id == parent.id))
+        ).all()
+        before = {s.display_id: _fields_of(s, display_of) for s in sibs}
+        await _shift_siblings_from(session, parent.id, position)
         node = Node(
             map_id=map_id,
             display_id=await _next_display_id(session, map_id),
@@ -490,9 +533,11 @@ async def add_node(
             updated_by=actor,
         )
         session.add(node)
+        await _renormalize_siblings(session, parent.id)
+        before[node.display_id] = None  # 新增节点：before = 不存在
         await _commit_with_revision(
             session, m,
-            before={node.display_id: None},  # 新增节点：before = 不存在
+            before=before,
             action="node_added", actor=actor,
             detail=f"add_node #{node.display_id}「{content}」（父 #{parent_id}）",
         )
@@ -656,8 +701,19 @@ async def move_node(
         new_parent = await _get_node(session, map_id, new_parent_id)
         if new_parent.id == node.id or new_parent.id in await _descendant_ids(session, node):
             raise ValueError("不能把节点移动到自己或它的子树下（会成环）")
-        # before 快照在改属性前取（防环校验之后：校验失败不落行）
-        before = {node_id: _fields_of(node, await _display_index(session, map_id))}
+        old_parent_gid = node.parent_id
+        # before 快照在改属性前取（防环校验之后：校验失败不落行）。
+        # 追加双父兄弟：新旧父的兄弟都会被归一化 shift（新父插入让位、
+        # 旧父补洞），undo 需要它们的旧值
+        display_of = await _display_index(session, map_id)
+        before = {node_id: _fields_of(node, display_of)}
+        for pid in {old_parent_gid, new_parent.id}:
+            for s in (
+                await session.exec(
+                    select(Node).where(Node.parent_id == pid, Node.id != node.id)
+                )
+            ).all():
+                before.setdefault(s.display_id, _fields_of(s, display_of))
         node.parent_id = new_parent.id
         if position is None:
             siblings = (
@@ -668,9 +724,27 @@ async def move_node(
                 )
             ).all()
             position = max(siblings, default=-1) + 1
+        else:
+            # 精确插入三步（同父重排与跨父插入统一）：
+            # 1) 放逐：自身 position 提到序列外 → 归一化旧/同父 = "摘除补位"
+            #    （其余兄弟回到稠密 0..n-2，自身垫到末位）
+            old_pos = node.position
+            node.position = 10**6
+            await _renormalize_siblings(session, old_parent_gid)
+            if old_parent_gid != new_parent.id:
+                await _renormalize_siblings(session, new_parent.id)
+            # 2) 换算：同父时前端传的目标序基于原序列（含自身）——目标在
+            #    自身原位之后的，摘除后已前移一位，要把 position 收回一格
+            if old_parent_gid == new_parent.id and position > old_pos:
+                position -= 1
+            # 3) 腾位：新父下 position >= 目标位的兄弟 +1（排除自身），占位
+            await _shift_siblings_from(session, new_parent.id, position, exclude_gid=node.id)
         node.position = position
         node.updated_by = actor
         node.updated_at = _now()
+        await _renormalize_siblings(session, new_parent.id)
+        if old_parent_gid != new_parent.id:
+            await _renormalize_siblings(session, old_parent_gid)
         await _commit_with_revision(
             session, m, before=before, action="node_moved", actor=actor,
             detail=f"move_node #{node_id} → 父 #{new_parent_id}",
@@ -698,10 +772,20 @@ async def delete_node(map_id: int, node_id: int, actor: str = "agent") -> bool:
             n = await session.get(Node, nid)
             if n is not None:
                 before[n.display_id] = _fields_of(n, display_of)
+        # 存活兄弟进快照：删除留洞后父侧归一化会 shift 它们，undo 需要旧值
+        for s in (
+            await session.exec(
+                select(Node).where(
+                    Node.parent_id == node.parent_id, Node.id != node.id
+                )
+            )
+        ).all():
+            before.setdefault(s.display_id, _fields_of(s, display_of))
         for nid in ids:
             n = await session.get(Node, nid)
             if n is not None:
                 await session.delete(n)
+        await _renormalize_siblings(session, node.parent_id)
         await _commit_with_revision(
             session, m, before=before, action="node_deleted", actor=actor,
             detail=f"delete_node #{node_id}（含 {len(ids) - 1} 个后代）",

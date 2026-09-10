@@ -53,7 +53,7 @@ type MindNodeData = {
   onCommitEdit: (id: number, text: string) => void
   onCancelEdit: () => void
   onStartAdd: (parentId: number, dir?: 'child' | 'sibling') => void
-  onCommitAdd: (parentId: number, text: string) => void
+  onCommitAdd: (parentId: number, text: string, position?: number) => void
   onCancelAdd: () => void
   onDelete: (id: number) => void
   onFocus: (id: number) => void // 聚焦（下钻）到该节点
@@ -280,13 +280,13 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
                 e.stopPropagation() // 输入态按键不冒泡（防 Enter 触发全局快捷键）
                 if (e.key === 'Enter') {
                   e.preventDefault()
-                  data.onCommitAdd(addingDir === 'sibling' && n.parent ? n.parent.display_id : n.display_id, (e.target as HTMLInputElement).value)
+                  data.onCommitAdd(addingDir === 'sibling' && n.parent ? n.parent.display_id : n.display_id, (e.target as HTMLInputElement).value, addingDir === 'sibling' ? n.position + 1 : undefined)
                 }
                 if (e.key === 'Escape') data.onCancelAdd()
               }}
               // 与节点编辑（rf-editor）同款语义：失焦即提交，空文本视为取消
               onBlur={(e) =>
-                data.onCommitAdd(addingDir === 'sibling' && n.parent ? n.parent.display_id : n.display_id, e.target.value)
+                data.onCommitAdd(addingDir === 'sibling' && n.parent ? n.parent.display_id : n.display_id, e.target.value, addingDir === 'sibling' ? n.position + 1 : undefined)
               }
             />
             <button
@@ -297,7 +297,7 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
               onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
                 const input = e.currentTarget.previousElementSibling as HTMLInputElement
-                data.onCommitAdd(addingDir === 'sibling' && n.parent ? n.parent.display_id : n.display_id, input.value)
+                data.onCommitAdd(addingDir === 'sibling' && n.parent ? n.parent.display_id : n.display_id, input.value, addingDir === 'sibling' ? n.position + 1 : undefined)
               }}
             >
               <CheckIcon />
@@ -723,17 +723,29 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   }, [layoutMode])
   const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
 
-  // ── 拖拽改挂载（drag-to-reparent）──────────────────────────────────────
-  // 拖节点到另一节点上 = move_node 换父（XMind 同款手势）。跟手走 animPos
-  // 同款路子：dragPos 每帧驱动 rfNodes 重建（位置覆盖优先级 drag > 动画 > 布局）；
-  // 命中高亮直改目标 DOM class（不走 state，长按进度环同款手法）。落点提交
-  // 走 WS 重拉惯例（无乐观更新），松手→推送间隙节点停在落点、回来后滑正。
-  // 防环前端预检（后代目标标红拒放），服务端 move_node 兜底。空白落点=取消。
-  // 注意：开启后"拖节点=平移画布"的旧语义被替换——平移只能拖空白处
+  // ── 拖拽改挂载 + 三区排序（drag-to-reparent / reorder）──────────────────
+  // 拖节点悬停另一节点，按指针纵向位置分三区：上/下边缘 25% = 插到目标
+  // 前/后（成为兄弟，position 换算——同父内即纯排序）；中间 50% = 挂为
+  // 子（蓝环）。边缘区高亮为水平插入线（CSS 伪元素）。跟手走 animPos 同款
+  // 路子（dragPos 每帧驱动 rfNodes 重建，优先级 drag > 动画 > 布局）；高亮
+  // 直改目标 DOM class（不走 state）。提交走 WS 重拉惯例。防环前端预检
+  // （后代目标标红），服务端 move_node 兜底；布局根无兄弟 → 边缘区禁。
+  // 空白落点 = 取消。注意：开启后"拖节点=平移画布"被替换，平移只能拖空白
   const [dragPos, setDragPos] = useState<Map<number, { x: number; y: number }> | null>(null)
   const dragDescendants = useRef<Set<number>>(new Set())
   const dropHighlight = useRef<{ el: HTMLElement; cls: string } | null>(null)
-  const dropTarget = useRef<{ id: number; ok: boolean } | null>(null)
+  // 最新树给 hitTest 闭包用（目标父/序号的解析源），避免回调依赖 detail 身份
+  const detailRef = useRef(detail)
+  detailRef.current = detail
+  type DropHit = {
+    el: HTMLElement
+    id: number
+    zone: 'child' | 'before' | 'after'
+    ok: boolean
+    parentId: number | null // before/after 用：目标的父（布局根为 null → 禁）
+    position: number // before/after 用：目标的当前序
+  }
+  const dropTarget = useRef<DropHit | null>(null)
 
   const setDropHighlight = (el: HTMLElement | null, cls: string) => {
     if (dropHighlight.current) dropHighlight.current.el.classList.remove(dropHighlight.current.cls)
@@ -741,15 +753,21 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     if (el) el.classList.add(cls)
   }
 
-  /** 指针下的候选父节点（屏幕坐标 × 节点矩形）；自身跳过，后代命中标禁 */
-  const hitTest = (cx: number, cy: number, dragId: number): { el: HTMLElement; id: number; ok: boolean } | null => {
+  /** 指针下的落点（屏幕坐标 × 节点矩形，纵向三区）；自身跳过，后代/根边缘标禁 */
+  const hitTest = (cx: number, cy: number, dragId: number): DropHit | null => {
     const els = document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')
     for (const el of els) {
       const id = Number(el.dataset.id)
       if (id === dragId) continue
       const r = el.getBoundingClientRect()
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-        return { el, id, ok: !dragDescendants.current.has(id) }
+        const rel = (cy - r.top) / r.height
+        const zone = rel < 0.25 ? 'before' : rel > 0.75 ? 'after' : 'child'
+        const target = detailRef.current?.nodes.find((n) => n.display_id === id)
+        const parentId = target?.parent?.display_id ?? null
+        // before/after 需要目标有父（布局根无兄弟——与 Delete 键的布局根特判同语义）
+        const ok = !dragDescendants.current.has(id) && (zone === 'child' || parentId != null)
+        return { el, id, zone, ok, parentId, position: target?.position ?? 0 }
       }
     }
     return null
@@ -784,7 +802,16 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     const cx = e instanceof MouseEvent ? e.clientX : e.touches[0]?.clientX ?? 0
     const cy = e instanceof MouseEvent ? e.clientY : e.touches[0]?.clientY ?? 0
     const hit = hitTest(cx, cy, dragId)
-    setDropHighlight(hit?.el ?? null, hit ? (hit.ok ? 'drop-target' : 'drop-forbidden') : '')
+    const cls = !hit
+      ? ''
+      : !hit.ok
+        ? 'drop-forbidden'
+        : hit.zone === 'child'
+          ? 'drop-target'
+          : hit.zone === 'before'
+            ? 'drop-before'
+            : 'drop-after'
+    setDropHighlight(hit?.el ?? null, cls)
     dropTarget.current = hit
   }, [])
 
@@ -794,7 +821,17 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       setDropHighlight(null, '')
       dropTarget.current = null
       setDragPos(null) // 取消/提交后清跟手位：提交场景 WS 推送动画滑正；取消场景瞬回布局位
-      if (hit?.ok) void guard(() => api.moveNode(mapId, Number(node.id), hit.id))
+      const dragId = Number(node.id)
+      if (hit?.ok) {
+        if (hit.zone === 'child') {
+          void guard(() => api.moveNode(mapId, dragId, hit.id))
+        } else if (hit.parentId != null) {
+          // 插到目标前（占它的序）/后（序+1）；服务端归一化保证稠密，换算精确
+          void guard(() =>
+            api.moveNode(mapId, dragId, hit.parentId!, hit.position + (hit.zone === 'after' ? 1 : 0)),
+          )
+        }
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- guard 无状态依赖（吞错+toast），旧闭包无害
     [mapId],
@@ -1065,7 +1102,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }, 0)
   }, [])
   const commitAdd = useCallback(
-    (parentId: number, text: string) => {
+    (parentId: number, text: string, position?: number) => {
       setAdding(null)
       const value = text.trim() // 局部命名避开 i18n 的 t
       if (!value) return
@@ -1073,7 +1110,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       // 不再回亮（选中高亮保留，操作入口交回快捷键）。空文本取消不动——
       // 点开的上下文不该被 Esc 顺手清掉
       setSelectedByPointer(false)
-      void guard(() => api.addNode(mapId, parentId, value))
+      // position：sibling 传锚点序+1 = 插到锚点正下方（服务端归一化保证
+      // 稠密，+1 是精确插入语义）；child 不传 = 追加末尾
+      void guard(() => api.addNode(mapId, parentId, value, position))
     },
     [mapId],
   )

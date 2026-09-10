@@ -1128,9 +1128,10 @@ button.id-badge {
   cursor: default !important;
 }
 
-/* 拖拽改挂载的命中反馈：合法目标父节点 = 蓝环（选中态加强）；落在自身
-   子树上 = 红环拒放（防环预检，服务端 move_node 兜底）。class 由
-   MindMapEditor 的拖拽命中检测直改 DOM（不走 state，拖动帧率优先） */
+/* 拖拽改挂载/排序的命中反馈：中间区（挂子）= 蓝环；上/下边缘区（插前/后）
+   = 水平插入线（伪元素画在节点 wrapper 边缘，比节点稍宽出头）；落在自身
+   子树或布局根边缘 = 红环拒放。class 由拖拽命中检测直改 DOM（不走
+   state，拖动帧率优先） */
 .rf-wrap .react-flow__node.drop-target .rf-node {
   border-color: var(--canvas-sel);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--canvas-sel) 35%, transparent);
@@ -1139,6 +1140,19 @@ button.id-badge {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
 }
+.rf-wrap .react-flow__node.drop-before::before,
+.rf-wrap .react-flow__node.drop-after::after {
+  content: '';
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--canvas-sel);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--canvas-sel) 25%, transparent);
+}
+.rf-wrap .react-flow__node.drop-before::before { top: -6px; }
+.rf-wrap .react-flow__node.drop-after::after { bottom: -6px; }
 
 /* 节点操作按钮行：内容由 NodeToolbar 渲染到独立层（不随画布缩放，缩小时
    仍可操作——定位/显隐/层级由 NodeToolbar 管），这里只管自身视觉 */
