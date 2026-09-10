@@ -153,7 +153,7 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
           <div key={m.id} className="card" onClick={() => confirmId === null && onOpen(m.id)}>
             {/* 左上角 ID（橙色 mono，无 #）；标题两行省略；右下角 date；
                 version 只在 hover 时跟在标题后面 */}
-            <span className="map-id">{m.id}</span>
+            <span className="map-id">#{m.id}</span>
             <div className="card-title" title={m.title}>
               {m.title}
               <span className="card-ver">v{m.version}</span>
