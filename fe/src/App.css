@@ -566,15 +566,15 @@ body.chat-resizing {
 .search-row input::placeholder { color: var(--ink-3); }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-/* 统一高度（不随标题长度变）：title 两行 + 角标留白。id 左上角橙色 mono；
-   date 右下角；version hover 时跟在标题后（见 card-ver） */
+/* 统一高度（不随标题长度变）：title 两行 + 底部角标行留白。id 左下角
+   橙色 mono（与右下 date 对称）；version hover 时跟在标题后 */
 .card {
   position: relative; /* 角标们的定位锚 */
   text-align: left;
   border: 1px solid var(--hairline);
   background: var(--bg);
   border-radius: var(--radius);
-  padding: 26px 14px 22px;
+  padding: 16px 14px 24px;
   height: 96px;
   cursor: pointer;
   transition: background 0.1s, border-color 0.1s;
@@ -582,7 +582,7 @@ body.chat-resizing {
 .card:hover { background: var(--bg-hover); border-color: var(--hairline-2); }
 .card .map-id {
   position: absolute;
-  top: 7px;
+  bottom: 6px;
   left: 10px;
   color: var(--canvas-badge);
   font-family: ui-monospace, Consolas, monospace;
