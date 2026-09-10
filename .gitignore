@@ -41,3 +41,6 @@ src/static/
 
 # macOS
 .DS_Store
+
+# fe/ 下误跑后端会产生运行时产物（var/ 数据库、上传目录）——根目录的 var/* 不覆盖子目录
+fe/var/
