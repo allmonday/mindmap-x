@@ -27,6 +27,7 @@ import { layoutMap, type LNode, type LayoutMode } from './layout'
 import { ProviderConfigModal } from './ProviderConfigModal'
 import { RevisionPanel } from './RevisionPanel'
 import { ThemeSwitch } from './ThemeSwitch'
+import { HelpIcon, HelpPanel } from './HelpPanel'
 import type { MapDetail, NodeDTO, OutlineMode } from './types'
 import { useAnimatedLayout } from './useAnimatedLayout'
 
@@ -699,6 +700,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   // 状态检查首步即配置完整性，未配置时快速失败、无外呼
   const [agentStatus, setAgentStatus] = useState<ChatGateStatus | null>(null)
   const [chatGateOpen, setChatGateOpen] = useState(false)
+  // 交互指南侧边栏（左侧滑出，Esc 关闭——链位见全局 Esc 处理）
+  const [helpOpen, setHelpOpen] = useState(false)
   const refreshAgentStatus = useCallback(async (): Promise<ChatGateStatus> => {
     try {
       const s = await chatApi.status()
@@ -1437,6 +1440,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           setChatGateOpen(false)
           return
         }
+        if (!typing && helpOpen) {
+          setHelpOpen(false)
+          return
+        }
         if (!typing && noteOpen) {
           setNoteOpen(false)
           setNotePinned(false)
@@ -1450,6 +1457,18 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       if (adding != null) return
       // d = 备注面板开合：插在综合守卫之前——无选中时也允许"关"（开着面板
       // 但选区已被清空的场景）；面板内 textarea 聚焦时走下方输入元素守卫
+      // ?（Shift+/）= 交互指南开关，与 d 键同款守卫（输入态不开）
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const el0 = document.activeElement
+        const typing0 =
+          el0 instanceof HTMLElement &&
+          (el0.tagName === 'INPUT' || el0.tagName === 'TEXTAREA' || el0.isContentEditable)
+        if (!typing0 && editingId == null) {
+          e.preventDefault()
+          setHelpOpen((v) => !v)
+          return
+        }
+      }
       if (e.key === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const el = document.activeElement
         const typing =
@@ -1535,7 +1554,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, editingId, adding, outlineOpen, revOpen, chatGateOpen, chatOpen, noteOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation, toggleNote])
+  }, [selectedId, editingId, adding, outlineOpen, revOpen, chatGateOpen, chatOpen, noteOpen, helpOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation, toggleNote])
   // 重排动画：动画期间逐帧给出节点位置（null = 静止，直接用布局终值）；
   // 边由 React Flow 按节点位置实时重算，滑行中始终与节点贴合
   const animPos = useAnimatedLayout(layout)
@@ -1857,6 +1876,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         </button>
         <LangSwitch />
         <ThemeSwitch />
+        <button
+          className="btn icon"
+          onClick={() => setHelpOpen((v) => !v)}
+          title={t('help.title')}
+          aria-label={t('help.title')}
+        >
+          <HelpIcon />
+        </button>
       </header>
 
       {error && <div className="toast editor-toast">{error}</div>}
@@ -2030,6 +2057,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         {chatOpen && agentOk && (
           <ChatPanel mapId={mapId} width={chatWidth} onResize={setChatWidth} onClose={() => setChatOpen(false)} />
         )}
+        {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
         {noteMounted && (
           <DetailPanel
             node={noteNode}
