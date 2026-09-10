@@ -190,6 +190,9 @@ body.chat-resizing {
 }
 /* 用户气泡：中性灰（去蓝化），与 agent 的暖灰靠对齐方向+深一档区分 */
 .bubble.user { background: var(--bubble-user); color: var(--ink); }
+/* agent 气泡占满面板宽（内容多为长 markdown，72% 上限浪费空间）；
+   user 保持 72%（右对齐短消息，聊天惯例的视觉区分） */
+.bubble.agent { max-width: 100%; }
 .bubble.agent { background: var(--bg-side); color: var(--ink); }
 .bubble.agent.err { background: color-mix(in srgb, var(--danger) 8%, transparent); color: var(--danger); }
 .bubble.agent.thinking { color: var(--ink-3); }
