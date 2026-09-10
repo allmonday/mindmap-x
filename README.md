@@ -75,6 +75,7 @@ xattr -cr /Applications/MindMapX.app   # or right-click → Open the first time
 Grab `MindMapX-Windows-x64.zip` from [Releases](../../releases), unzip anywhere, and run `MindMapX\MindMapX.exe`. The build is unsigned — SmartScreen will warn on first launch, click **More info → Run anyway**.
 
 - Win 11 only (WebView2 ships with the OS); no installer, no registry writes
+- Slow first-time unzip? That's Defender scanning ~3000 files one by one — use 7-Zip, or add the folder to Defender exclusions. No manual `Unblock-File` needed: the app clears the download mark (MOTW) itself at startup
 - **Data lives in** `%APPDATA%\MindMapX\` — same layout as macOS (`mindmap.db`, sessions, `desktop.log`)
 - Everything else (model config, MCP port in the window title) matches the macOS notes above
 
