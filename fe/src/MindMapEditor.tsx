@@ -759,7 +759,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
    *  才点得中（36px 节点的 25% 边缘仅 9px，加上拖拽节点浮顶挡视线几乎
    *  无法触发）。兄弟垂直间隙 32px > 2×EXT，扩展区不会串到邻居 */
   const hitTest = (cx: number, cy: number, dragId: number): DropHit | null => {
-    const EDGE = 0.3
+    const EDGE = 0.35 // 边缘区比例（曾 0.25→0.3，用户仍觉扁——触发区与半高视觉块匹配）
     const EXT = 14
     const els = [...document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')]
     const build = (el: HTMLElement, zone: 'child' | 'before' | 'after'): DropHit => {

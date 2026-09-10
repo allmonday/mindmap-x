@@ -1146,13 +1146,21 @@ button.id-badge {
   position: absolute;
   left: -4px;
   right: -4px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--canvas-sel);
-  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--canvas-sel) 25%, transparent);
+  /* 半高蓝色块 + 边缘实线：纯插入线（3px）视觉太扁（用户反馈），块给
+     出明确的目标区域感，实线保留精确的落点定位 */
+  height: 50%;
+  background: color-mix(in srgb, var(--canvas-sel) 22%, transparent);
+  border-radius: 8px 8px 4px 4px;
+  pointer-events: none;
 }
-.rf-wrap .react-flow__node.drop-before::before { top: -6px; }
-.rf-wrap .react-flow__node.drop-after::after { bottom: -6px; }
+.rf-wrap .react-flow__node.drop-before::before {
+  top: -6px;
+  border-top: 3px solid var(--canvas-sel);
+}
+.rf-wrap .react-flow__node.drop-after::after {
+  bottom: -6px;
+  border-bottom: 3px solid var(--canvas-sel);
+}
 
 /* 节点操作按钮行：内容由 NodeToolbar 渲染到独立层（不随画布缩放，缩小时
    仍可操作——定位/显隐/层级由 NodeToolbar 管），这里只管自身视觉 */
