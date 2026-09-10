@@ -1611,7 +1611,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         lnode.node.display_id === editingId ? 'e' : ''
       }${lnode.node.display_id === adding?.anchor ? (adding!.dir === 'sibling' ? 'S' : 'a') : ''}${
         sel && selectedByPointer ? 'P' : ''
-      }:${lnode === layout.root ? 'R' : ''}${(childCount.get(lnode.node.display_id) ?? 0) > 0 ? 'h' : ''}${
+      }${dp ? 'D' : ''}:${lnode === layout.root ? 'R' : ''}${(childCount.get(lnode.node.display_id) ?? 0) > 0 ? 'h' : ''}${
         lnode.node.note ? 'n' : ''
       }`
       const old = prev.get(id)
@@ -1632,6 +1632,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         // 逐帧新对象而宽高恒定 → bounds 恒为 undefined → getEdgePosition
         // null → 全部边渲染 null，整段动画"集体消失"（形状切换闪没的根因）
         measured: { width: lnode.w, height: lnode.h },
+        // 拖拽中浮顶：盖过途经的所有节点（拖到目标上方时被拖节点应在最上层，
+        // 否则大子树间穿行时被遮、看不到落点）。key 里的 D 标记保证拖动首帧
+        // 换对象（zIndex 变化必须新对象才生效）
+        ...(dp ? { zIndex: 1000 } : {}),
         style: { width: lnode.w, height: lnode.h, opacity: op },
         selected: sel,
         data: {
@@ -1657,8 +1661,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const rfEdges: Edge[] = useMemo(() => {
     if (!layout) return []
     const edges: Edge[] = []
+    // 拖拽改挂载中：隐藏被拖节点与其父的连线（视觉"摘下"——不断开则整根
+    // 边被拉伸跟着走，挂载语义模糊）。drop/取消后 dragPos 清空，边自然恢复
+    const dragId = dragPos ? [...dragPos.keys()][0] : null
     for (const ln of layout.all) {
       for (const c of ln.children) {
+        if (dragId != null && c.node.display_id === dragId) continue
         // 锚定侧按当前帧的实际位置推导，而非布局 side 终值：节点走动画插值时
         // （形态切换中左侧子树滑向右侧），side 终值会让锚点在第一帧就翻到对面，
         // 而节点还在原位——边整段动画期间横穿父节点（即"切形态闪一下乱线"的
@@ -1678,8 +1686,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       }
     }
     return edges
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 结构由 edgesSig 表达；animPos 动画期间逐帧驱动锚定侧
-  }, [edgesSig, animPos])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 结构由 edgesSig 表达；animPos 动画期间逐帧驱动锚定侧；dragPos 拖拽中隐藏父边
+  }, [edgesSig, animPos, dragPos])
 
   // ── outline 编辑（Human 使用 Agent 同款协议的入口） ─────────────────
   const openOutline = async () => {
