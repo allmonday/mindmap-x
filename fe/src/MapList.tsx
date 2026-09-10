@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
-import { fmtTime, useI18n } from './i18n'
+import { fmtDate, useI18n } from './i18n'
 import { LangSwitch } from './LangSwitch'
 import { ThemeSwitch } from './ThemeSwitch'
 import type { MapSummary } from './types'
@@ -151,13 +151,14 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
         )}
         {shown.map((m) => (
           <div key={m.id} className="card" onClick={() => confirmId === null && onOpen(m.id)}>
-            <div className="card-title">
-              <span className="map-id">#{m.id}</span>
+            {/* 左上角 ID（橙色 mono，无 #）；标题两行省略；右下角 date；
+                version 只在 hover 时跟在标题后面 */}
+            <span className="map-id">{m.id}</span>
+            <div className="card-title" title={m.title}>
               {m.title}
+              <span className="card-ver">v{m.version}</span>
             </div>
-            <div className="card-meta">
-              v{m.version} · {fmtTime(m.created_at, locale)}
-            </div>
+            <span className="card-date">{fmtDate(m.created_at, locale)}</span>
             {confirmId === m.id ? (
               <button className="card-del confirm" onClick={(e) => { e.stopPropagation(); void del(m.id) }}>
                 {t('map.deleteConfirm')}

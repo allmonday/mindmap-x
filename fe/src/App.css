@@ -566,24 +566,64 @@ body.chat-resizing {
 .search-row input::placeholder { color: var(--ink-3); }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+/* 统一高度（不随标题长度变）：title 两行 + 角标留白。id 左上角橙色 mono；
+   date 右下角；version hover 时跟在标题后（见 card-ver） */
 .card {
-  position: relative; /* 删除按钮的定位锚 */
+  position: relative; /* 角标们的定位锚 */
   text-align: left;
   border: 1px solid var(--hairline);
   background: var(--bg);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 26px 14px 22px;
+  height: 96px;
   cursor: pointer;
   transition: background 0.1s, border-color 0.1s;
 }
 .card:hover { background: var(--bg-hover); border-color: var(--hairline-2); }
+.card .map-id {
+  position: absolute;
+  top: 7px;
+  left: 10px;
+  color: var(--canvas-badge);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+.card-title {
+  font-weight: 600;
+  font-size: 14.5px;
+  line-height: 19px;
+  overflow: hidden;
+  display: -webkit-box; /* 两行省略（rf-label 同款手法） */
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+/* 版本 hover 时跟在标题尾部（不 hover 不占视觉） */
+.card-ver {
+  margin-left: 6px;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.card:hover .card-ver { opacity: 1; }
+.card-date {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
 /* 新建卡片：网格第一格，虚线边框与普通卡区分；点击进入卡内输入态 */
 .card.new-card {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 72px;
+  height: 96px;
+  padding: 14px 16px;
   border: 1.5px dashed var(--hairline-2);
   background: none;
   color: var(--ink-3);
@@ -603,10 +643,6 @@ body.chat-resizing {
 }
 .card.new-card input:focus { outline: none; }
 .card.new-card input::placeholder { color: var(--ink-3); font-weight: 400; }
-.card-title { font-weight: 600; margin-bottom: 6px; font-size: 15px; }
-/* 标题左侧 #id，与编辑器 .map-title .map-id 同款弱化风格 */
-.card-title .map-id { color: var(--ink-3); font-weight: 400; font-size: 13px; margin-right: 6px; }
-.card-meta { color: var(--ink-3); font-size: 12.5px; }
 /* 删除入口：hover 显示；两步确认——第一次点击变红色「确认删除」，3s 内再点执行 */
 .card-del {
   position: absolute;

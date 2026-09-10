@@ -517,6 +517,13 @@ export function fmtTime(iso: string, locale: string): string {
   return new Date(s).toLocaleString(locale, { hour12: false })
 }
 
+/** date-only（列表卡片右下角用：只要日期，不带时分） */
+export function fmtDate(iso: string, locale: string): string {
+  if (!iso) return ''
+  const s = /[Zz]$|[+-]\d{2}:\d{2}$/.test(iso) ? iso : `${iso}Z`
+  return new Date(s).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
 // localStorage（显式选择优先）→ navigator.language（zh* → zh，en* → en）→ 'zh' 兜底
 const detectLang = (): Lang => {
   const saved = localStorage.getItem(STORAGE_KEY)
