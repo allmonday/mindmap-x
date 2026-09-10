@@ -19,8 +19,8 @@ import sys
 import threading
 import time
 import urllib.request
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
 
 from platformdirs import user_data_dir
 
@@ -125,6 +125,25 @@ def _wait_http_ready(url: str, timeout: float = 30.0) -> None:
     raise SystemExit(f"server not ready within {timeout}s: {url}")
 
 
+def _unblock_files() -> None:
+    """Windows：清 _internal 下全部文件的 Zone.Identifier（MOTW 下载标记）。
+
+    网络下载的 zip 解压出的文件带此标记（NTFS ADS），.NET 对带标记的
+    混合模式 DLL（pywebview 窗口壳依赖的 Python.Runtime.dll）拒绝加载
+    ——RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize，
+    未签名分发的经典坑（macOS xattr 的对等物）。删除 ADS 无副作用。
+    """
+    if sys.platform != "win32":
+        return
+    base = Path(sys._MEIPASS)
+    for p in base.rglob("*"):
+        if p.is_file():
+            try:
+                os.remove(f"{p}:Zone.Identifier")
+            except OSError:
+                pass  # 无标记（常态）——快速跳过
+
+
 def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     _setup_logging()
@@ -141,6 +160,7 @@ def main() -> None:
         os._exit(0)
 
     port = _pick_port()
+    _unblock_files()  # MOTW 自愈须在 webview（pythonnet/.NET）import 之前
 
     # ── 环境变量先于一切 src.* import（见模块 docstring）──────────────
     db_posix = (DATA_DIR / "mindmap.db").as_posix()
