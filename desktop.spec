@@ -13,7 +13,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 # 版本唯一事实源：pyproject.toml 的 project.version（写入 .app 的 Info.plist）
-VERSION = tomllib.loads((Path(SPECPATH) / "pyproject.toml").read_text())["project"]["version"]
+VERSION = tomllib.loads((Path(SPECPATH) / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 
 datas = [
     ("alembic/env.py", "alembic"),

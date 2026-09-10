@@ -59,7 +59,14 @@ jobs:
             -ov -format UDZO MindMapX-macOS-arm64.dmg
           shasum -a 256 MindMapX-macOS-arm64.dmg > MindMapX-macOS-arm64.dmg.sha256
 
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: MindMapX-macOS-arm64
+          path: MindMapX-macOS-arm64.dmg
+
       - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')  # dispatch（无 tag）走上面的 artifact
         with:
           files: |
             MindMapX-macOS-arm64.dmg
