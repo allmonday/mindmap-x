@@ -759,8 +759,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
    *  才点得中（36px 节点的 25% 边缘仅 9px，加上拖拽节点浮顶挡视线几乎
    *  无法触发）。兄弟垂直间隙 32px > 2×EXT，扩展区不会串到邻居 */
   const hitTest = (cx: number, cy: number, dragId: number): DropHit | null => {
-    const EDGE = 0.35 // 边缘区比例（曾 0.25→0.3，用户仍觉扁——触发区与半高视觉块匹配）
-    const EXT = 14
+    const EDGE = 0.375 // 边缘区比例（插入带优先）：中间挂子区收窄到 25%——
+    // 相邻节点间操作时指针离邻居中部的挂子区太近，插入意图极易误触成
+    // 挂子（用户对准被拖节点视觉，指针实际偏下半个节点高）
+    const EXT = 16 // 矩形外扩：16×2 = 兄弟间隙 32px 全覆盖（14 时中间有 4px 死区）
     const els = [...document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')]
     const build = (el: HTMLElement, zone: 'child' | 'before' | 'after'): DropHit => {
       const id = Number(el.dataset.id)
@@ -1689,9 +1691,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         measured: { width: lnode.w, height: lnode.h },
         // 拖拽中浮顶：盖过途经的所有节点（拖到目标上方时被拖节点应在最上层，
         // 否则大子树间穿行时被遮、看不到落点）。key 里的 D 标记保证拖动首帧
-        // 换对象（zIndex 变化必须新对象才生效）
+        // 换对象（zIndex 变化必须新对象才生效）。半透明 0.55：命中判定用指针
+        // 点而用户对准的是节点视觉——不透开就看不见指针落在目标的哪个区，
+        // 误触感的主要来源
         ...(dp ? { zIndex: 1000 } : {}),
-        style: { width: lnode.w, height: lnode.h, opacity: op },
+        style: { width: lnode.w, height: lnode.h, opacity: dp ? 0.55 : op },
         selected: sel,
         data: {
           lnode,
