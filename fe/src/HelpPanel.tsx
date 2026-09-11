@@ -23,7 +23,9 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
       items: [
         { label: 'help.click', desc: 'help.clickD' },
         { keys: ['F2', 'Ctrl+Enter'], label: 'help.dblclick', desc: 'help.dblclickD' },
+        { label: 'help.contextMenu', desc: 'help.contextMenuD' },
         { label: 'help.hold', desc: 'help.holdD' },
+        { label: 'help.dragPick', desc: 'help.dragPickD' },
         { label: 'help.dragOn', desc: 'help.dragOnD' },
         { label: 'help.dragGap', desc: 'help.dragGapD' },
         { label: 'help.dragBlank', desc: 'help.dragBlankD' },
@@ -57,6 +59,7 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
         { label: 'help.focus', desc: 'help.focusD' },
         { label: 'help.tools', desc: 'help.toolsD' },
         { label: 'help.theme', desc: 'help.themeD' },
+        { label: 'help.foldSync', desc: 'help.foldSyncD' },
         { label: 'help.chat', desc: 'help.chatD' },
       ],
     },

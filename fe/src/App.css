@@ -793,8 +793,9 @@ button.crumb:hover { color: var(--ink); }
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16); /* 同 .node-actions 浮层投影 */
   padding: 3px;
 }
-/* 悬停桥：crumb 底边与菜单间的 6px 空隙由伪元素覆盖，hover 链不断 */
-.crumb-menu::before {
+/* 悬停桥：crumb 底边与菜单间的 6px 空隙由伪元素覆盖，hover 链不断。
+   限定一级（.crumb-menu 类被级联子菜单共享，子菜单紧贴父项无需桥） */
+.crumb-wrap > .crumb-menu::before {
   content: '';
   position: absolute;
   top: -6px;
@@ -802,6 +803,20 @@ button.crumb:hover { color: var(--ink); }
   right: 0;
   height: 6px;
 }
+/* 一级菜单视口翻转（JS 量尺寸后挂类）：右缘放不下左对齐 wrap、底边放不下从 crumb 上方展开 */
+.crumb-wrap > .crumb-menu.flip-h { left: auto; right: 0; }
+.crumb-wrap > .crumb-menu.flip-v { top: auto; bottom: calc(100% + 6px); }
+.crumb-wrap > .crumb-menu.flip-v::before { top: auto; bottom: -6px; } /* 翻上后空隙换到下方 */
+
+/* 级联子菜单：锚在父项(.cm-item)右侧。left:100% 紧贴父项右缘——0 间隙水平 hover 链
+   天然连续，无需桥；-4px = 菜单 padding 3px + 边框 1px，首行与父行视觉对齐 */
+.crumb-menu.cm-sub { top: -4px; left: 100%; }
+.crumb-menu.cm-sub.flip-h { left: auto; right: 100%; } /* 右缘放不下：翻到父项左侧 */
+.crumb-menu.cm-sub.flip-v { top: auto; bottom: -4px; } /* 底边放不下：向上收，末行对齐父行 */
+
+/* 菜单项容器：relative 供子菜单锚定；button 占满行宽（子菜单 min-width:100% 随之） */
+.crumb-menu .cm-item { position: relative; display: flex; }
+.crumb-menu .cm-item > button { flex: 1; min-width: 0; }
 
 /* ── Ctrl+P 编号跳转面板（palette 式：不遮暗画布，边看边输） ──
    视觉语言同 .crumb-menu（白底 hairline 圆角投影）；透明点击层收关闭职责 */
@@ -892,8 +907,11 @@ button.crumb:hover { color: var(--ink); }
   max-width: 320px;
 }
 .crumb-menu button:hover { background: var(--bg-hover); }
-/* 节点名超长省略；#N 角标与画布 id-badge / outline [id:N] 协议呼应 */
+/* 节点名超长省略；#N 角标与画布 id-badge / outline [id:N] 协议呼应。
+   name 弹性占位（三段布局：名 / #N / 级联箭头），#N 与箭头靠右 */
 .crumb-menu .cm-name {
+  flex: 1;
+  min-width: 0; /* flex item 长文本不撑破（同 .goto-input 教训） */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -904,6 +922,58 @@ button.crumb:hover { color: var(--ink); }
   font-size: 11.5px;
   color: var(--ink-3);
 }
+/* 级联指示箭头：字形同 .crumb-sep 的 ›，弱化色提示"右侧还有子菜单" */
+.crumb-menu .cm-arrow {
+  flex-shrink: 0;
+  color: var(--ink-3);
+  margin-left: -4px; /* 抵消部分按钮 gap，箭头贴 #N 一侧不显松散 */
+}
+
+/* ── 节点右键操作菜单：视觉语言与 .crumb-menu 同源（画布面板底 + hairline
+   + radius + bg-hover）。fixed 锚定右键点不随画布平移缩放；无 backdrop——
+   关闭走 window capture（见 MindMapEditor 的 NodeContextMenu）── */
+.ctx-menu {
+  position: fixed;
+  z-index: 9; /* 同 goto 浮层区：盖画布与侧栏面板(z-6/7)，让出 modal(z-10) */
+  min-width: 176px; /* 容纳 armed 态「确认删除？」文案，armed 换字不改变宽度 */
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas-panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
+  padding: 3px;
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  border-radius: calc(var(--radius) - 2px);
+}
+.ctx-item:hover { background: var(--bg-hover); }
+.ctx-item svg { flex-shrink: 0; color: var(--ink-2); } /* 图标比文字淡一档 */
+.ctx-item .ctx-label { flex: 1; min-width: 0; }
+/* 右侧快捷键提示（macOS 菜单惯例：淡色无框，非 kbd 键帽样式） */
+.ctx-item .ctx-kbd {
+  flex-shrink: 0;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+/* 分隔线：破坏性删除与上面隔开（规范菜单惯例） */
+.ctx-sep { height: 1px; background: var(--hairline); margin: 3px 6px; }
+/* armed 两步确认：红色系提示"再点即删"（红字而非红底——红底在浅色面板上过重） */
+.ctx-item.armed,
+.ctx-item.armed svg { color: var(--danger); }
+.ctx-item.armed:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
 /* 画布左上角工具列：标题正下方（布局切换 / 层级刻度条） */
 .canvas-tools {
@@ -1264,17 +1334,6 @@ button.id-badge {
   border-radius: 10px;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
 }
-/* 删除是破坏性操作且紧邻 Focus：额外左距拉开与 Focus 的间隔（8+4=12px），
-   降低误触；armed 态（两步确认已点亮）红色实心提示"再点即删" */
-.node-actions .danger { margin-left: 4px; }
-.node-actions .danger.confirm {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
-  white-space: nowrap;
-  width: auto; /* 解除图标态的 30px 定宽，文字按钮按内容撑开 */
-  padding: 0 10px;
-}
 /* 编辑态节点放开高度向下生长，要盖住下方相邻节点（NodeToolbar 独立层
    无此问题，但 textarea 还在节点内）；!important 覆盖 RF 行内 zIndex */
 .rf-wrap .react-flow__node:has(.rf-editor) {
@@ -1289,7 +1348,7 @@ button.id-badge {
   padding: 0;
   box-shadow: none;
   /* 外层 pill 已有底+投影，按钮再描边显得冗余——静息态边框透明，
-     hover 反馈（底色/描边）不受影响；armed 态红框由 .danger.confirm 更高特异性保证 */
+     hover 反馈（底色/描边）不受影响 */
   border-color: transparent;
 }
 

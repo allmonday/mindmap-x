@@ -1,4 +1,15 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type RefObject,
+} from 'react'
 import { createPortal } from 'react-dom'
 import {
   Background,
@@ -44,11 +55,10 @@ type MindNodeData = {
   isEditing: boolean
   isAdding: boolean
   addingDir: 'child' | 'sibling' // 输入框方位与提交语义（child=挂锚点下，sibling=挂锚点父）
-  selectedByPointer: boolean // 选中来源：长按激活亮按钮行，单击/键盘导航只高亮
   hasChildren: boolean
   hasNote: boolean // 带 markdown 备注（角标 ✎ 的显隐源）
   onSelect: (id: number) => void // 静默选中：只高亮（方向键/快捷键的锚点），不弹任何 UI
-  onActivate: (id: number, hasNote: boolean) => void // 长按激活：亮按钮行 + 备注面板按需开合
+  onActivate: (id: number, hasNote: boolean) => void // 长按：有备注开备注面板（无备注静默）
   onStartEdit: (id: number) => void
   onToggleCollapse: (lnode: LNode) => void
   onCommitEdit: (id: number, text: string) => void
@@ -73,7 +83,7 @@ const DWELL_MS = 150
 const REVEAL_MS = 100
 
 function MindNodeView({ data, selected }: NodeProps<MindNode>) {
-  const { lnode, isEditing, isAdding, addingDir, selectedByPointer, hasChildren, hasNote } = data
+  const { lnode, isEditing, isAdding, addingDir, hasChildren, hasNote } = data
   const n = lnode.node
   const isRoot = data.isLayoutRoot // 布局根 = 真根或聚焦节点；非聚焦时与真根判定完全一致
   // 文案经 context 直取（ReactFlow 的 memo 不拦截 context 更新）——
@@ -87,25 +97,10 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
     if (isAdding) addInputRef.current?.focus()
   }, [isAdding])
 
-  // 操作按钮行：点击选中才显示、点外部（画布/别的节点）即消失——
-  // 选中态由编辑器 selectedId 驱动（onPaneClick / 点其他节点都会换选），
-  // 组件里无需自管显隐。曾用 hover 停留 0.5s 亮起，扫画布时易误亮，弃用
-  const [confirmDel, setConfirmDel] = useState(false)
-  const delTimer = useRef<number | undefined>(undefined)
-  // 删除两步确认（与 MapList 同款交互语言）：首点只亮起，3s 内再点才执行。
-  // 删除按钮就在 Focus 旁边，误触代价是整个子树——不可无确认直删
-  useEffect(() => {
-    window.clearTimeout(delTimer.current)
-    if (!selected) setConfirmDel(false) // 选中丢失即解除 armed 态，不留悬亮红
-  }, [selected])
-  useEffect(() => () => window.clearTimeout(delTimer.current), [])
-  // 按钮行只认长按激活；单击/键盘导航选中只做高亮定位（操作走快捷键）
-  const showActions = !isEditing && selected && selectedByPointer
-
-  // ── 长按激活（480ms）：亮按钮行 + 备注面板。三防 ─────────────────────
+  // ── 长按（480ms）：有备注开备注面板。三防 ───────────────────────────
   // 1) 拖拽取消：按住节点拖动 = 拖拽改挂载手势（nodesDraggable），移动超
-  //    8px 即取消长按，拖动时不会满屏误亮按钮
-  // 2) click 吞除：浏览器在松手才发 click，长按已触发激活后这个 click 会
+  //    8px 即取消长按（改挂载手势与长按互斥）
+  // 2) click 吞除：浏览器在松手才发 click，长按已触发后这个 click 会
   //    再跑一次静默选中——consumed 标记跳过并在下一次按下复位
   // 3) 编辑/加节点态豁免：textarea 覆盖节点，指针事件在输入上下文无意义
   // 进度环：lp 非 null = 按住中且已过 REVEAL_MS（驱动节点按压态 + 环渲染）。
@@ -140,17 +135,6 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
     [],
   )
 
-  const clickDelete = () => {
-    if (confirmDel) {
-      window.clearTimeout(delTimer.current)
-      data.onDelete(n.display_id)
-      return
-    }
-    setConfirmDel(true)
-    window.clearTimeout(delTimer.current)
-    delTimer.current = window.setTimeout(() => setConfirmDel(false), 3000)
-  }
-
   return (
     <div
       className={`rf-node ${isRoot ? 'root' : ''} ${selected ? 'sel' : ''} ${lp ? 'holding' : ''}`}
@@ -158,6 +142,9 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
       // commit 后由布局重排归位；期间 z-index 抬升盖住下方节点（见 App.css）
       style={{ width: lnode.w, height: isEditing ? 'auto' : lnode.h, minHeight: isEditing ? lnode.h : undefined }}
       onPointerDown={(e) => {
+        // 只认主键：右键按下也是 pointerdown，不筛会误启长按计时——
+        // 右键菜单（操作入口）落地后"按住右键"会误开备注面板
+        if (e.button !== 0) return
         if (isEditing || isAdding) return
         lpConsumed.current = false
         lpStart.current = { x: e.clientX, y: e.clientY }
@@ -262,18 +249,18 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
         <span className={`id-badge ${isRoot ? 'on-root' : ''}`}>#{n.display_id}</span>
       )}
 
-      {/* 节点操作按钮：NodeToolbar 渲染在独立层、不随画布缩放（旧方案按钮
-          在节点 DOM 内，zoom 缩小时跟着缩小到不可点）。方位语义：按钮行与
-          sibling 输入态 = 节点下方左对齐（下一个兄弟的落位）；child 输入态
-          = 节点右侧（子树生长方向）。显隐 = isVisible（选中激活或输入态） */}
-      {!isEditing && (
+      {/* 加节点输入行：NodeToolbar 渲染在独立层、不随画布缩放（旧方案在节点
+          DOM 内，zoom 缩小时跟着缩小到不可点）。方位语义：sibling 输入态 =
+          节点下方左对齐（下一个兄弟的落位）；child 输入态 = 节点右侧（子树
+          生长方向）。节点操作入口已迁右键菜单（NodeContextMenu），此处只剩
+          加节点输入态 */}
+      {isAdding && (
         <NodeToolbar
-          isVisible={isAdding || showActions}
-          position={isAdding && addingDir === 'child' ? Position.Right : Position.Bottom}
-          align={isAdding && addingDir === 'child' ? 'center' : 'start'}
-          offset={isAdding && addingDir === 'child' ? 14 : 9}
+          isVisible
+          position={addingDir === 'child' ? Position.Right : Position.Bottom}
+          align={addingDir === 'child' ? 'center' : 'start'}
+          offset={addingDir === 'child' ? 14 : 9}
         >
-          {isAdding ? (
           <div className="node-actions adding">
             <input
               ref={addInputRef}
@@ -307,62 +294,6 @@ function MindNodeView({ data, selected }: NodeProps<MindNode>) {
               <CheckIcon />
             </button>
           </div>
-        ) : (
-          <div className={`node-actions${showActions ? ' show' : ''}`}>
-            <button
-              className="btn sm"
-              title={t('node.addTitle')}
-              aria-label={t('node.addAria')}
-              onClick={(e) => {
-                e.stopPropagation()
-                data.onStartAdd(n.display_id)
-              }}
-            >
-              <PlusIcon />
-            </button>
-            {/* 添加备注：无备注节点的创建入口（有备注的节点点击即开面板，无需按钮） */}
-            {!hasNote && (
-              <button
-                className="btn sm"
-                title={t('node.addNoteTitle')}
-                aria-label={t('node.addNoteTitle')}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  data.onOpenNote(n.display_id)
-                }}
-              >
-                <StickyNoteIcon size={11} />
-              </button>
-            )}
-            {!isRoot && hasChildren && (
-              <button
-                className="btn sm"
-                title={t('node.focusTitle')}
-                aria-label={t('node.focusAria')}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  data.onFocus(n.display_id)
-                }}
-              >
-                <FocusIcon />
-              </button>
-            )}
-            {!isRoot && (
-              <button
-                className={`btn sm danger${confirmDel ? ' confirm' : ''}`}
-                title={confirmDel ? t('node.deleteConfirm') : t('node.deleteTitle')}
-                aria-label={confirmDel ? t('node.deleteConfirm') : t('node.deleteAria')}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  clickDelete()
-                }}
-              >
-                {/* armed 态换成文字按钮——红底图标不够显眼，用户感知不到首点已生效 */}
-                {confirmDel ? t('node.deleteConfirmBtn') : <TrashIcon />}
-              </button>
-            )}
-          </div>
-          )}
         </NodeToolbar>
       )}
 
@@ -431,19 +362,316 @@ const MindEdge = memo(function MindEdge({
 
 const edgeTypes = { mind: MindEdge }
 
-// 面包屑同层导航菜单：兄弟列表（调用方已算好、排除自身），点选即聚焦过去。
-// 独立组件而非内联 JSX：role=menu 语义块 + 空列表不渲染的收口
-function CrumbMenu({ siblings, onPick }: { siblings: NodeDTO[]; onPick: (id: number) => void }) {
+// 面包屑菜单 hover 打开延迟：一级与级联子菜单共用（沿列表纵向扫过不连环弹）
+const CRUMB_HOVER_OPEN_DELAY = 150
+// 级联深度上限：脏数据父子成环时递归渲染不发散（防环精神同 focusPath 的 1000 步上溯）
+const CRUMB_MENU_MAX_DEPTH = 20
+
+// 级联/一级菜单共用的视口翻转测量：默认右开下展，越视口右缘翻左、越底边上收，
+// 两侧都放不下退回默认方向（退化窄窗）。useLayoutEffect 在 paint 前定稿，无中间帧闪烁。
+// 测的是锚点 rect（菜单 parentElement：一级=crumb-wrap、子级=cm-item）+ 菜单自身 offset
+// 尺寸——与菜单当前摆位无关，items/方向变化时复测不会来回震荡
+function useCrumbMenuFlip(
+  menuRef: RefObject<HTMLDivElement | null>,
+  defaultH: 'r' | 'l', // 一级恒 'r'；子级继承父菜单定稿方向（父翻左后子孙继续左开）
+  anchorEdge: 'top' | 'bottom', // 子级从锚点顶边展开；一级从锚点底边下方展开
+  items: NodeDTO[], // WS 重拉后菜单内容变高/变宽时复测
+): { h: 'r' | 'l'; v: 'd' | 'u' } {
+  const [dir, setDir] = useState<{ h: 'r' | 'l'; v: 'd' | 'u' }>({ h: defaultH, v: 'd' })
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    const anchor = el?.parentElement
+    if (!el || !anchor) return
+    const M = 8 // 视口安全边距
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const a = anchor.getBoundingClientRect()
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    // 水平：默认方向放得下用默认，放不下试另一侧，两侧都放不下退回默认
+    let hDir = defaultH
+    if (defaultH === 'r' && a.right + w > vw - M) hDir = a.left - w >= M ? 'l' : 'r'
+    else if (defaultH === 'l' && a.left - w < M) hDir = a.right + w <= vw - M ? 'r' : 'l'
+    // 垂直：往下展开空间不足时试上收（一级上边=锚点顶-h-空隙、子级底边回到锚点底），
+    // 仍放不下保持下展（单层高于视口的已知取舍）
+    const startY = anchorEdge === 'top' ? a.top : a.bottom
+    let vDir: 'd' | 'u' = 'd'
+    if (startY + h > vh - M) {
+      const upTop = (anchorEdge === 'top' ? a.bottom : a.top) - h
+      if (upTop >= M) vDir = 'u'
+    }
+    setDir((cur) => (cur.h === hDir && cur.v === vDir ? cur : { h: hDir, v: vDir }))
+  }, [items, defaultH, anchorEdge, menuRef])
+  return dir
+}
+
+// 面包屑同层导航菜单（一级）：兄弟列表（调用方已算好、排除自身），点选即聚焦过去。
+// 有子节点的项 hover 后在右侧级联展开子菜单（CrumbSubMenu 递归，深度封顶见常量）
+function CrumbMenu({
+  siblings,
+  kidsOf,
+  childCount,
+  onPick,
+}: {
+  siblings: NodeDTO[]
+  kidsOf: (pid: number) => NodeDTO[]
+  childCount: Map<number, number>
+  onPick: (id: number) => void
+}) {
   const { t } = useI18n()
+  const menuRef = useRef<HTMLDivElement>(null)
+  const { h, v } = useCrumbMenuFlip(menuRef, 'r', 'bottom', siblings)
   if (siblings.length === 0) return null
+  const cls = ['crumb-menu', h === 'l' && 'flip-h', v === 'u' && 'flip-v'].filter(Boolean).join(' ')
   return (
-    <div className="crumb-menu" role="menu" aria-label={t('crumb.siblingsAria')}>
+    <div ref={menuRef} className={cls} role="menu" aria-label={t('crumb.siblingsAria')}>
       {siblings.map((s) => (
-        <button key={s.display_id} role="menuitem" onClick={() => onPick(s.display_id)}>
-          <span className="cm-name">{s.content}</span>
-          <span className="cm-id">#{s.display_id}</span>
-        </button>
+        <CrumbMenuItem
+          key={s.display_id}
+          node={s}
+          depth={1}
+          menuH={h}
+          kidsOf={kidsOf}
+          childCount={childCount}
+          onPick={onPick}
+        />
       ))}
+    </div>
+  )
+}
+
+// 菜单项：有子节点时 hover 150ms 在右侧展开级联子菜单（局部 state，天然支持任意深度；
+// 子菜单是本项 div 的后代——鼠标移进去不触发 leave，hover 链不断，同 wrap 包菜单原理）
+function CrumbMenuItem({
+  node,
+  depth,
+  menuH,
+  kidsOf,
+  childCount,
+  onPick,
+}: {
+  node: NodeDTO
+  depth: number // 本项所在列表的深度（一级=1）
+  menuH: 'r' | 'l' // 所在菜单定稿的水平方向，传给子级作默认展开方向
+  kidsOf: (pid: number) => NodeDTO[]
+  childCount: Map<number, number>
+  onPick: (id: number) => void
+}) {
+  // 深度封顶后不再展开也不显箭头（连 kidsOf 都不查）；childCount 无视 collapsed——
+  // 折叠只是画布渲染裁剪，导航菜单要的是全量结构（同 siblingsOf 行为）
+  const hasKids = depth < CRUMB_MENU_MAX_DEPTH && (childCount.get(node.display_id) ?? 0) > 0
+  const [open, setOpen] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  return (
+    <div
+      className="cm-item"
+      onMouseEnter={() => {
+        // React 的 onMouseEnter 会沿组件树冒泡（与原生不同）：进子菜单也会触发祖先项
+        // 的 enter——已展开时直接返回，不重置计时器
+        if (open) return
+        window.clearTimeout(timer.current)
+        timer.current = window.setTimeout(() => setOpen(true), CRUMB_HOVER_OPEN_DELAY)
+      }}
+      onMouseLeave={() => {
+        // 关闭即时（同级互斥：A 收起无延迟、B 打开有延迟）；整支随本项卸载 state 自清
+        window.clearTimeout(timer.current)
+        setOpen(false)
+      }}
+    >
+      <button
+        role="menuitem"
+        aria-haspopup={hasKids ? 'menu' : undefined}
+        aria-expanded={hasKids ? open : undefined}
+        onClick={() => onPick(node.display_id)}
+      >
+        <span className="cm-name">{node.content}</span>
+        <span className="cm-id">#{node.display_id}</span>
+        {hasKids && (
+          <span className="cm-arrow" aria-hidden="true">
+            ›
+          </span>
+        )}
+      </button>
+      {open && hasKids && (
+        <CrumbSubMenu
+          items={kidsOf(node.display_id)}
+          level={depth + 1}
+          hDir={menuH}
+          kidsOf={kidsOf}
+          childCount={childCount}
+          onPick={onPick}
+        />
+      )}
+    </div>
+  )
+}
+
+// 级联子菜单（二级及以下）：锚在父项右侧（父菜单翻左后默认继续左开），视觉复用 .crumb-menu
+function CrumbSubMenu({
+  items,
+  level,
+  hDir,
+  kidsOf,
+  childCount,
+  onPick,
+}: {
+  items: NodeDTO[]
+  level: number // 本列表深度（一级=1，子级从 2 起）
+  hDir: 'r' | 'l'
+  kidsOf: (pid: number) => NodeDTO[]
+  childCount: Map<number, number>
+  onPick: (id: number) => void
+}) {
+  const { t } = useI18n()
+  const menuRef = useRef<HTMLDivElement>(null)
+  const { h, v } = useCrumbMenuFlip(menuRef, hDir, 'top', items)
+  const cls = ['crumb-menu', 'cm-sub', h === 'l' && 'flip-h', v === 'u' && 'flip-v']
+    .filter(Boolean)
+    .join(' ')
+  return (
+    <div ref={menuRef} className={cls} role="menu" aria-label={t('crumb.childrenAria')}>
+      {items.map((n) => (
+        <CrumbMenuItem
+          key={n.display_id}
+          node={n}
+          depth={level}
+          menuH={h}
+          kidsOf={kidsOf}
+          childCount={childCount}
+          onPick={onPick}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ── 节点右键操作菜单（编辑器层全局单例，fixed 锚定右键点）─────────────
+// 视觉语言与 .crumb-menu 同源（canvas-panel/hairline/radius/bg-hover）。
+// 不用 goto 式 backdrop：fixed inset-0 会盖画布，右键别处得两次点击——
+// 关闭走 window capture（见下），菜单本身不铺任何透明层
+function NodeContextMenu({
+  x,
+  y,
+  canFocus,
+  canDelete,
+  onEdit,
+  onAdd,
+  onNote,
+  onFocusNode,
+  onDelete,
+  onClose,
+}: {
+  x: number
+  y: number
+  canFocus: boolean
+  canDelete: boolean
+  onEdit: () => void
+  onAdd: () => void
+  onNote: () => void
+  onFocusNode: () => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const ref = useRef<HTMLDivElement>(null)
+  // 删除两步确认（原按钮行 clickDelete 平移）：首点武装，3s 超时回落，
+  // 再点执行。菜单随任何点外交互整体关闭，armed 态无残留场景
+  const [armed, setArmed] = useState(false)
+  const armTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(armTimer.current), [])
+  const clickDelete = () => {
+    if (armed) {
+      window.clearTimeout(armTimer.current)
+      onDelete()
+      return
+    }
+    setArmed(true)
+    window.clearTimeout(armTimer.current)
+    armTimer.current = window.setTimeout(() => setArmed(false), 3000)
+  }
+  // 视口翻转：渲染后量实际尺寸，越右/底缘收回（clamp 到 8px 边距）。
+  // useLayoutEffect 在 paint 前定稿无中间帧；armed 换文案变宽一并复测
+  const [pos, setPos] = useState({ x, y })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const M = 8
+    setPos({
+      x: Math.max(M, Math.min(x, window.innerWidth - el.offsetWidth - M)),
+      y: Math.max(M, Math.min(y, window.innerHeight - el.offsetHeight - M)),
+    })
+  }, [x, y, armed])
+  // 点外关闭（capture 阶段先于画布/节点自身的 React 合成事件）：
+  // - pointerdown 在菜单内不关——交给菜单项 onClick 执行动作后关
+  // - contextmenu 在菜单内：preventDefault 且不关（菜单项不是右键语义）
+  // - 别处右键：只关旧菜单并放行事件——新目标的 onNodeContextMenu
+  //   同一击直接开新菜单（React 批处理单次 commit，无开关闪烁）
+  // - wheel 缩放/平移：fixed 菜单不跟画布，悬在原地即失真，关
+  useEffect(() => {
+    const inside = (e: Event) => e.target instanceof Node && !!ref.current?.contains(e.target)
+    const onPD = (e: PointerEvent) => {
+      if (!inside(e)) onClose()
+    }
+    const onCM = (e: MouseEvent) => {
+      if (inside(e)) {
+        e.preventDefault()
+        return
+      }
+      onClose()
+    }
+    const onWheel = () => onClose()
+    window.addEventListener('pointerdown', onPD, true)
+    window.addEventListener('contextmenu', onCM, true)
+    window.addEventListener('wheel', onWheel, true)
+    return () => {
+      window.removeEventListener('pointerdown', onPD, true)
+      window.removeEventListener('contextmenu', onCM, true)
+      window.removeEventListener('wheel', onWheel, true)
+    }
+  }, [onClose])
+  const act = (fn: () => void) => () => {
+    fn()
+    onClose()
+  }
+  return (
+    <div ref={ref} className="ctx-menu" style={{ left: pos.x, top: pos.y }} role="menu" aria-label={t('node.menuAria')}>
+      <button className="ctx-item" role="menuitem" onClick={act(onEdit)}>
+        <PencilIcon size={14} />
+        <span className="ctx-label">{t('node.menuEdit')}</span>
+        <span className="ctx-kbd">F2</span>
+      </button>
+      <button className="ctx-item" role="menuitem" onClick={act(onAdd)}>
+        <PlusIcon />
+        <span className="ctx-label">{t('node.addAria')}</span>
+        <span className="ctx-kbd">Tab</span>
+      </button>
+      <button className="ctx-item" role="menuitem" onClick={act(onNote)}>
+        <StickyNoteIcon size={13} />
+        <span className="ctx-label">{t('node.menuNote')}</span>
+      </button>
+      {canFocus && (
+        <button className="ctx-item" role="menuitem" title={t('node.focusTitle')} onClick={act(onFocusNode)}>
+          <FocusIcon />
+          <span className="ctx-label">{t('node.focusAria')}</span>
+        </button>
+      )}
+      {canDelete && (
+        <>
+          {/* 破坏性操作与上面隔一条分隔线（规范菜单惯例） */}
+          <div className="ctx-sep" />
+          <button
+            className={`ctx-item${armed ? ' armed' : ''}`}
+            role="menuitem"
+            aria-label={armed ? t('node.deleteConfirm') : t('node.deleteAria')}
+            onClick={() => (armed ? act(onDelete)() : clickDelete())}
+          >
+            <TrashIcon />
+            <span className="ctx-label">{armed ? t('node.deleteConfirmBtn') : t('node.deleteAria')}</span>
+            {!armed && <span className="ctx-kbd">Delete</span>}
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -458,6 +686,23 @@ function patchCollapsed(detail: MapDetail, nodeId: number, collapsed: boolean): 
     return { ...node, collapsed }
   })
   return changed ? { ...detail, nodes } : detail
+}
+
+// 折叠同步断开期间的 refresh 合并补丁：整树重拉会把服务端折叠态带回
+//（内容重拉语义），但断开期的契约是"折叠以本地为准"——按 display_id 把
+// 本地 collapsed 抄回新树。本地没有的节点（服务端新增）用服务端值；本地
+// 有而 fresh 没有的（已删）不抄自然消失。逐字段幂等对账，不做快照
+function preserveLocalFold(fresh: MapDetail, local: MapDetail): MapDetail {
+  const localCollapsed = new Map<number, boolean>()
+  for (const n of local.nodes) localCollapsed.set(n.display_id, n.collapsed)
+  let changed = false
+  const nodes = fresh.nodes.map((node) => {
+    const collapsed = localCollapsed.get(node.display_id)
+    if (collapsed === undefined || collapsed === node.collapsed) return node
+    changed = true
+    return { ...node, collapsed }
+  })
+  return changed ? { ...fresh, nodes } : fresh
 }
 
 function expandAllOptimistically(detail: MapDetail): MapDetail {
@@ -615,9 +860,9 @@ const ChatIcon = () => (
   </svg>
 )
 
-// outline 编辑（lucide pencil：斜置铅笔）
-const PencilIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+// outline 编辑 / 右键菜单的编辑文字（lucide pencil：斜置铅笔）
+const PencilIcon = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
     <path d="m15 5 4 4" />
   </svg>
@@ -666,18 +911,38 @@ const NoteIcon = () => (
   </svg>
 )
 
+// 折叠同步开关（lucide link-2 / unlink 语言）：链环中间连通 = 折叠态多端
+// 同步；中间断开加斜杠 = 折叠态各自为政。两态换图标与布局切换按钮同款惯例
+const FoldSyncOnIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 17H7A5 5 0 0 1 7 7h2" />
+    <path d="M15 7h2a5 5 0 1 1 0 10h-2" />
+    <path d="M8 12h8" />
+  </svg>
+)
+
+const FoldSyncOffIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 17H7A5 5 0 0 1 7 7h2" />
+    <path d="M15 7h2a5 5 0 1 1 0 10h-2" />
+    <path d="M8 12h2" />
+    <path d="m12 9 3 6" />
+    <path d="M14 12h2" />
+  </svg>
+)
+
 // ── editor ────────────────────────────────────────────────────────────
 
 export function MindMapEditor({ mapId, onBack }: Props) {
   const { t, lang } = useI18n()
   const [detail, setDetail] = useState<MapDetail | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  // 选中来源：点击=要操作这个节点（亮按钮行）；键盘导航=移动浏览焦点
-  //（不亮按钮，快捷键 F2/Tab/Enter/Delete 已覆盖操作入口）
-  const [selectedByPointer, setSelectedByPointer] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
   // 加节点输入态：anchor = 输入框锚定的节点，dir = 方位与提交语义（见 startAdd）
   const [adding, setAdding] = useState<{ anchor: number; dir: 'child' | 'sibling' } | null>(null)
+  // 右键操作菜单：fixed 锚定右键点（clientX/Y），id 为目标节点。全局单例
+  // ——同时最多一个；关闭由 NodeContextMenu 的 window capture 负责
+  const [ctxMenu, setCtxMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   const [wsState, setWsState] = useState<'connecting' | 'live' | 'dead'>('connecting')
   const [error, setError] = useState<string | null>(null)
   const [outlineOpen, setOutlineOpen] = useState(false)
@@ -695,6 +960,16 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   useEffect(() => {
     localStorage.setItem('chatOpen', String(chatOpen))
   }, [chatOpen])
+  // 折叠同步开关：断开 = 本地收放只做乐观更新（不写服务端、不广播），同时
+  // 忽略别人的 fold 类 WS 事件；内容同步完全不动。localStorage 记忆（chatOpen
+  // 同款），ref 镜像给 WS onmessage 闭包读最新值——建连 effect 依赖不变
+  //（mapId/refresh 均稳定），翻转开关不重建连接，state 直接进闭包会读到冻结旧值
+  const [foldSyncOn, setFoldSyncOn] = useState(() => localStorage.getItem('foldSyncOn') !== 'false')
+  const foldSyncRef = useRef(foldSyncOn)
+  foldSyncRef.current = foldSyncOn // detailRef/layoutRef 同款渲染期镜像惯例
+  useEffect(() => {
+    localStorage.setItem('foldSyncOn', String(foldSyncOn))
+  }, [foldSyncOn])
   // Agent 入口守门：模型网关未配置时按钮保留但置灰（aria-disabled，真 disabled
   // 收不到 click），点击弹配置表单；null = 检查中暂不渲染（防闪跳）。
   // 状态检查首步即配置完整性，未配置时快速失败、无外呼
@@ -972,6 +1247,30 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       setFocusId(null)
     }
   }, [detail, focusId])
+
+  // 右键节点 = 选中 + 弹操作菜单。编辑态节点不接管：textarea 里的原生
+  // 右键（复制/粘贴）有真实用途；加节点输入态不弹（startAdd 的焦点仲裁
+  // 会被打断）。preventDefault 抑制浏览器菜单（桌面 app 体验）
+  const onNodeCtx = useCallback(
+    (e: ReactMouseEvent, node: MindNode) => {
+      const id = Number(node.id)
+      if (editingId === id) return
+      if (adding != null) return
+      e.preventDefault()
+      setSelectedId(id)
+      setCtxMenu({ id, x: e.clientX, y: e.clientY })
+    },
+    [editingId, adding],
+  )
+  // 画布空白右键：抑制浏览器默认菜单，不弹自定义菜单。RF 的 Pane 经
+  // wrapHandler 只在 target===pane 时调本回调——点阵 Background
+  // pointer-events:none 不拦截；MiniMap/Controls/边上的右键不进这里
+  const onPaneCtx = useCallback((e: ReactMouseEvent | MouseEvent) => e.preventDefault(), [])
+  // 菜单目标已被删（Agent / 其他页签，WS 重拉后查无此 id）：浮菜单不能
+  // 指向不存在的节点，自动关（同 focusId 失联回退精神）
+  useEffect(() => {
+    if (ctxMenu && !detail?.nodes.some((n) => n.display_id === ctxMenu.id)) setCtxMenu(null)
+  }, [detail, ctxMenu])
   // 侧边栏宽度：拖拽调整，localStorage 跨会话记忆
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = Number(localStorage.getItem('chatWidth'))
@@ -1019,7 +1318,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
   const refresh = useCallback(async () => {
     try {
-      setDetail(await api.getMap(mapId))
+      const fresh = await api.getMap(mapId)
+      // 折叠同步断开期间：整树重拉仍要（内容照常同步），但折叠字段以本地为准
+      //（preserveLocalFold 对账）。初载/换图时 cur 为 null，自然整体替换
+      setDetail((cur) =>
+        cur && !foldSyncRef.current && cur.id === fresh.id ? preserveLocalFold(fresh, cur) : fresh,
+      )
     } catch (e) {
       setError(String(e))
     }
@@ -1027,6 +1331,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
   const queueFoldMutation = useCallback(
     (optimisticUpdate: OptimisticFold, request: (clientRequestId: string) => Promise<void>) => {
+      // 折叠同步断开：只做本地乐观更新。不生成 rid、不登记回声、不进串行
+      // 队列——队列存在的唯一意义是给 API 调用排序，没有请求就没有乱序与
+      // 失败纠偏问题。断开瞬间队列里同步态发起的在途请求互不干扰（其回声
+      // 走 client_request_id 确认分支，在折叠忽略分支之前）
+      if (!foldSyncRef.current) {
+        setDetail((current) => (current ? optimisticUpdate(current) : current))
+        return
+      }
       const clientRequestId = newClientRequestId()
       const sequence = ++foldSequenceRef.current
       setDetail((current) => (current ? optimisticUpdate(current) : current))
@@ -1100,6 +1412,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         if (msg.type === 'changed') {
           const update = foldEventUpdate(msg)
           if (update) {
+            // 折叠同步断开：别人的收放不再影响本地视图。含 Agent 经 update_node
+            // 纯折叠路径产生的 node_collapsed（无 client_request_id，同被忽略）；
+            // 内容类事件不带 fold payload 不会进这里——内容协作完全不受影响
+            if (!foldSyncRef.current) return
             setDetail((current) => (current ? update(current) : current))
             return
           }
@@ -1168,10 +1484,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       setAdding(null)
       const value = text.trim() // 局部命名避开 i18n 的 t
       if (!value) return
-      // 真创建才收起锚点的按钮行：点击选中打开的输入框提交后，按钮行
-      // 不再回亮（选中高亮保留，操作入口交回快捷键）。空文本取消不动——
-      // 点开的上下文不该被 Esc 顺手清掉
-      setSelectedByPointer(false)
       // position：sibling 传锚点序+1 = 插到锚点正下方（服务端归一化保证
       // 稠密，+1 是精确插入语义）；child 不传 = 追加末尾
       void guard(() => api.addNode(mapId, parentId, value, position))
@@ -1244,7 +1556,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const revealAndSelect = useCallback(
     (target: number) => {
       setSelectedId(target)
-      setSelectedByPointer(false)
       window.setTimeout(() => {
         const el = document.querySelector(`.react-flow__node[data-id="${target}"]`)
         const wrap = document.querySelector('.rf-wrap')
@@ -1399,6 +1710,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       if (e.repeat) return // 按住不放：不反复开合
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyP') {
         e.preventDefault()
+        setCtxMenu(null) // 瞬时浮层互斥：菜单与跳转面板不同时存在
         setGotoText('')
         setGotoActiveRaw(0)
         setGotoOpen((v) => !v)
@@ -1424,6 +1736,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         const typing =
           el instanceof HTMLElement &&
           (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+        // 右键菜单是瞬时浮层，退出优先级最高（goto 之前）
+        if (!typing && ctxMenu != null) {
+          setCtxMenu(null)
+          return
+        }
         if (!typing && gotoOpen) {
           setGotoOpen(false)
           return
@@ -1453,8 +1770,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         return
       }
       // 加节点输入框开着时全局快捷键全禁：即使焦点异常不在 input 上，
-      // Enter/Tab 也不许再把已开的输入框切模式（防焦点被抢时的次生误操作）
-      if (adding != null) return
+      // Enter/Tab 也不许再把已开的输入框切模式（防焦点被抢时的次生误操作）；
+      // 右键菜单开着同理——瞬时浮层期间键盘只管 Esc 关菜单这一件事
+      if (adding != null || ctxMenu != null) return
       // d = 备注面板开合：插在综合守卫之前——无选中时也允许"关"（开着面板
       // 但选区已被清空的场景）；面板内 textarea 聚焦时走下方输入元素守卫
       // ?（Shift+/）= 交互指南开关，与 d 键同款守卫（输入态不开）
@@ -1554,7 +1872,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, editingId, adding, outlineOpen, revOpen, chatGateOpen, chatOpen, noteOpen, helpOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation, toggleNote])
+  }, [selectedId, editingId, adding, ctxMenu, outlineOpen, revOpen, chatGateOpen, chatOpen, noteOpen, helpOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation, toggleNote])
   // 重排动画：动画期间逐帧给出节点位置（null = 静止，直接用布局终值）；
   // 边由 React Flow 按节点位置实时重算，滑行中始终与节点贴合
   const animPos = useAnimatedLayout(layout)
@@ -1629,20 +1947,28 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     },
     [detail],
   )
+  // 取子节点（position 升序）：面包屑菜单级联用。filter 产新数组再 sort，不改原数组。
+  // 每次 hover 只渲染一条菜单链、每层一次 O(n) 扫描，不值得为它加常驻 byParent memo
+  //（那得随每次 WS 全量重拉重算，菜单没开也付费）
+  const kidsOf = useCallback(
+    (pid: number): NodeDTO[] =>
+      (detail?.nodes ?? [])
+        .filter((n) => n.parent != null && n.parent.display_id === pid)
+        .sort((a, b) => a.position - b.position),
+    [detail],
+  )
 
   const callbacks = useMemo(
     () => ({
       // 单击 = 静默选中：只高亮（方向键/F2/Tab/Delete 的锚点），不弹任何 UI。
-      // 弹出类（按钮行/备注面板）只认显式入口：长按 / 角标 / d 键 / pin
+      // 弹出类（备注面板/右键菜单）只认显式入口：长按 / 角标 / 右键 / d 键
       onSelect: (id: number) => {
         setSelectedId(id)
-        setSelectedByPointer(false)
       },
-      // 长按 = 激活：亮按钮行 + 备注面板按"有无备注"开合（无备注节点不弹
-      // 空面板，创建入口走按钮行的添加备注按钮 / d 键 / 工具栏）。pin 恒开不动
+      // 长按 = 显式意图入口：选中 + 有备注开备注面板（无备注静默——创建走
+      // 右键菜单 / d 键 / 角标）。pin 恒开不动
       onActivate: (id: number, hasNote: boolean) => {
         setSelectedId(id)
-        setSelectedByPointer(true)
         if (!notePinned) setNoteOpen(!!hasNote)
       },
       onStartEdit: (id: number) => setEditingId(id),
@@ -1656,7 +1982,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       onFocus: switchFocus,
       onOpenNote: (id: number) => {
         setSelectedId(id)
-        setSelectedByPointer(true)
         setNoteOpen(true) // 角标是打开入口（不自动 pin；stopPropagation 不触发 onSelect）
       },
     }),
@@ -1677,7 +2002,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         const id = ln.node.display_id
         const flags =
           (id === selectedId ? 's' : '') +
-          (id === selectedId && selectedByPointer ? 'P' : '') +
           (id === editingId ? 'e' : '') +
           (id === adding?.anchor ? (adding.dir === 'sibling' ? 'S' : 'a') : '') +
           ((childCount.get(id) ?? 0) > 0 ? 'h' : '') +
@@ -1685,7 +2009,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         return `${id}:${Math.round(ln.x)},${Math.round(ln.y)},${ln.w}x${ln.h}:${ln.side}${ln === layout.root ? 'R' : ''}${ln.node.collapsed ? 'C' : ''}:${flags}:${ln.node.content}`
       })
       .join('|')
-  }, [layout, selectedId, selectedByPointer, editingId, adding, childCount])
+  }, [layout, selectedId, editingId, adding, childCount])
 
   // 边签名只看结构（谁连谁）：文本 / 选中态 / 锚定侧变化不影响边——
   // 锚定侧由当前帧位置推导（见 rfEdges），不属结构性变化
@@ -1727,10 +2051,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       const key = `${id}:${Math.round(x)},${Math.round(y)},${Math.round(op * 100)}:${sel ? 's' : ''}${
         lnode.node.display_id === editingId ? 'e' : ''
       }${lnode.node.display_id === adding?.anchor ? (adding!.dir === 'sibling' ? 'S' : 'a') : ''}${
-        sel && selectedByPointer ? 'P' : ''
-      }${dp ? 'D' : ''}:${lnode === layout.root ? 'R' : ''}${(childCount.get(lnode.node.display_id) ?? 0) > 0 ? 'h' : ''}${
+        dp ? 'D' : ''
+      }:${lnode === layout.root ? 'R' : ''}${(childCount.get(lnode.node.display_id) ?? 0) > 0 ? 'h' : ''}${
         lnode.node.note ? 'n' : ''
-      }`
+      }${lnode.node.collapsed ? 'C' : ''}:${lnode.node.content}`
       const old = prev.get(id)
       // callbacks 身份代表整个 data 回调组（其内部字段同批重建）
       if (old && old.key === key && old.node.data.onSelect === callbacks.onSelect) {
@@ -1740,6 +2064,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       const fresh: MindNode = {
         id,
         type: 'mind' as const,
+        // 先点击选中才能拖（防误拖）：未选中的节点按住拖动毫无反应。
+        // sel 已在复用 key 里（'s' 标志），选中切换换新对象、此处自然生效
+        draggable: sel,
         position: { x, y },
         width: lnode.w, // 供 MiniMap 等在 DOM 测量前使用（nodeHasDimensions）
         height: lnode.h,
@@ -1763,7 +2090,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           isEditing: lnode.node.display_id === editingId,
           isAdding: lnode.node.display_id === adding?.anchor,
           addingDir: adding?.dir ?? 'child',
-          selectedByPointer: sel && selectedByPointer,
           hasChildren: (childCount.get(lnode.node.display_id) ?? 0) > 0,
           hasNote: !!lnode.node.note,
           ...callbacks,
@@ -1832,6 +2158,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     )
   }
 
+  // 右键菜单目标：渲染守卫（查无即不渲染，配合失联关闭 effect 双保险）；
+  // 根判定与键盘 Delete 同源（布局根 = 真根或聚焦节点，聚焦/删除不挂根）
+  const ctxNode = ctxMenu == null ? null : (detail.nodes.find((n) => n.display_id === ctxMenu.id) ?? null)
+  const ctxIsRoot = ctxNode != null && ctxNode.display_id === layout.root.node.display_id
+
   return (
     <div className="editor">
       <header className="toolbar">
@@ -1840,6 +2171,17 @@ export function MindMapEditor({ mapId, onBack }: Props) {
         <span className={`ws-label ${wsState}`}>
           {t(`ws.${wsState}` as I18nKey)}
         </span>
+        {/* 折叠同步开关：紧挨连接状态——WS 本身不断（内容照常同步），断的只是
+            折叠这一类事件的收发。active = 已断开（特殊态要被看见） */}
+        <button
+          className={`btn icon${foldSyncOn ? '' : ' active'}`}
+          onClick={() => setFoldSyncOn((v) => !v)}
+          aria-pressed={!foldSyncOn}
+          title={foldSyncOn ? t('fold.syncOnTitle') : t('fold.syncOffTitle')}
+          aria-label={foldSyncOn ? t('fold.syncOnAria') : t('fold.syncOffAria')}
+        >
+          {foldSyncOn ? <FoldSyncOnIcon /> : <FoldSyncOffIcon />}
+        </button>
         <div className="spacer" />
         {agentStatus != null &&
           (agentOk ? (
@@ -1920,7 +2262,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
                           className="crumb-wrap"
                           onMouseEnter={() => {
                             window.clearTimeout(crumbHoverTimer.current)
-                            crumbHoverTimer.current = window.setTimeout(() => setCrumbHoverId(n.display_id), 150)
+                            crumbHoverTimer.current = window.setTimeout(
+                              () => setCrumbHoverId(n.display_id),
+                              CRUMB_HOVER_OPEN_DELAY,
+                            )
                           }}
                           onMouseLeave={() => {
                             window.clearTimeout(crumbHoverTimer.current)
@@ -1943,6 +2288,8 @@ export function MindMapEditor({ mapId, onBack }: Props) {
                           {crumbHoverId === n.display_id && (
                             <CrumbMenu
                               siblings={siblingsOf(n.display_id)}
+                              kidsOf={kidsOf}
+                              childCount={childCount}
                               onPick={(id) => {
                                 setCrumbHoverId(null)
                                 switchFocus(id)
@@ -2017,11 +2364,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             minZoom={0.1}
             maxZoom={2.5}
             nodesDraggable /* 拖节点到另一节点上 = 改挂载（onNodeDragStop 提交
-                move_node）；画布平移改为拖空白处。长按/双击/单击不受影响（拖动
-                超阈值才启动，移动 >8px 早已取消长按计时） */
+                move_node）；画布平移改为拖空白处。全局开关恒开，能否拖由节点级
+                draggable 决定（rfNodes 里 = 选中态，先单击选中才可拖，防误拖）；
+                长按/双击/单击不受影响（拖动超阈值才启动，移动 >8px 早已取消长按计时） */
             onNodeDragStart={onDragStart}
             onNodeDrag={onDrag}
             onNodeDragStop={onDragStop}
+            onNodeContextMenu={onNodeCtx}
+            onPaneContextMenu={onPaneCtx}
             nodesConnectable={false}
             zoomOnDoubleClick={false}
             elementsSelectable
@@ -2070,6 +2420,29 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           />
         )}
       </div>
+
+      {/* 节点右键操作菜单：fixed 单例浮层；关闭走 window capture（见组件）。
+          根判定与键盘 Delete 同源（布局根 = 真根或聚焦节点） */}
+      {ctxMenu && ctxNode && (
+        <NodeContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          canFocus={!ctxIsRoot && (childCount.get(ctxNode.display_id) ?? 0) > 0}
+          canDelete={!ctxIsRoot}
+          onEdit={() => setEditingId(ctxNode.display_id)}
+          onAdd={() => startAdd(ctxNode.display_id, 'child')}
+          // 与 onOpenNote 等价的最简式：选中（开菜单时已置，重复幂等防御
+          // WS 期间漂移）+ 开面板。有备注=打开；无备注=空面板即创建入口；
+          // pin 不动
+          onNote={() => {
+            setSelectedId(ctxNode.display_id)
+            setNoteOpen(true)
+          }}
+          onFocusNode={() => switchFocus(ctxNode.display_id)}
+          onDelete={() => deleteNode(ctxNode.display_id)}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
 
       {/* Ctrl+P 编号/标题跳转：透明点击层（不遮画布，点外关闭）+ 顶部悬浮小卡。
           纯数字 = 编号直达（首行），任意文本 = 标题搜索；↑↓ 选行、Enter/点击跳转 */}
