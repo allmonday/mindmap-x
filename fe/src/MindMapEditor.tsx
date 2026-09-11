@@ -1003,6 +1003,42 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     localStorage.setItem('layoutMode', layoutMode)
   }, [layoutMode])
   const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
+  const flowHostRef = useRef<HTMLDivElement | null>(null)
+
+  // ctrl+滚轮/触摸板捏合的缩放速度：xyflow 内置系数写死 0.002（非 mac
+  // 每档 ~18%），无 prop 可调 → capture 拦截自算（0.006 = 3 倍速，每档
+  // ~65%）。围绕指针缩放，新 x = px-(px-x)·z2/z1（d3 scaleTo 同式）。
+  // stopPropagation 阻止事件再落进 xyflow 的 panOnScroll handler（那里
+  // ctrl 分支是内置慢速缩放，叠加会双重缩放）；普通 wheel 不拦，照常平移
+  const onFlowWheelZoom = useCallback((e: WheelEvent) => {
+    if (!e.ctrlKey) return
+    e.preventDefault() // 浏览器默认 ctrl+滚轮 = 整页缩放，禁掉
+    e.stopPropagation()
+    const inst = rfRef.current
+    const host = flowHostRef.current
+    if (!inst || !host) return
+    const vp = inst.getViewport()
+    // clamp 与下方 minZoom/maxZoom props（0.1 / 2.5）保持一致
+    const z2 = Math.min(2.5, Math.max(0.1, vp.zoom * 2 ** (-e.deltaY * 0.006)))
+    const r = host.getBoundingClientRect()
+    const px = e.clientX - r.left
+    const py = e.clientY - r.top
+    const ratio = z2 / vp.zoom
+    inst.setViewport({ zoom: z2, x: px - (px - vp.x) * ratio, y: py - (py - vp.y) * ratio })
+  }, [])
+
+  // 挂靠 callback ref 而非 useEffect：编辑器主体是条件渲染（detail/layout
+  // 就绪才出 <ReactFlow>，见下方 early return），mount 期 effect 跑时 ref
+  // 还是 null，之后不会再补挂
+  const setFlowHost = useCallback(
+    (el: HTMLDivElement | null) => {
+      const prev = flowHostRef.current
+      if (prev) prev.removeEventListener('wheel', onFlowWheelZoom, { capture: true })
+      flowHostRef.current = el
+      if (el) el.addEventListener('wheel', onFlowWheelZoom, { capture: true, passive: false })
+    },
+    [onFlowWheelZoom],
+  )
 
   // ── 拖拽改挂载 + 三区排序（drag-to-reparent / reorder）──────────────────
   // 拖节点悬停另一节点，按指针纵向位置分三区：上/下边缘 25% = 插到目标
@@ -2352,6 +2388,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             )}
           </div>
           <ReactFlow
+            /* 外层 div 的 callback ref：ctrl+滚轮缩放的 capture 拦截随元素
+               挂/摘（setFlowHost 见上） */
+            ref={setFlowHost}
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={nodeTypes}
@@ -2374,6 +2413,14 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             onPaneContextMenu={onPaneCtx}
             nodesConnectable={false}
             zoomOnDoubleClick={false}
+            /* wheel → 平移：触摸板两指滑动 = 拖空白处平移，1:1 跟手（speed
+               默认 0.5 是半速，提到 1 才与拖拽一致）。浏览器层滚轮与触摸板双指
+               同为 wheel 事件无法区分，滚轮缩放一并让出；缩放走 ctrl+滚轮
+               （触摸板捏合，速度自算，见 flowHostRef 那个 effect）与
+               Controls +/- */
+            panOnScroll
+            panOnScrollSpeed={1}
+            zoomOnScroll={false}
             elementsSelectable
             onPaneClick={() => {
             setSelectedId(null)
