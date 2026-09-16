@@ -902,15 +902,6 @@ const FocusIcon = () => (
   </svg>
 )
 
-// 节点备注开关（lucide note-tabs-pen：页签 + 斜笔，"页面上的长文"）
-const NoteIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M6 3h12a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
-    <path d="M15 8v2H9V8z" />
-    <path d="m13 15 5-5 1.5 1.5-5 5L13 17z" />
-  </svg>
-)
-
 // 折叠同步开关（lucide link-2 / unlink 语言）：链环中间连通 = 折叠态多端
 // 同步；中间断开加斜杠 = 折叠态各自为政。两态换图标与布局切换按钮同款惯例
 const FoldSyncOnIcon = () => (
@@ -2240,15 +2231,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               <ChatIcon />
             </button>
           ))}
-        {/* 备注面板开关：人工 + Agent 共用，不走 agentStatus 门控 */}
-        <button
-          className={`btn icon ${noteOpen ? 'active' : ''}`}
-          onClick={toggleNote}
-          title={t('editor.nodeNote')}
-          aria-label={t('editor.nodeNote')}
-        >
-          <NoteIcon />
-        </button>
         <button className="btn icon" onClick={openOutline} title={t('editor.outlineEdit')} aria-label={t('editor.outlineEdit')}>
           <PencilIcon />
         </button>
