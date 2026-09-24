@@ -32,6 +32,7 @@ import '@xyflow/react/dist/style.css'
 import { api, chatApi, type ChatGateStatus } from './api'
 import { ChatPanel } from './ChatPanel'
 import { DetailPanel } from './DetailPanel'
+import { DocMode } from './DocMode'
 import { useI18n, type I18nKey } from './i18n'
 import { LangSwitch } from './LangSwitch'
 import { layoutMap, type LNode, type LayoutMode } from './layout'
@@ -843,6 +844,27 @@ const LayoutRightIcon = () => (
   </svg>
 )
 
+// 文档模式开关（lucide file-text：带行线的页——树渲染成分层文档的第二视图）
+const DocModeIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+    <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+    <path d="M10 9H8" />
+    <path d="M16 13H8" />
+    <path d="M16 17H8" />
+  </svg>
+)
+
+// 切回画布按钮的迷你导图线稿（与工具栏 icon 同风格）
+const MapIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+    <circle cx="5" cy="12" r="2.4" />
+    <circle cx="18.5" cy="5.5" r="2.2" />
+    <circle cx="18.5" cy="18.5" r="2.2" />
+    <path d="M7.2 11 16.4 6.2M7.2 13l9.2 4.8" />
+  </svg>
+)
+
 // 备注角标（lucide sticky-note：折角便签——"这里贴了张纸"）。
 // 画线而非文本字符：字形留白随平台字体回退漂移（✎ 在部分系统偏左上），
 // 与 FoldPlusIcon 同一教训。size 参数：节点角标 9（默认），按钮行 11
@@ -993,6 +1015,20 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   useEffect(() => {
     localStorage.setItem('layoutMode', layoutMode)
   }, [layoutMode])
+  // 视图模式：画布 / 文档（specs/008，DocMode 左 Tree + 右分层文档）；
+  // localStorage 记忆（layoutMode 同款惯例）。会话级视图态（focusId 等）不动
+  // ——文档模式无视 focusId，切回画布恢复原聚焦视图
+  const [docMode, setDocMode] = useState(() => localStorage.getItem('docMode') === 'true')
+  useEffect(() => {
+    localStorage.setItem('docMode', String(docMode))
+  }, [docMode])
+  const toggleDocMode = useCallback(() => {
+    setDocMode((v) => !v)
+    // 画布输入态随画布卸载清空（防 stale）；备注面板悬浮左侧会盖住 Tree
+    setEditingId(null)
+    setAdding(null)
+    setNoteOpen(false)
+  }, [])
   const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
   const flowHostRef = useRef<HTMLDivElement | null>(null)
 
@@ -1477,14 +1513,15 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     },
     [mapId],
   )
-  // 备注保存与 commitEdit 同款"无乐观更新"流：保存 → WS changed → refresh() 全量重拉。
-  // note 走第四参（content undefined 被 JSON.stringify 丢弃 = 不动）。
+  // 节点内容/备注统一保存入口（commitEdit / DetailPanel / 文档模式 DocEditor
+  // 三方共用）：无乐观更新流——保存 → WS changed → refresh() 全量重拉。
+  // content/note 二选一传值（undefined 被 JSON.stringify 丢弃 = 不动）。
   // 返回是否成功：内联 guard 逻辑（guard 吞错后调用方无从分辨成败——面板需要
   // 失败时保留脏态可重试，不能把失败当已保存前移基线）
-  const saveNote = useCallback(
-    async (nodeId: number, note: string): Promise<boolean> => {
+  const updateNode = useCallback(
+    async (nodeId: number, content?: string, note?: string): Promise<boolean> => {
       try {
-        await api.updateNode(mapId, nodeId, undefined, note)
+        await api.updateNode(mapId, nodeId, content, note)
         return true
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
@@ -1493,6 +1530,29 @@ export function MindMapEditor({ mapId, onBack }: Props) {
       }
     },
     [mapId],
+  )
+  const saveNote = useCallback(
+    async (nodeId: number, note: string): Promise<boolean> => updateNode(nodeId, undefined, note),
+    [updateNode],
+  )
+  // 文档模式 Tree 拖拽提交（画布 onDragStop 同款 fire-and-forget，WS 驱动重排）
+  const moveNodeTo = useCallback(
+    (id: number, parentId: number, position?: number) => {
+      void guard(() => api.moveNode(mapId, id, parentId, position))
+    },
+    [mapId],
+  )
+  // 文档模式折叠（Space 键同路径）：乐观 patch + WS 全端同步免费
+  const toggleDocFold = useCallback(
+    (id: number) => {
+      const node = detailRef.current?.nodes.find((n) => n.display_id === id)
+      if (!node) return
+      queueFoldMutation(
+        (cur) => patchCollapsed(cur, id, !node.collapsed),
+        (rid) => api.setNodeCollapsed(mapId, id, !node.collapsed, rid),
+      )
+    },
+    [mapId, queueFoldMutation],
   )
   // 两段式加节点：先出输入框，确认内容后才真正创建（空文本 = 取消）。
   // dir 决定输入框方位与提交语义——child：锚点右侧，创建挂锚点下；
@@ -1814,6 +1874,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           return
         }
       }
+      // 文档模式：F2/Space/方向键由 DocMode 自挂的 listener 接管，画布专属键
+      // （d 备注面板/Tab/Enter/Delete/方向键）全禁——DetailPanel 悬浮位与 Tree
+      // 重叠，note 编辑已由文档块就地承担。上方 Esc 浮层链不受影响（goto/
+      // outline/版本/帮助在文档模式照常逐层退出）
+      if (docMode) return
       if (e.key === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const el = document.activeElement
         const typing =
@@ -1899,7 +1964,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, editingId, adding, ctxMenu, outlineOpen, revOpen, chatGateOpen, chatOpen, noteOpen, helpOpen, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation, toggleNote])
+  }, [selectedId, editingId, adding, ctxMenu, outlineOpen, revOpen, chatGateOpen, chatOpen, noteOpen, helpOpen, docMode, detail, mapId, focusId, switchFocus, startAdd, deleteNode, navigate, queueFoldMutation, toggleNote])
   // 重排动画：动画期间逐帧给出节点位置（null = 静止，直接用布局终值）；
   // 边由 React Flow 按节点位置实时重算，滑行中始终与节点贴合
   const animPos = useAnimatedLayout(layout)
@@ -2248,14 +2313,15 @@ export function MindMapEditor({ mapId, onBack }: Props) {
 
       {error && <div className="toast editor-toast">{error}</div>}
 
-      {/* 横向主体：画布始终全宽；聊天面板悬浮右侧、备注面板悬浮左侧（overlay，不压缩画布）。
-          备注面板 top 让出左上组件区（标题/工具列原地不动，见 App.css .detail-panel） */}
-      <div className="editor-main">
-        <div className="rf-wrap">
-          {/* 标题悬浮于画板左上角，独立于工具栏；pointer-events:none 不挡画布交互
-              （面包屑在 .crumbs 上局部恢复 pointer-events:auto） */}
-          <div className="map-title">
-            <span className="map-id">#{detail.id}</span>
+      {/* 统一视图头部（specs/008 收敛）：两模式共用同一框架。标题区恒在最左
+          （x 不随模式变——工具组宽度差异只吸收进右侧空白），模式工具组随
+          docMode 换内容：Map = 视图工具三件套，Doc = 切回画布。Map 往 Doc
+          靠拢：原画布悬浮标题/悬浮工具列收进实体头部行，切换瞬间元素变化
+          最小化。面包屑是画布聚焦概念，仅 Map 模式渲染 */}
+      <div className="view-head">
+        {/* 标题区（原画布悬浮 .map-title 收进头部行，样式改静态内联） */}
+        <div className="map-title">
+          <span className="map-id">#{detail.id}</span>
             <span className="name" title={detail.title}>{detail.title}</span>
             <button
               className="ver"
@@ -2265,7 +2331,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             >
               v{detail.version}
             </button>
-            {focusPath.length > 0 && (
+            {!docMode && focusPath.length > 0 && (
               <span className="crumbs">
                 {focusPath.map((n, i) => {
                   // 根(i=0)=返回全图、无兄弟不挂菜单；中间项与当前项都挂同层导航
@@ -2330,8 +2396,23 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               </span>
             )}
           </div>
-          {/* 画布左上角工具列：标题下方，布局切换 + 层级刻度条 */}
-          <div className="canvas-tools">
+        {docMode ? (
+          <button className="btn sm doc-back" onClick={toggleDocMode} title={t('doc.backToMap')} aria-label={t('doc.backToMap')}>
+            <MapIcon />
+            {t('doc.backToMap')}
+          </button>
+        ) : (
+          <div className="view-tools">
+            {/* 文档模式切换（specs/008）：与布局形态切换并列的视图形态开关 */}
+            <button
+              className="btn"
+              onClick={toggleDocMode}
+              title={t('doc.switchTitle')}
+              aria-label={t('doc.switchAria')}
+              aria-pressed={docMode}
+            >
+              <DocModeIcon />
+            </button>
             <button
               className="btn"
               onClick={toggleLayout}
@@ -2369,6 +2450,26 @@ export function MindMapEditor({ mapId, onBack }: Props) {
               </div>
             )}
           </div>
+        )}
+          <div className="spacer" />
+      </div>
+
+      {/* 横向主体：画布始终全宽；聊天面板悬浮右侧、备注面板悬浮左侧（overlay，不压缩画布）。
+          文档模式（specs/008）与画布互斥——同一数据源的第二视图（左 Tree 导航 +
+          右分层文档）；chat/help/goto/outline/版本面板在编辑器级不动，文档模式
+          照常可用（Agent 改动经 WS 实时刷新文档） */}
+      <div className="editor-main">
+        {docMode ? (
+          <DocMode
+            detail={detail}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onToggleFold={toggleDocFold}
+            onUpdateNode={updateNode}
+            onMoveNode={moveNodeTo}
+          />
+        ) : (
+        <div className="rf-wrap">
           <ReactFlow
             /* 外层 div 的 callback ref：ctrl+滚轮缩放的 capture 拦截随元素
                挂/摘（setFlowHost 见上） */
@@ -2432,6 +2533,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             />
           </ReactFlow>
         </div>
+        )}
 
         {chatOpen && agentOk && (
           <ChatPanel mapId={mapId} width={chatWidth} onResize={setChatWidth} onClose={() => setChatOpen(false)} />

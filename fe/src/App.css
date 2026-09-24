@@ -62,9 +62,9 @@
 }
 .detail-panel {
   left: 0;
-  /* 让出左上组件区（map-title bottom≈49 / canvas-tools bottom≈87，实测）：
-     组件原地不动，面板从它们下方展开——不做推挤避让 */
-  top: 110px;
+  /* 头部行（.view-head）已是实体行不在 editor-main 内：不再需要让出左上
+     悬浮组件区（原 top:110px），面板从头部下缘展开 */
+  top: 12px;
   bottom: 40px; /* 底部留呼吸空白，浮层不压到底 */
   border-top: 1px solid var(--hairline); /* 悬空的边补边界（上/下不再贴满） */
   border-bottom: 1px solid var(--hairline);
@@ -709,20 +709,14 @@ body.chat-resizing {
    var()），用 CSS 规则覆盖到 token——主题切换由 --canvas-dot 驱动 */
 .rf-wrap .react-flow__background pattern circle { fill: var(--canvas-dot); }
 
-/* 画板左上角悬浮标题（独立于顶部工具栏）：无边框，靠半透明白底保证可读性。
-   不设最大宽度——约束会把面包屑里的祖先项压到 0 宽"消失"（曾致二级聚焦时真根缺失） */
+/* 标题区：统一视图头部（.view-head）的静态成员（specs/008 收敛——原画布
+   悬浮标题收进实体行，两模式切换时纹丝不动）。不设最大宽度——约束会把
+   面包屑里的祖先项压到 0 宽"消失"（曾致二级聚焦时真根缺失） */
 .map-title {
-  position: absolute;
-  top: 14px;
-  left: 16px;
-  z-index: 4;
   display: flex;
   align-items: baseline;
   gap: 8px;
-  pointer-events: none; /* 不挡画布拖拽/缩放 */
-  /* 半透明浮层保证可读性（dark 下为深底半透明，浮于画布上同样成立） */
-  background: color-mix(in srgb, var(--bg) 90%, transparent);
-  padding: 5px 6px;
+  min-width: 0;
 }
 .map-title .name {
   font-weight: 600;
@@ -732,9 +726,8 @@ body.chat-resizing {
 /* 地图 ID 前缀（#N，全局 ID）：与 v{N} 同款弱化样式；与节点 display_id 的 #N 语义区分见 types.ts */
 .map-title .map-id { color: var(--ink-3); font-size: 14px; }
 .map-title .ver { color: var(--ink-3); font-size: 14px; }
-/* v{N} 角标 = 版本历史入口（map-title 整体 pointer-events:none，此处局部恢复，同 crumbs 法） */
+/* v{N} 角标 = 版本历史入口 */
 .map-title button.ver {
-  pointer-events: auto;
   border: none;
   background: none;
   padding: 0;
@@ -745,13 +738,12 @@ body.chat-resizing {
 }
 .map-title button.ver:hover { color: var(--ink); text-decoration: underline; }
 
-/* 聚焦面包屑：map-title 整体 pointer-events:none，此处局部恢复可点。
-   容器不设上限、每项 flex-shrink:0 不收缩——完整显示全部路径，不截断不消失 */
+/* 聚焦面包屑：容器不设上限、每项 flex-shrink:0 不收缩——完整显示全部
+   路径，不截断不消失 */
 .crumbs {
   display: flex;
   align-items: baseline;
   gap: 5px;
-  pointer-events: auto;
   font-size: 15px; /* 比 Title(17px) 小一档，当前项不比可点项大 */
 }
 .crumb-sep { color: var(--ink-3); flex-shrink: 0; user-select: none; margin: 0 3px; }
@@ -976,17 +968,28 @@ button.crumb:hover { color: var(--ink); }
 .ctx-item.armed:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
 /* 画布左上角工具列：标题正下方（布局切换 / 层级刻度条） */
-.canvas-tools {
-  position: absolute;
-  top: 58px; /* 标题行下方 */
-  left: 16px;
-  z-index: 4;
+/* 统一视图头部（specs/008 收敛）：两模式共用同一框架的实体行（Map 往 Doc
+   靠拢——标题/工具从画布悬浮收进此行，切换时 #id/标题/v版本/spacer 不动）。
+   固定行高：两模式工具组高度差（28px 钮 vs 文字钮）不传导到标题 y 位置 */
+.view-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--bg);
+}
+/* 模式工具组（标题区右侧）：Map = 视图工具（文档模式/布局形态/层级刻度条），
+   Doc = 切回画布。宽度差异吸收进右侧 spacer，不推挤标题区 */
+.view-tools {
   display: flex;
   flex-direction: row; /* 左右排布：布局切换 + 层级刻度条一行 */
   align-items: center;
   gap: 8px;
+  flex: none;
 }
-.canvas-tools .btn {
+.view-tools .btn {
   width: 28px;
   height: 28px;
   padding: 0;
@@ -998,7 +1001,7 @@ button.crumb:hover { color: var(--ink); }
 }
 /* 层级刻度条：2 3 … N 全 拼合 pill（同 .lang-switch 模式），当前档高亮如滑条 thumb */
 .fold-steps .btn {
-  width: auto; /* 覆盖 .canvas-tools .btn 的 28px 定宽，数字档自适应 */
+  width: auto; /* 覆盖 .view-tools .btn 的 28px 定宽，数字档自适应 */
   min-width: 25px; /* 22px × 1.15：数字档加宽 15% */
   padding: 0 5px;
   font-size: 12px;
@@ -1570,3 +1573,104 @@ button.id-badge {
 .rev-preview .rf-node { cursor: default; pointer-events: none; }
 .rev-preview .rf-node:hover { box-shadow: none; }
 .rev-preview .rf-label { font-size: 12px; line-height: 17px; }
+
+/* ══════════ 文档模式（specs/008）：左 Tree 导航 + 右分层文档 ══════════
+   chrome 侧 token（--bg/--bg-side/--hairline/--accent）——文档区是内容区，
+   不用画布的 --canvas-*。block 视觉边界 = 左边框 + hover/选中底色 + 缩进，
+   深度靠 margin-left 递进（--doc-depth 由组件内联注入，8 封顶防深层溢出）。 */
+.doc-mode { flex: 1; display: flex; min-width: 0; min-height: 0; background: var(--bg); }
+.doc-back { display: inline-flex; align-items: center; gap: 5px; }
+
+/* ── 左：导航树 ── */
+.doc-tree {
+  width: 264px; flex: none; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg-side); border-right: 1px solid var(--hairline);
+  padding: 8px 6px; box-sizing: border-box;
+}
+.doc-row {
+  display: flex; align-items: center; gap: 4px; height: 28px;
+  padding-left: calc(var(--doc-depth) * 14px + 6px); padding-right: 6px;
+  border-radius: 5px; cursor: default; user-select: none; touch-action: pan-y;
+  position: relative;
+}
+.doc-row:hover { background: var(--bg-hover); }
+.doc-row.sel { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.doc-row-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--ink); }
+.doc-row.sel .doc-row-text { font-weight: 600; }
+.doc-row .doc-id { flex: none; }
+.doc-id { color: var(--ink-3); font-size: 10.5px; font-weight: 500; }
+/* 折叠钮（树行/文档块共用 class）：透明按钮，箭头朝向表开合 */
+.doc-fold {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; flex: none; padding: 0;
+  background: none; border: none; border-radius: 4px;
+  color: var(--ink-3); cursor: pointer;
+}
+.doc-fold:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
+.doc-fold.dot { cursor: default; } /* 叶子行占位（与父级折叠钮对齐） */
+.doc-fold.dot:hover { background: none; color: var(--ink-3); }
+/* 拖拽态：dragging 半透明跟手；三区高亮与画布同语言——蓝 = 挂子（底色块），
+   插入线 = before/after（行内伪元素上下边），红 = 拒绝 */
+.doc-row.dragging { opacity: 0.55; }
+.doc-row.drop-target { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 2px var(--accent); }
+.doc-row.drop-forbidden { background: color-mix(in srgb, var(--danger) 12%, transparent); box-shadow: inset 0 0 0 2px var(--danger); }
+.doc-row.drop-before::before,
+.doc-row.drop-after::after {
+  content: ''; position: absolute; left: 4px; right: 4px; height: 3px;
+  border-radius: 2px; background: var(--accent); pointer-events: none;
+}
+.doc-row.drop-before::before { top: -2px; }
+.doc-row.drop-after::after { bottom: -2px; }
+
+/* ── 右：分层文档 ── */
+.doc-view { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+.doc-col { max-width: 820px; margin: 0 auto; padding: 28px 32px 64px; }
+/* 文档块：无缩进、无边框（2026-09-24 用户拍板——层级感只靠标题字号阶梯）；
+   点击选中 = 浅灰底（与 hover 同款 --bg-hover，不用蓝色系） */
+.doc-block {
+  margin: 8px 0; padding: 8px 12px;
+  border-radius: 8px;
+  transition: background-color 0.12s ease;
+}
+.doc-block:hover,
+.doc-block.sel { background: var(--bg-hover); }
+.doc-block.root { padding: 4px 8px 12px; }
+/* 上下节拍：块的层级 class（与标题同源，headClass 同时挂两处）驱动留白——
+   章节级（H1）开头分隔最明显，1级↔2级 父子对次之（margin 折叠取大者），
+   深层内容紧凑。大标题顶头不留白 */
+.doc-block.doc-title { margin: 0 0 8px; }
+.doc-block.doc-h1 { margin-top: 26px; }
+.doc-block.doc-h2 { margin-top: 16px; }
+/* 标题阶梯：根 = 文档大标题（# 层级自 depth 1 起，6 级封顶后走 .doc-h-deep） */
+.doc-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.doc-head-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.doc-head .doc-id { flex: none; }
+/* 标题阶梯（限定 .doc-head：字号只作用于标题行——headClass 同时挂在块上
+   供间距规则用，见 .doc-block.doc-h*）：根 = 文档大标题（# 层级自 depth 1
+   起，6 级封顶后走 .doc-h-deep） */
+.doc-head.doc-title { font-size: 28px; line-height: 1.3; font-weight: 700; }
+.doc-head.doc-title .doc-head-text { white-space: normal; } /* 大标题允许换行 */
+.doc-head.doc-h1 { font-size: 24px; line-height: 1.3; font-weight: 700; }
+.doc-head.doc-h2 { font-size: 20px; line-height: 1.35; font-weight: 650; }
+.doc-head.doc-h3 { font-size: 17px; line-height: 1.4; font-weight: 600; }
+.doc-head.doc-h4 { font-size: 15.5px; line-height: 1.4; font-weight: 600; }
+.doc-head.doc-h5 { font-size: 14.5px; line-height: 1.4; font-weight: 600; }
+.doc-head.doc-h6 { font-size: 13.5px; line-height: 1.4; font-weight: 600; }
+.doc-head.doc-h-deep { font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--ink-2); }
+/* 正文：复用 .md 全套（code/table/blockquote/mermaid），字号从气泡档提到阅读档 */
+.doc-block-note { margin-top: 4px; }
+.doc-block-note.md { font-size: 14px; line-height: 1.65; }
+.doc-block-note.md p { margin: 8px 0; }
+.doc-block-note.md h1, .doc-block-note.md h2, .doc-block-note.md h3 { font-size: 14.5px; margin: 12px 0 4px; }
+.doc-block-note.md code { font-size: 13px; }
+.doc-block-note.empty { font-size: 13px; color: var(--ink-3); cursor: text; }
+.doc-block-note.empty:hover { color: var(--ink-2); }
+/* 就地编辑器：与被替换元素同字号同 padding（像素级对齐不跳变，rf-editor 原则）；
+   正文编辑器等宽源码态，自增高由组件内联 style 控制 */
+.doc-head-editor, .doc-note-editor {
+  display: block; width: 100%; box-sizing: border-box;
+  border: 1px solid var(--accent); border-radius: var(--radius);
+  background: var(--bg); color: var(--ink);
+  font-family: inherit; padding: 2px 6px; resize: none; outline: none;
+}
+.doc-note-editor { font-family: ui-monospace, Consolas, monospace; font-size: 13px; line-height: 1.6; min-height: 72px; overflow: hidden; }

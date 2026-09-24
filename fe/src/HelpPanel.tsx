@@ -43,6 +43,15 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
       ],
     },
     {
+      title: 'help.secDoc',
+      items: [
+        { label: 'help.docSwitch', desc: 'help.docSwitchD' },
+        { label: 'help.docTree', desc: 'help.docTreeD' },
+        { label: 'help.docEdit', desc: 'help.docEditD' },
+        { keys: ['F2', '↑↓'], label: 'help.docKeys', desc: 'help.docKeysD' },
+      ],
+    },
+    {
       title: 'help.secNav',
       items: [
         { keys: ['↑', '↓'], label: 'help.navV', desc: 'help.navVD' },

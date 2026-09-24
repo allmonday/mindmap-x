@@ -269,6 +269,25 @@ const zh = {
   'rev.action.folded_to_level': '按层折叠',
   'rev.action.outline_applied': 'outline 写入',
   'rev.action.revision_restored': '版本回滚',
+  // ── 文档模式（specs/008：左 Tree + 右分层文档的第二视图） ──
+  'doc.switchTitle': '文档模式：树渲染为分层文档（左导航 + 右正文）',
+  'doc.switchAria': '切换文档模式',
+  'doc.backToMap': '画布',
+  'doc.expand': '展开子树',
+  'doc.collapse': '折叠子树',
+  'doc.noteEmpty': '双击添加正文…',
+  'doc.viewAria': '文档正文',
+  'doc.treeAria': '文档导航树',
+  // ── 交互指南：文档模式小节 ──
+  'help.secDoc': '文档模式',
+  'help.docSwitch': '文档模式开关（画布左上工具列）',
+  'help.docSwitchD': '树渲染为分层文档：左 Tree 导航 + 右正文（标题 = 节点，正文 = 备注）；再点"画布"切回',
+  'help.docTree': 'Tree 拖拽',
+  'help.docTreeD': '与画布同款三区——行上/下边缘 = 插到它前/后，中间 = 挂为子；停稳片刻才确认（防扫过误触），拖到自己子树红色拒绝',
+  'help.docEdit': '双击标题 / 正文',
+  'help.docEditD': '就地编辑（Enter 提交 · Esc 取消 · 失焦提交；正文支持 Ctrl+Enter），保存走版本快照，与其他端实时同步',
+  'help.docKeys': 'F2 / ↑↓',
+  'help.docKeysD': '编辑选中块标题 / 在可见行序列中移动选中（收拢在左侧 Tree 操作）',
 } as const
 
 export type I18nKey = keyof typeof zh
@@ -521,6 +540,25 @@ const en: Record<I18nKey, string> = {
   'rev.action.folded_to_level': 'Fold to level',
   'rev.action.outline_applied': 'Outline apply',
   'rev.action.revision_restored': 'Restore',
+  // ── Doc mode (specs/008: tree as layered document, second view) ──
+  'doc.switchTitle': 'Doc mode: render the tree as a layered document (nav + body)',
+  'doc.switchAria': 'Toggle doc mode',
+  'doc.backToMap': 'Map',
+  'doc.expand': 'Expand subtree',
+  'doc.collapse': 'Collapse subtree',
+  'doc.noteEmpty': 'Double-click to add body text…',
+  'doc.viewAria': 'Document body',
+  'doc.treeAria': 'Document navigation tree',
+  // ── Help: doc mode section ──
+  'help.secDoc': 'Doc mode',
+  'help.docSwitch': 'Doc mode toggle (canvas tools, top-left)',
+  'help.docSwitchD': 'Renders the tree as a layered document: left tree nav + right body (heading = node, body = note); click "Map" to go back',
+  'help.docTree': 'Tree drag & drop',
+  'help.docTreeD': 'Same three zones as the canvas — top/bottom edge of a row = insert before/after it, middle = make it a child; hover a moment to confirm (no accidental hits while sweeping); dropping on own subtree is rejected in red',
+  'help.docEdit': 'Double-click heading / body',
+  'help.docEditD': 'Edit in place (Enter commits · Esc cancels · blur commits; body also supports Ctrl+Enter); saves create version snapshots and sync live across clients',
+  'help.docKeys': 'F2 / ↑↓',
+  'help.docKeysD': 'Edit selected heading / move selection through visible rows (folding lives in the left tree)',
 }
 
 const dicts: Record<Lang, Record<I18nKey, string>> = { zh, en }
