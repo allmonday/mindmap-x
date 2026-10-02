@@ -999,6 +999,13 @@ button.crumb:hover { color: var(--ink); }
   font-size: 15px;
   line-height: 0;
 }
+/* 文档模式切换：icon + 文字标签（覆盖 28px 定宽，与 Doc 侧"画布"钮对称） */
+.view-tools .btn.doc-switch {
+  width: auto;
+  gap: 5px;
+  padding: 0 10px;
+  line-height: 1.2;
+}
 /* 层级刻度条：2 3 … N 全 拼合 pill（同 .lang-switch 模式），当前档高亮如滑条 thumb */
 .fold-steps .btn {
   width: auto; /* 覆盖 .view-tools .btn 的 28px 定宽，数字档自适应 */
@@ -1609,60 +1616,63 @@ button.id-badge {
 .doc-fold:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
 .doc-fold.dot { cursor: default; } /* 叶子行占位（与父级折叠钮对齐） */
 .doc-fold.dot:hover { background: none; color: var(--ink-3); }
-/* 拖拽态：dragging 半透明跟手；三区高亮与画布同语言——蓝 = 挂子（底色块），
-   插入线 = before/after（行内伪元素上下边），红 = 拒绝 */
-.doc-row.dragging { opacity: 0.55; }
-.doc-row.drop-target { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 2px var(--accent); }
-.doc-row.drop-forbidden { background: color-mix(in srgb, var(--danger) 12%, transparent); box-shadow: inset 0 0 0 2px var(--danger); }
-.doc-row.drop-before::before,
-.doc-row.drop-after::after {
-  content: ''; position: absolute; left: 4px; right: 4px; height: 3px;
-  border-radius: 2px; background: var(--accent); pointer-events: none;
-}
-.doc-row.drop-before::before { top: -2px; }
-.doc-row.drop-after::after { bottom: -2px; }
 
 /* ── 右：分层文档 ── */
 .doc-view { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
 .doc-col { max-width: 820px; margin: 0 auto; padding: 28px 32px 64px; }
-/* 文档块：无缩进、无边框（2026-09-24 用户拍板——层级感只靠标题字号阶梯）；
-   点击选中 = 浅灰底（与 hover 同款 --bg-hover，不用蓝色系） */
+/* 文档块（Notion 本尊路线，2026-09-26 拍板）：无常规边框；
+   点击选中 = 浅灰底（与 hover 同款 --bg-hover，不用蓝色系）。
+   轻缩进：depth 0/1（大标题/H1 章节）顶格保持章节线笔直，depth≥2 内容
+   内收 24px/级（6 级封顶防溢出）——层级感 = 缩进 + 留白节拍 + 3 档字号 */
 .doc-block {
-  margin: 8px 0; padding: 8px 12px;
+  margin: 6px 0; padding: 8px 12px;
+  margin-left: calc(min(max(var(--doc-depth) - 1, 0), 6) * 24px);
   border-radius: 8px;
+  position: relative;
   transition: background-color 0.12s ease;
 }
 .doc-block:hover,
 .doc-block.sel { background: var(--bg-hover); }
-.doc-block.root { padding: 4px 8px 12px; }
-/* 上下节拍：块的层级 class（与标题同源，headClass 同时挂两处）驱动留白——
-   章节级（H1）开头分隔最明显，1级↔2级 父子对次之（margin 折叠取大者），
-   深层内容紧凑。大标题顶头不留白 */
-.doc-block.doc-title { margin: 0 0 8px; }
-.doc-block.doc-h1 { margin-top: 26px; }
-.doc-block.doc-h2 { margin-top: 16px; }
+.doc-block.root { margin-left: 0; padding: 4px 8px 12px; }
+/* 留白节拍锐化：章节级（H1）前 32px、H2 前 20px、深层默认 6px——
+   对比 >5:1，扫读时章节边界一眼可辨（margin 折叠取大者） */
+.doc-block.doc-title { margin-top: 0; }
+.doc-block.doc-h1 { margin-top: 32px; }
+.doc-block.doc-h2 { margin-top: 20px; }
+/* 左缘装订线（Notion gutter）：#N 锚点编号常驻显示（2026-09-26 用户拍板：
+   Agent 协作锚点要随时可见，不做 hover 显形）。absolute 悬浮在缩进空隙
+   （不够时压父区域，不占布局），pointer-events:none 纯视觉 */
+.doc-gutter {
+  position: absolute;
+  left: -50px;
+  top: 8px;
+  width: 44px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-3);
+  pointer-events: none;
+}
 /* 标题阶梯：根 = 文档大标题（# 层级自 depth 1 起，6 级封顶后走 .doc-h-deep） */
 .doc-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .doc-head-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .doc-head .doc-id { flex: none; }
 /* 标题阶梯（限定 .doc-head：字号只作用于标题行——headClass 同时挂在块上
-   供间距规则用，见 .doc-block.doc-h*）：根 = 文档大标题（# 层级自 depth 1
-   起，6 级封顶后走 .doc-h-deep） */
+   供间距规则用）：heading 收敛 3 档（Notion 同款——更多档位人眼分不出，
+   信号被稀释），depth≥4 走 .doc-h-deep 小节段落 */
 .doc-head.doc-title { font-size: 28px; line-height: 1.3; font-weight: 700; }
 .doc-head.doc-title .doc-head-text { white-space: normal; } /* 大标题允许换行 */
-.doc-head.doc-h1 { font-size: 24px; line-height: 1.3; font-weight: 700; }
+.doc-head.doc-h1 { font-size: 26px; line-height: 1.3; font-weight: 700; }
 .doc-head.doc-h2 { font-size: 20px; line-height: 1.35; font-weight: 650; }
 .doc-head.doc-h3 { font-size: 17px; line-height: 1.4; font-weight: 600; }
-.doc-head.doc-h4 { font-size: 15.5px; line-height: 1.4; font-weight: 600; }
-.doc-head.doc-h5 { font-size: 14.5px; line-height: 1.4; font-weight: 600; }
-.doc-head.doc-h6 { font-size: 13.5px; line-height: 1.4; font-weight: 600; }
-.doc-head.doc-h-deep { font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--ink-2); }
-/* 正文：复用 .md 全套（code/table/blockquote/mermaid），字号从气泡档提到阅读档 */
+.doc-head.doc-h-deep { font-size: 15px; line-height: 1.45; font-weight: 600; }
+/* 正文：复用 .md 全套（code/table/blockquote/mermaid），16px 阅读档
+   （Notion 正文同款，长文阅读感像真文档） */
 .doc-block-note { margin-top: 4px; }
-.doc-block-note.md { font-size: 14px; line-height: 1.65; }
+.doc-block-note.md { font-size: 16px; line-height: 1.6; }
 .doc-block-note.md p { margin: 8px 0; }
-.doc-block-note.md h1, .doc-block-note.md h2, .doc-block-note.md h3 { font-size: 14.5px; margin: 12px 0 4px; }
-.doc-block-note.md code { font-size: 13px; }
+.doc-block-note.md h1, .doc-block-note.md h2, .doc-block-note.md h3 { font-size: 16.5px; margin: 12px 0 4px; }
+.doc-block-note.md code { font-size: 14px; }
 .doc-block-note.empty { font-size: 13px; color: var(--ink-3); cursor: text; }
 .doc-block-note.empty:hover { color: var(--ink-2); }
 /* 就地编辑器：与被替换元素同字号同 padding（像素级对齐不跳变，rf-editor 原则）；
@@ -1674,3 +1684,9 @@ button.id-badge {
   font-family: inherit; padding: 2px 6px; resize: none; outline: none;
 }
 .doc-note-editor { font-family: ui-monospace, Consolas, monospace; font-size: 13px; line-height: 1.6; min-height: 72px; overflow: hidden; }
+
+/* 块内嵌 vditor（doc 模式正文就地编辑，2026-09-26 二修——与侧边栏同一编辑
+   效果但不弹面板）：定高容器让 vditor 的 height:100% 生效，内部滚动 */
+.doc-note-vditor { height: 320px; margin-top: 4px; border-radius: var(--radius); overflow: hidden; }
+.doc-note-vditor .vditor { border-radius: var(--radius); }
+.doc-note-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-3); }

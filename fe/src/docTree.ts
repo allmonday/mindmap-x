@@ -1,4 +1,4 @@
-// 文档模式（specs/008）的纯函数层：可见行序列 / 后代收集 / 标题层级映射。
+// 文档模式（specs/008）的纯函数层：可见行序列 + 标题层级映射。
 // 行序 = 文档纵向顺序 = 左 Tree 行序，DocTree/DocView 两栏共用同一份。
 // 与画布（layout.ts）一样走 display_id 体系组树，parent_id 不参与。
 
@@ -36,33 +36,13 @@ export function buildDocRows(detail: MapDetail): DocRow[] {
   return rows
 }
 
-/** id 的全部后代（防环预检：拖拽目标落在自己子树上 = 拒绝）。 */
-export function collectDescendants(nodes: NodeDTO[], id: number): Set<number> {
-  const kidsOf = new Map<number, number[]>()
-  for (const n of nodes) {
-    if (n.parent == null) continue
-    const key = n.parent.display_id
-    const list = kidsOf.get(key)
-    if (list) list.push(n.display_id)
-    else kidsOf.set(key, [n.display_id])
-  }
-  const desc = new Set<number>()
-  const stack = [id]
-  while (stack.length) {
-    for (const k of kidsOf.get(stack.pop()!) ?? []) {
-      desc.add(k)
-      stack.push(k)
-    }
-  }
-  return desc
-}
+export type HeadingLevel = 1 | 2 | 3
 
-export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6
-
-/** 深度 → Markdown 标题级：根（depth 0）由调用方渲染为文档大标题；
- * depth 1..6 → H1..H6；depth ≥7 返回 null（缩进退化普通块——markdown
- * heading 只有 6 级，更深层级靠 block 缩进表达）。 */
+/** 深度 → 标题级（Notion 本尊路线，2026-09-26 拍板）：heading 只保留 3 档
+ * 大字号（depth 1/2/3 → H1/H2/H3），根（depth 0）由调用方渲染为文档大标题；
+ * depth ≥4 返回 null——不再假装是 heading，转小字号段落（.doc-h-deep），
+ * 层级感由块缩进（24px/级）+ 留白节拍承担。 */
 export function headingLevel(depth: number): HeadingLevel | null {
-  if (depth < 1 || depth > 6) return null
+  if (depth < 1 || depth > 3) return null
   return depth as HeadingLevel
 }

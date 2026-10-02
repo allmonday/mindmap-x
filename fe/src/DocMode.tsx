@@ -21,14 +21,13 @@ interface Props {
   onSelect: (id: number | null) => void
   onToggleFold: (id: number) => void
   onUpdateNode: (id: number, content?: string, note?: string) => Promise<boolean>
-  onMoveNode: (id: number, parentId: number, position?: number) => void
 }
 
-export function DocMode({ detail, selectedId, onSelect, onToggleFold, onUpdateNode, onMoveNode }: Props) {
+export function DocMode({ detail, selectedId, onSelect, onToggleFold, onUpdateNode }: Props) {
   const { t } = useI18n()
   // 可见行序列：文档纵向顺序 = Tree 行序，两栏共用同一份（折叠态驱动裁剪）
   const rows = useMemo(() => buildDocRows(detail), [detail])
-  const [editing, setEditing] = useState<DocEditTarget | null>(null)
+  const [editing, setEditing] = useState<DocEditTarget | null>(null) // 就地编辑目标（标题/正文二选一）
   const handleEdit = useCallback((target: DocEditTarget | null) => setEditing(target), [])
 
   // 双向联动：选中变化 → 两栏各自滚到可见（60ms 等 WS 展开祖先后新行渲染，
@@ -80,12 +79,12 @@ export function DocMode({ detail, selectedId, onSelect, onToggleFold, onUpdateNo
         selectedId={selectedId}
         onSelect={onSelect}
         onToggleFold={onToggleFold}
-        onMove={onMoveNode}
       />
       <DocView
         rows={rows}
         selectedId={selectedId}
         editing={editingLive}
+        mapId={detail.id /* 块内嵌 vditor 的上传分目录 */}
         onSelect={onSelect}
         onEdit={handleEdit}
         onUpdateNode={onUpdateNode}

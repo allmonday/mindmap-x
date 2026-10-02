@@ -865,6 +865,15 @@ const MapIcon = () => (
   </svg>
 )
 
+// 返回列表（lucide house：房子线稿——"回家/回列表"语义，替代原 ☰ 字符
+// 图标：字形留白随平台字体回退漂移，与 FoldPlusIcon 同一教训）
+const HomeIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m3 9.5 9-7 9 7V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+    <path d="M9 22v-8h6v8" />
+  </svg>
+)
+
 // 备注角标（lucide sticky-note：折角便签——"这里贴了张纸"）。
 // 画线而非文本字符：字形留白随平台字体回退漂移（✎ 在部分系统偏左上），
 // 与 FoldPlusIcon 同一教训。size 参数：节点角标 9（默认），按钮行 11
@@ -875,10 +884,15 @@ const StickyNoteIcon = ({ size = 9 }: { size?: number }) => (
   </svg>
 )
 
-// Agent 对话开关（lucide message-circle：带尾气泡）
+// Agent 对话开关（lucide bot：机器人头——对页内 Agent 的身份比气泡更达意）
 const ChatIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719" />
+    <path d="M12 8V4H8" />
+    <rect width="16" height="12" x="4" y="8" rx="2" />
+    <path d="M2 14h2" />
+    <path d="M20 14h2" />
+    <path d="M15 13v2" />
+    <path d="M9 13v2" />
   </svg>
 )
 
@@ -1024,48 +1038,13 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   }, [docMode])
   const toggleDocMode = useCallback(() => {
     setDocMode((v) => !v)
-    // 画布输入态随画布卸载清空（防 stale）；备注面板悬浮左侧会盖住 Tree
+    // 画布输入态随画布卸载清空（防 stale）；备注面板随模式切换收起
+    //（doc 模式双击正文/按 d 会重新打开——vditor 单实例复用）
     setEditingId(null)
     setAdding(null)
     setNoteOpen(false)
   }, [])
   const rfRef = useRef<ReactFlowInstance<MindNode, Edge> | null>(null)
-  const flowHostRef = useRef<HTMLDivElement | null>(null)
-
-  // ctrl+滚轮/触摸板捏合的缩放速度：xyflow 内置系数写死 0.002（非 mac
-  // 每档 ~18%），无 prop 可调 → capture 拦截自算（0.006 = 3 倍速，每档
-  // ~65%）。围绕指针缩放，新 x = px-(px-x)·z2/z1（d3 scaleTo 同式）。
-  // stopPropagation 阻止事件再落进 xyflow 的 panOnScroll handler（那里
-  // ctrl 分支是内置慢速缩放，叠加会双重缩放）；普通 wheel 不拦，照常平移
-  const onFlowWheelZoom = useCallback((e: WheelEvent) => {
-    if (!e.ctrlKey) return
-    e.preventDefault() // 浏览器默认 ctrl+滚轮 = 整页缩放，禁掉
-    e.stopPropagation()
-    const inst = rfRef.current
-    const host = flowHostRef.current
-    if (!inst || !host) return
-    const vp = inst.getViewport()
-    // clamp 与下方 minZoom/maxZoom props（0.1 / 2.5）保持一致
-    const z2 = Math.min(2.5, Math.max(0.1, vp.zoom * 2 ** (-e.deltaY * 0.006)))
-    const r = host.getBoundingClientRect()
-    const px = e.clientX - r.left
-    const py = e.clientY - r.top
-    const ratio = z2 / vp.zoom
-    inst.setViewport({ zoom: z2, x: px - (px - vp.x) * ratio, y: py - (py - vp.y) * ratio })
-  }, [])
-
-  // 挂靠 callback ref 而非 useEffect：编辑器主体是条件渲染（detail/layout
-  // 就绪才出 <ReactFlow>，见下方 early return），mount 期 effect 跑时 ref
-  // 还是 null，之后不会再补挂
-  const setFlowHost = useCallback(
-    (el: HTMLDivElement | null) => {
-      const prev = flowHostRef.current
-      if (prev) prev.removeEventListener('wheel', onFlowWheelZoom, { capture: true })
-      flowHostRef.current = el
-      if (el) el.addEventListener('wheel', onFlowWheelZoom, { capture: true, passive: false })
-    },
-    [onFlowWheelZoom],
-  )
 
   // ── 拖拽改挂载 + 三区排序（drag-to-reparent / reorder）──────────────────
   // 拖节点悬停另一节点，按指针纵向位置分三区：上/下边缘 25% = 插到目标
@@ -1535,13 +1514,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
     async (nodeId: number, note: string): Promise<boolean> => updateNode(nodeId, undefined, note),
     [updateNode],
   )
-  // 文档模式 Tree 拖拽提交（画布 onDragStop 同款 fire-and-forget，WS 驱动重排）
-  const moveNodeTo = useCallback(
-    (id: number, parentId: number, position?: number) => {
-      void guard(() => api.moveNode(mapId, id, parentId, position))
-    },
-    [mapId],
-  )
   // 文档模式折叠（Space 键同路径）：乐观 patch + WS 全端同步免费
   const toggleDocFold = useCallback(
     (id: number) => {
@@ -1874,10 +1846,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           return
         }
       }
-      // 文档模式：F2/Space/方向键由 DocMode 自挂的 listener 接管，画布专属键
-      // （d 备注面板/Tab/Enter/Delete/方向键）全禁——DetailPanel 悬浮位与 Tree
-      // 重叠，note 编辑已由文档块就地承担。上方 Esc 浮层链不受影响（goto/
-      // outline/版本/帮助在文档模式照常逐层退出）
+      // 文档模式：F2/↑↓ 由 DocMode 自挂的 listener 接管，画布专属键全禁——
+      // 正文编辑是块内嵌 vditor（同侧边栏效果，2026-09-26 用户拍板），
+      // 侧边栏面板不在文档模式使用。上方 Esc 浮层链不受影响（goto/outline/
+      // 版本/帮助在文档模式照常逐层退出）
       if (docMode) return
       if (e.key === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const el = document.activeElement
@@ -2258,7 +2230,9 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   return (
     <div className="editor">
       <header className="toolbar">
-        <button className="btn icon" onClick={onBack} title={t('common.backToList')} aria-label={t('common.backToList')}>☰</button>
+        <button className="btn icon" onClick={onBack} title={t('common.backToList')} aria-label={t('common.backToList')}>
+          <HomeIcon />
+        </button>
         <span className={`ws-dot ${wsState}`} title={t('ws.sync', { state: t(`ws.${wsState}` as I18nKey) })} />
         <span className={`ws-label ${wsState}`}>
           {t(`ws.${wsState}` as I18nKey)}
@@ -2403,15 +2377,17 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           </button>
         ) : (
           <div className="view-tools">
-            {/* 文档模式切换（specs/008）：与布局形态切换并列的视图形态开关 */}
+            {/* 文档模式切换（specs/008）：与布局形态切换并列的视图形态开关。
+                icon + 文字标签——与 Doc 模式的"画布"返回钮对称 */}
             <button
-              className="btn"
+              className="btn doc-switch"
               onClick={toggleDocMode}
               title={t('doc.switchTitle')}
               aria-label={t('doc.switchAria')}
               aria-pressed={docMode}
             >
               <DocModeIcon />
+              {t('doc.switchLabel')}
             </button>
             <button
               className="btn"
@@ -2466,14 +2442,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             onSelect={setSelectedId}
             onToggleFold={toggleDocFold}
             onUpdateNode={updateNode}
-            onMoveNode={moveNodeTo}
           />
         ) : (
         <div className="rf-wrap">
           <ReactFlow
-            /* 外层 div 的 callback ref：ctrl+滚轮缩放的 capture 拦截随元素
-               挂/摘（setFlowHost 见上） */
-            ref={setFlowHost}
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={nodeTypes}
@@ -2486,9 +2458,11 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             minZoom={0.1}
             maxZoom={2.5}
             nodesDraggable /* 拖节点到另一节点上 = 改挂载（onNodeDragStop 提交
-                move_node）；画布平移改为拖空白处。全局开关恒开，能否拖由节点级
-                draggable 决定（rfNodes 里 = 选中态，先单击选中才可拖，防误拖）；
-                长按/双击/单击不受影响（拖动超阈值才启动，移动 >8px 早已取消长按计时） */
+                move_node）；画布平移 = 拖空白处（滚轮缩放让出双指平移后已是
+                默认行为，2026-09-26 取消 panOnScroll）。全局开关恒开，能否拖
+                由节点级 draggable 决定（rfNodes 里 = 选中态，先单击选中才可拖，
+                防误拖）；长按/双击/单击不受影响（拖动超阈值才启动，移动 >8px
+                早已取消长按计时） */
             onNodeDragStart={onDragStart}
             onNodeDrag={onDrag}
             onNodeDragStop={onDragStop}
@@ -2496,14 +2470,6 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             onPaneContextMenu={onPaneCtx}
             nodesConnectable={false}
             zoomOnDoubleClick={false}
-            /* wheel → 平移：触摸板两指滑动 = 拖空白处平移，1:1 跟手（speed
-               默认 0.5 是半速，提到 1 才与拖拽一致）。浏览器层滚轮与触摸板双指
-               同为 wheel 事件无法区分，滚轮缩放一并让出；缩放走 ctrl+滚轮
-               （触摸板捏合，速度自算，见 flowHostRef 那个 effect）与
-               Controls +/- */
-            panOnScroll
-            panOnScrollSpeed={1}
-            zoomOnScroll={false}
             elementsSelectable
             onPaneClick={() => {
             setSelectedId(null)

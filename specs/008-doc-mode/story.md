@@ -12,8 +12,11 @@
 - 痛点：节点 note 是 markdown 长文，画布模式下只能逐个点开备注面板看，缺乏整体文档感——长内容导图的**阅读**体验缺一种视图
 - 用户拍板的三个决策（AskUserQuestion）：
   1. 文档区**可就地编辑**（双击改文字，自动保存走现有接口；不支持文档模式内增删节点）
-  2. 层级映射：**根 = 文档大标题，子级 depth 1..6 → H1..H6，≥7 级缩进退化普通块**
+  2. 层级映射：**根 = 文档大标题，子级 depth 1..6 → H1..H6，≥7 级缩进退化普通块**（后收敛为 3 档 heading，见 Overview）
   3. Tree **仅在文档模式显示**（Map 模式保持全屏画布现状）
+- 后续演进（用户反馈驱动，详见交互细节节）：09-24 统一视图头部/块视觉收敛；
+  09-26 Notion 本尊路线；**09-26 Tree 拖拽整体移除**（docs 内拖拽体验差，
+  重排回画布做——推翻原始需求中"Tree 支持拖拽重排"一条）
 - 计划：`~/.claude/plans/linked-mapping-dahl.md`（linked-mapping-globe，已批准）
 
 ## Overview Design
@@ -31,25 +34,45 @@
 
 ```
 depth 0        → .doc-title（文档大标题，28px/700）
-depth 1..6     → .doc-h1..h6（24px → 13.5px 阶梯）
-depth ≥7       → .doc-h-deep（缩进退化普通块——markdown heading 只有 6 级）
+depth 1..3     → .doc-h1..h3（26/20/17px 三档——Notion 同款：更多档位人眼分不出）
+depth ≥4       → .doc-h-deep（15px/600 小节段落，不再假装 heading）
+缩进           → depth 0/1 顶格（章节线笔直），depth≥2 内收 24px/级（6 级封顶）
+正文           → 16px/1.6（Notion 阅读档）
+留白节拍       → H1 前 32px / H2 前 20px / 深层 6px（对比 >5:1）
+gutter         → hover/选中显形：⋮⋮ 把手 + #N 锚点（平时标题纯文本）
 ```
 
-block 视觉（2026-09-24 用户拍板收敛）：**无缩进、无左边框**——层级感只靠
-标题字号阶梯 + 左 Tree 导航；点击选中 = 浅灰底（--bg-hover，与 hover 同款，
-不用蓝色系）。首版的 `margin-left: depth*20px` 缩进 + `border-left: 2px`
-+ accent 选中底已按反馈移除。
-
-间距节拍（同日第二拍）：基础 8px；块按层级 class（headClass 同挂块上）驱动
-上方留白——`.doc-h1` 块 26px（章节开头）、`.doc-h2` 块 16px（1级↔2级 父子
-对，margin 折叠取大者）、更深层默认 8px 紧凑、大标题顶头。实测节拍
-26/16/8（getBoundingClientRect 逐对断言）。标题字号规则限定 `.doc-head`
-前缀（防块级 class 泄字号）。
+block 视觉三连改（2026-09-24 → 09-26 用户反馈驱动）：①首版 = 20px/级缩进
++ 左边框 + accent 选中 → ②反馈"去缩进去边框、选中用浅灰底"（纯字号路线，
+深层 H4-H6 字号挤在 13-15px 信号稀释，结构难辨）→ ③**Notion 本尊路线**
+（终态，见上方映射表）：结构感 = 轻缩进 + 3 档字号 + 留白节拍三者叠加，
+heading 收敛 3 档、depth≥4 转小节段落、正文 16px、hover 左缘 gutter
+（⋮⋮ 把手 + #N，平时隐形的干净标题）。选中底始终 = --bg-hover 浅灰
+（无蓝色系）。字号规则限定 `.doc-head` 前缀（headClass 同时挂块上驱动
+间距/缩进，防字号泄漏）。
 
 **收拢只由左侧 Tree 提供**（用户拍板）：文档块无折叠钮（FoldBtn 组件从
 DocView 移除、Props 删 onToggleFold），DocMode 的 Space 折叠快捷键一并
 收掉——收/放的唯一入口是 Tree 行的折叠钮（WS 全端同步照旧，文档块随
 折叠裁剪）。
+
+**正文编辑 = 块内嵌 vditor**（2026-09-26 用户指出块内 textarea 不用
+"侧边栏那个 Markdown 编辑器"的效果；**二修**：第一版做成双击弹侧边栏
+面板，用户澄清要的是就地编辑但编辑器效果同侧边栏——最终形态 `DocNoteEditor`：
+双击正文/空占位 → 块内就地挂 vditor（lazy chunk 复用，工具栏/IR 即时渲染/
+粘贴上传含 map 分目录全套），**Ctrl+Enter 提交、点击外部自动保存收起**
+（click capture 在目标处理前到达——先保存旧编辑，随后的选中/双击开新编辑
+在新状态下自然进行；closest('.doc-note-vditor, .vditor') 放行编辑器自身
+含挂到 body 的弹层/全屏层；用 click 而非 pointerdown——拖滚动条不产生
+click，阅读长文不误触收起）、Esc 丢弃、卸载 flush、判脏不发请求（DocEditor
+同款状态机，未改动点外部不造版本快照）；侧边栏面板不出现在 doc 模式
+（d 键照旧全禁）。标题编辑保持块内 textarea（blur 提交）。e2e 排查实录
+两则：①vditor 的
+input→draft 是异步链，合成输入后立即断言必假等（Playwright CDP 键盘与
+contenteditable 的时序坑，HEAD 基线同样如此非回归；正确姿势=输入后等
+传播再操作，或经 flush/按钮路径断言）；②完整流程中 wait_for_selector
+的 visible 判定会玄学超时而元素实际已挂载且有尺寸——DOM 计数轮询断言
+更可靠。
 
 ### Map / Tree 拖拽三区对照
 
@@ -75,6 +98,7 @@ DocView 移除、Props 删 onToggleFold），DocMode 的 Space 折叠快捷键�
 
 ### 交互细节
 
+- **Tree 拖拽已移除**（2026-09-26 用户拍板："docs 内拖拽体验差，就算有也不好用"）：DocTree 退化为纯导航（点选定位 + 折叠收放），首版三区拖拽（pointer events + dwell + 防环 + moveNode 提交链）与 gutter 的 ⋮⋮ 把手整体删除；重排回画布做。gutter 只留 #N（hover/选中显形）
 - **统一视图头部（2026-09-24 收敛改版）**：两模式共用 `.view-head` 实体行——标题区（#id/标题/v版本/面包屑）恒在最左，模式工具组挂标题右侧（Map = 文档模式钮+布局钮+刻度条三件套，Doc = "画布"返回钮），宽度差吸收进右侧 spacer。Map 的标题/工具从画布悬浮（.map-title/.canvas-tools absolute）收进此行——**切换瞬间头部 4 元素实测零位移**（getBoundingClientRect 逐像素对比 4/4 STABLE），只有工具组内容换。头部固定 44px 行高（工具组高度差不传导）；顺带消除了 .doc-head 与 doc-block 标题行的 class 撞名。首版踩坑两则：返回钮放头部右端被 ChatPanel（默认开启）头部遮挡→移左；工具组放标题左侧会把标题横向推挤→标题恒左
 - 联动：两栏点击共用 selectedId；选中变化 60ms 后两栏 scrollIntoView（等展开祖先的新行渲染）
 - 快捷键：画布全局键 `if (docMode) return` 全禁（Esc 浮层链除外）；DocMode 自挂 F2（编辑标题）/ Space（折叠）/ ↑↓（可见行序列移动）
