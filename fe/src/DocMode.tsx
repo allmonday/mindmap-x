@@ -10,7 +10,7 @@
 // Esc 不切模式——模式是持久化视图偏好（防误触），由头部按钮切换。
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useI18n } from './i18n'
-import { buildDocRows } from './docTree'
+import { buildDocRows } from './docRows'
 import { DocTree } from './DocTree'
 import { DocView, type DocEditTarget } from './DocView'
 import type { MapDetail } from './types'

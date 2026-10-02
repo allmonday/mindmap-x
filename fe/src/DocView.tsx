@@ -1,7 +1,7 @@
 // 文档模式右侧：每个可见节点一个 block（标题 + 正文），标题就地编辑。
 //
 // 渲染映射：content → 标题（根 = 文档大标题，depth 1..3 → H1..H3，
-// ≥4 级小节段落——见 docTree.headingLevel）；note → 正文 markdown
+// ≥4 级小节段落——见 docRows.headingLevel）；note → 正文 markdown
 // （与 ChatPanel 同管线：react-markdown + remark-gfm + mdComponents，mermaid 免费）。
 //
 // 编辑分工（2026-09-26 用户拍板，二修）：标题 = 块内就地 textarea（短文本）；
@@ -17,7 +17,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useI18n } from './i18n'
 import { mdComponents } from './Mermaid'
-import { headingLevel, type DocRow } from './docTree'
+import { headingLevel, type DocRow } from './docRows'
 
 // vditor 独立 chunk（与 DetailPanel 共用同一个 lazy 模块）
 const VditorEditor = lazy(() => import('./VditorEditor').then((m) => ({ default: m.VditorEditor })))

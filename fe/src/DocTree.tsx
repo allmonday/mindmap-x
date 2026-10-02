@@ -1,4 +1,4 @@
-// 文档模式左侧树：紧凑导航。数据是同一份 rows（docTree.buildDocRows），
+// 文档模式左侧树：紧凑导航。数据是同一份 rows（docRows.buildDocRows），
 // 折叠复用 node.collapsed（WS 全端同步免费——与画布双向一致）。
 //
 // 纯导航（2026-09-26 用户拍板）：只做点选定位 + 折叠收放——文档模式不
@@ -6,7 +6,7 @@
 // （pointer events + dwell + 防环）已整体移除。
 import { memo } from 'react'
 import { useI18n } from './i18n'
-import type { DocRow } from './docTree'
+import type { DocRow } from './docRows'
 
 interface Props {
   rows: DocRow[]
