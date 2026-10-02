@@ -62,3 +62,33 @@
   - `apply_outline(replace)` 带锚定：#2 content 更新 + note 原样带回；未锚定新行 note=null；
     display_id 回归 docstring 的顺序重排
 - REST：`/api/mindmap_service/get_node` 端点出现于 openapi.json
+
+## 变更记录
+
+### 2026-09-26 粘贴图片 base64 泄漏修复（VditorEditor paste capture 拦截）
+
+- 现象：截图/网页复制图片后粘贴，note 里落 `data:image/png;base64,...` 而非
+  `/uploads/` 相对 URL——base64 随 get_map 全树下发 + 版本快照膨胀
+- 根因（vditor dist 反编译核实）：paste 分流 **text/html 分支优先于文件上传
+  分支**；剪贴板双格式（HTML 内嵌 data:URI img + image/png 文件）时 HTML 分支
+  直接 lute 转 markdown，data:URI 原样保留。官方 `upload.base64ToLink` 钩子
+  名不副实——只在 `processVMLImage`（Word VML 处理）内部被调用，且**配置了
+  反而跳过**该处理器，普通 HTML 粘贴永远不经过它；`handleDataUrl` 运行时
+  零调用点
+- 修复：宿主元素 capture 阶段 paste 拦截——HTML 含 `data:image` 时接管：
+  有图片文件 → 降级走 uploadHandler（上传后插相对 URL）；纯 HTML 无文件 →
+  DOMParser 提取 data:URI 逐张转传。纯文本/无内嵌图的 HTML 粘贴放行
+- 验证（Playwright 真实系统剪贴板 + Ctrl+V）：双格式 / 纯文件 / 纯 HTML
+  三场景均 `data:image=False`、`/uploads/=True`、上传请求 1
+
+### 2026-09-26 上传按 map 分目录（var/uploads/&lt;map_id&gt;/）
+
+- 用户诉求：各图上传的图片不混在一个平铺目录里
+- 后端 `uploads.py`：`POST /api/uploads` 加 `map_id` Form 参数（可选）——
+  带 → 落 `var/uploads/<map_id>/<uuid12>.<ext>`、返回 `/uploads/<map_id>/<name>`；
+  不带 → 根目录（旧形态兼容）。StaticFiles 递归服务子目录，旧文件/旧 URL 原地不动
+- 前端链路：`VditorEditor` 新增 `uploadMapId` prop（经 cbRef 镜像保鲜，构造
+  effect 闭包读最新值）→ `postUpload` FormData 带 `map_id`；`DetailPanel` 传
+  `node.map_id`
+- 验证：curl 三形态（带/不带/静态 GET 200）+ 浏览器真实粘贴端到端
+  （插入 URL 含 `/uploads/112/`、无 data:image 残留）

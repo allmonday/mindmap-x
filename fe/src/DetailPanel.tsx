@@ -26,7 +26,7 @@ interface Props {
   onResize: (w: number) => void
   pinned: boolean // pin 住：选中变到别处不收起（内容跟随 / 空态兜底）
   onTogglePin: () => void
-  closing: boolean // 播收回动画（父组件延迟卸载期间为 true）
+  closing: boolean // 播放关闭动画（父组件延迟卸载期间为 true）
   // note 为 '' 即清空；返回是否成功（失败时面板保留脏态可重试）
   onSaveNote: (nodeId: number, note: string) => Promise<boolean>
 }
@@ -231,6 +231,7 @@ export function DetailPanel({ node, width, onResize, pinned, onTogglePin, closin
               vditorRef.current?.setValue(savedRef.current)
             }}
             uploadErrorText={t('note.uploadFailed')}
+            uploadMapId={node.map_id /* 图片按 map 分目录（var/uploads/<map_id>/） */}
           />
         </Suspense>
       )}

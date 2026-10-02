@@ -32,6 +32,8 @@ interface Props {
   onEsc: () => void
   /** 上传失败提示文案（Vditor tip 展示） */
   uploadErrorText: string
+  /** 图片按 map 分目录存储（var/uploads/<map_id>/）；null = 根目录（兜底） */
+  uploadMapId: number | null
 }
 
 // 工具栏精简集：编辑区排版 + 插入类 + 撤销 + 视图（edit-mode 允许切 sv/wysiwyg，
@@ -79,7 +81,7 @@ export function prefetchVditorRuntime(locale: 'zh_CN' | 'en_US') {
 }
 
 export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEditor(
-  { initialValue, locale, editable, onInput, onCtrlEnter, onEsc, uploadErrorText },
+  { initialValue, locale, editable, onInput, onCtrlEnter, onEsc, uploadErrorText, uploadMapId },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -94,8 +96,8 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
   const disposedRef = useRef(false)
   const pendingRef = useRef<{ value?: string; focus?: boolean }>({})
   // 事件回调经 ref 转发，避免回调身份变化触发编辑器重建
-  const cbRef = useRef({ onInput, onCtrlEnter, onEsc, uploadErrorText })
-  cbRef.current = { onInput, onCtrlEnter, onEsc, uploadErrorText }
+  const cbRef = useRef({ onInput, onCtrlEnter, onEsc, uploadErrorText, uploadMapId })
+  cbRef.current = { onInput, onCtrlEnter, onEsc, uploadErrorText, uploadMapId }
   // editable 最新值给 after 回调用（实例 ready 时机晚于首个 effect）
   const editableRef = useRef(editable)
   editableRef.current = editable
@@ -128,6 +130,20 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
     readyRef.current = false
     disposedRef.current = false
     pendingRef.current = {}
+    // 公共上传：POST /api/uploads，成功返回相对 URL（/uploads/xxx），失败 null
+    const postUpload = async (blob: Blob, name: string): Promise<string | null> => {
+      const fd = new FormData()
+      fd.append('file', blob, name)
+      const mapId = cbRef.current.uploadMapId // 按 map 分目录（var/uploads/<map_id>/）
+      if (mapId != null) fd.append('map_id', String(mapId))
+      try {
+        const resp = await fetch('/api/uploads', { method: 'POST', body: fd })
+        const data = await resp.json().catch(() => null)
+        return resp.ok && data?.url ? (data.url as string) : null
+      } catch {
+        return null
+      }
+    }
     // handler 模式：上传完全自定义（fetch 我们的 /api/uploads），不依赖
     // Vditor 的 url 模式响应格式；成功后 insertValue 插入相对 URL 的 md 图片，
     // 失败经 vditor.tip 提示（handler 返回类型要求 Promise<string>/Promise<null>
@@ -135,23 +151,47 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
     const uploadHandler = async (files: File[]): Promise<null> => {
       const failed: string[] = []
       for (const file of files) {
-        const fd = new FormData()
-        fd.append('file', file, file.name)
-        try {
-          const resp = await fetch('/api/uploads', { method: 'POST', body: fd })
-          const data = await resp.json().catch(() => null)
-          if (!resp.ok || !data?.url) {
-            failed.push(file.name)
-            continue
-          }
-          vditor?.insertValue(`![${file.name.replace(/[\\[\]()]/g, '')}](${data.url})\n`)
-        } catch {
-          failed.push(file.name)
-        }
+        const url = await postUpload(file, file.name)
+        if (url) vditor?.insertValue(`![${file.name.replace(/[\\[\]()]/g, '')}](${url})\n`)
+        else failed.push(file.name)
       }
       if (failed.length) vditor?.tip(`${cbRef.current.uploadErrorText}: ${failed.join(', ')}`, 3000)
       return null
     }
+    // paste 前置拦截（capture 阶段）：vditor 的 paste 分流里 text/html 分支
+    // 优先于文件上传分支，img 的 data:URI 会原样保留进 markdown（note 出现
+    // base64 的根因）；官方 upload.base64ToLink 钩子名不副实——它只在 Word
+    // VML 处理器（processVMLImage）内部被调用，且配置了反而跳过该处理器
+    // （dist 反编译核实），普通 HTML 粘贴永远不经过它。这里在 capture 阶段
+    // 把"带 data:URI 图片的 HTML 粘贴"降级为文件上传：优先取剪贴板图片文件；
+    // 无文件形态（纯 HTML）时从 HTML 提取 data:URI 转传。均走 postUpload
+    // → note 里只落相对 URL
+    const onPasteCapture = (e: ClipboardEvent) => {
+      const dt = e.clipboardData
+      if (!dt) return
+      const html = dt.getData('text/html')
+      if (!html || !html.includes('data:image')) return // 纯文本/无内嵌图的 HTML 放行
+      e.preventDefault()
+      e.stopPropagation()
+      const imgFiles = [...dt.files].filter((f) => f.type.startsWith('image/'))
+      if (imgFiles.length > 0) {
+        void uploadHandler(imgFiles)
+        return
+      }
+      // 无文件兜底：从 HTML 提取 data:URI 逐张转传（网络复制偶尔只给 HTML）
+      const doc = new DOMParser().parseFromString(html, 'text/html')
+      const dataSrcs = [...doc.querySelectorAll('img')]
+        .map((i) => i.getAttribute('src') ?? '')
+        .filter((s) => s.startsWith('data:image/'))
+      void (async () => {
+        for (const src of dataSrcs) {
+          const blob = await (await fetch(src)).blob()
+          const url = await postUpload(blob, 'pasted.png')
+          if (url) vditor?.insertValue(`![pasted](${url})\n`)
+        }
+      })()
+    }
+    el.addEventListener('paste', onPasteCapture, true)
 
     vditor = new Vditor(el, {
       mode: 'ir',
@@ -180,7 +220,8 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
       upload: {
         handler: uploadHandler,
         // url 是"上传功能启用"开关（Vditor 按钮渲染/粘贴上传 gated on url 非空）；
-        // handler 存在时实际处理全走 handler，不会向该 url 发请求
+        // handler 存在时实际处理全走 handler，不会向该 url 发请求。
+        // base64 治理不走官方 base64ToLink（名不副实，见上方 paste 拦截注释）
         url: '/api/uploads',
         accept: 'image/*',
         multiple: true,
@@ -209,6 +250,7 @@ export const VditorEditor = forwardRef<VditorHandle, Props>(function VditorEdito
       },
     })
     return () => {
+      el.removeEventListener('paste', onPasteCapture, true)
       disposedRef.current = true
       vditorRef.current = null
       const wasReady = readyRef.current

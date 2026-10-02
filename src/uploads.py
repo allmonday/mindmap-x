@@ -6,7 +6,11 @@
 - 桌面版：desktop.py 在 import 本模块前 setdefault MINDMAPX_UPLOADS_DIR
   → 用户数据目录（platformdirs），与 DB/会话同域
 
-返回相对 URL（/uploads/<name>）——项目既定架构：前端全相对路径，
+按 map 分目录（2026-09-26）：带 map_id 上传 → var/uploads/<map_id>/<uuid>.<ext>，
+各图文件互不混住；不带的（历史调用形态）落根目录，旧文件/旧 URL 原地不动
+（StaticFiles 递归服务子目录，天然兼容）。
+
+返回相对 URL（/uploads/<map_id>/<name>）——项目既定架构：前端全相对路径，
 桌面版随机端口下天然同源。备注里存的也是相对 URL（换域名/端口不失效）。
 
 安全边界：扩展名白名单 + 大小上限；排除 svg（StaticFiles 直出
@@ -16,7 +20,7 @@ import os
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 router = APIRouter()
 
@@ -26,7 +30,10 @@ _MAX_BYTES = 10 * 1024 * 1024  # 与 Vditor upload.max 对齐
 
 
 @router.post("/api/uploads")
-async def upload_image(file: UploadFile = File(...)) -> dict:
+async def upload_image(
+    file: UploadFile = File(...),
+    map_id: int | None = Form(None),  # 按 map 分目录；None = 根目录（兼容旧形态）
+) -> dict:
     ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
     if ext not in _EXT_ALLOW:
         raise HTTPException(
@@ -40,6 +47,8 @@ async def upload_image(file: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail="空文件")
 
     name = f"{uuid.uuid4().hex[:12]}.{ext}"
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    (UPLOADS_DIR / name).write_bytes(data)
-    return {"url": f"/uploads/{name}"}
+    sub = UPLOADS_DIR if map_id is None else UPLOADS_DIR / str(map_id)
+    sub.mkdir(parents=True, exist_ok=True)
+    (sub / name).write_bytes(data)
+    base = "" if map_id is None else f"{map_id}/"
+    return {"url": f"/uploads/{base}{name}"}
