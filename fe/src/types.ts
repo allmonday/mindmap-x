@@ -20,6 +20,8 @@ export type MapSummary = GeneratedMapSummary & {
   id: number
   version: number
   created_at: string
+  // 最近更新时间（后端由 MapRevision 推导）——SDK 未重生成，契约在此补充（同上模式）
+  updated_at: string | null
 }
 
 export type NodeRef = GeneratedNodeRef

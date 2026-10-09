@@ -150,16 +150,24 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
             <PlusIcon /> {t('map.newCard')}
           </button>
         )}
-        {shown.map((m) => (
+        {shown.map((m) => {
+          // 右下角显示最近更新时间（与排序依据一致；无值兜底创建时间）
+          const updated = fmtDate(m.updated_at ?? m.created_at, locale)
+          return (
           <div key={m.id} className="card" onClick={() => confirmId === null && onOpen(m.id)}>
-            {/* 左上角 ID（橙色 mono，无 #）；标题两行省略；右下角 date；
-                version 只在 hover 时跟在标题后面 */}
+            {/* 左上角 ID（橙色 mono，无 #）；标题两行省略；右下角最近更新时间
+                （tooltip 补创建时间）；version 只在 hover 时跟在标题后面 */}
             <span className="map-id">#{m.id}</span>
             <div className="card-title" title={m.title}>
               {m.title}
               <span className="card-ver">v{m.version}</span>
             </div>
-            <span className="card-date">{fmtDate(m.created_at, locale)}</span>
+            <span
+              className="card-date"
+              title={t('map.dateTip', { updated, created: fmtDate(m.created_at, locale) })}
+            >
+              {updated}
+            </span>
             {confirmId === m.id ? (
               <button className="card-del confirm" onClick={(e) => { e.stopPropagation(); void del(m.id) }}>
                 {t('map.deleteConfirm')}
@@ -175,7 +183,8 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
               </button>
             )}
           </div>
-        ))}
+          )
+        })}
         {maps != null && maps.length === 0 && <p>{t('map.empty')}</p>}
       </div>
     </div>

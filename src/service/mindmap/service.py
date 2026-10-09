@@ -62,9 +62,13 @@ class MindmapService(UseCaseService):
 
     @query
     async def list_maps(cls) -> list[MapSummary]:
-        """列出所有脑图（轻量摘要，不含节点）。"""
-        maps = await methods.list_maps()
-        dtos = [MapSummary.model_validate(m) for m in maps]
+        """列出所有脑图（轻量摘要，不含节点），按最近更新时间从新到旧。"""
+        items = await methods.list_maps()
+        dtos = []
+        for m, updated_at in items:
+            dto = MapSummary.model_validate(m)
+            dto.updated_at = updated_at  # 非实体列（revision 推导），此处填充
+            dtos.append(dto)
         return await Resolver().resolve(dtos)
 
     @query

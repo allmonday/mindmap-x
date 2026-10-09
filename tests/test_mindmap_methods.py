@@ -31,7 +31,24 @@ async def test_create_map_makes_root(session_factory, seeded_map):
 async def test_list_maps_includes_created(session_factory, seeded_map):
     await mm.create_map("第二张")
     maps = await mm.list_maps()
-    assert [m.title for m in maps] == ["T", "第二张"]
+    # 从新到旧：第二张后建在前；种子 T 为直插行（无 revision），兜底 created_at
+    assert [m.title for m, _ in maps] == ["第二张", "T"]
+
+
+async def test_list_maps_orders_by_last_update(session_factory):
+    a = await mm.create_map("旧图先建")
+    b = await mm.create_map("新图后建")
+    # 旧图后改 → 最近更新时间最新 → 跳到最前（排序依据是 revision 的 max(created_at)）
+    await mm.add_node(a.id, 1, "后改")
+    maps = await mm.list_maps()
+    assert [m.title for m, _ in maps] == ["旧图先建", "新图后建"]
+
+
+async def test_list_maps_returns_derived_updated_at(session_factory):
+    await mm.create_map("A")
+    [(m, updated_at)] = await mm.list_maps()
+    assert m.title == "A"
+    assert updated_at is not None
 
 
 # ── get_tree ──────────────────────────────────────────────────────────

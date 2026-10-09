@@ -7,6 +7,7 @@ ID 语义：对外只暴露 display_id（map 内编号，每图从 1 起）。
 parent_id 是全局内部键——前端仅用于组装树结构，不作为 API 参数传递；
 操作父节点（如加兄弟节点）用 parent.display_id。
 """
+from datetime import datetime
 from typing import List, Optional
 
 from nexusx import DefineSubset, SubsetConfig
@@ -16,9 +17,15 @@ from src.models import Map, MapRevision, Node
 
 
 class MapSummary(DefineSubset):
-    """图列表页的轻量摘要。"""
+    """图列表页的轻量摘要（列表按最近更新时间从新到旧）。"""
 
     __subset__ = (Map, ("id", "title", "version", "created_at"))
+
+    # 非实体列（RevisionDetail.snapshot 同款"白名单外类体显式声明"）：
+    # 最近更新时间 = MapRevision 行 max(created_at)（无 revision 兜底
+    # created_at），由 service 层填充——Map 不设 updated_at 列，变更时刻
+    # 的权威记录在 revision 表
+    updated_at: Optional[datetime] = None
 
 
 class NodeRef(DefineSubset):

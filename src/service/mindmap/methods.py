@@ -28,7 +28,7 @@ import functools
 import re
 from datetime import datetime, timezone
 
-from sqlalchemy import delete
+from sqlalchemy import delete, func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
@@ -431,13 +431,32 @@ async def _commit_view_state(
 # ── queries ───────────────────────────────────────────────────────────
 
 
-async def list_maps() -> list[Map]:
-    """列出所有脑图（软删图不出现）。"""
+async def list_maps() -> list[tuple[Map, datetime]]:
+    """列出所有脑图（软删图不出现），按最近更新时间从新到旧。
+
+    返回 (Map, 最近更新时间)。Map 不设 updated_at 列——变更时刻的权威记录
+    在 MapRevision（每次 mutation 落一行带 created_at），最近更新时间 =
+    该图 revision 行的 max(created_at)；无 revision 行的图（测试直插数据等）
+    兜底 created_at，外连接保证"活跃图永不因 revision 缺失而丢"。并列时按
+    id 降序稳定。
+    """
     async with async_session() as session:
-        result = await session.exec(
-            select(Map).where(Map.deleted_at.is_(None)).order_by(Map.id)
+        last_rev = (
+            select(
+                MapRevision.map_id,
+                func.max(MapRevision.created_at).label("last_at"),
+            )
+            .group_by(MapRevision.map_id)
+            .subquery()
         )
-        return list(result.all())
+        sort_key = func.coalesce(last_rev.c.last_at, Map.created_at)
+        result = await session.exec(
+            select(Map, sort_key)
+            .outerjoin(last_rev, last_rev.c.map_id == Map.id)
+            .where(Map.deleted_at.is_(None))
+            .order_by(sort_key.desc(), Map.id.desc())
+        )
+        return [(m, t) for m, t in result.all()]
 
 
 async def get_map(map_id: int) -> Map:

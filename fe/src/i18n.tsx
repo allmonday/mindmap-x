@@ -26,6 +26,7 @@ const zh = {
   'map.deleteThis': '删除此脑图',
   'map.deleteAria': '删除 {title}',
   'map.empty': '还没有脑图，先创建一张。',
+  'map.dateTip': '更新于 {updated} · 创建于 {created}',
   // ── ws 状态 ──
   'ws.sync': '实时同步: {state}',
   'ws.live': '实时',
@@ -313,6 +314,7 @@ const en: Record<I18nKey, string> = {
   'map.deleteThis': 'Delete this map',
   'map.deleteAria': 'Delete {title}',
   'map.empty': 'No maps yet — create one.',
+  'map.dateTip': 'Updated {updated} · Created {created}',
   'ws.sync': 'Live sync: {state}',
   'ws.live': 'Live',
   'ws.connecting': 'Connecting',
