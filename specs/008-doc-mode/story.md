@@ -101,6 +101,25 @@ contenteditable 的时序坑，HEAD 基线同样如此非回归；正确姿势=�
 - **Tree 拖拽已移除**（2026-09-26 用户拍板："docs 内拖拽体验差，就算有也不好用"）：DocTree 退化为纯导航（点选定位 + 折叠收放），首版三区拖拽（pointer events + dwell + 防环 + moveNode 提交链）与 gutter 的 ⋮⋮ 把手整体删除；重排回画布做。gutter 只留 #N（hover/选中显形）
 - **统一视图头部（2026-09-24 收敛改版）**：两模式共用 `.view-head` 实体行——标题区（#id/标题/v版本/面包屑）恒在最左，模式工具组挂标题右侧（Map = 文档模式钮+布局钮+刻度条三件套，Doc = "画布"返回钮），宽度差吸收进右侧 spacer。Map 的标题/工具从画布悬浮（.map-title/.canvas-tools absolute）收进此行——**切换瞬间头部 4 元素实测零位移**（getBoundingClientRect 逐像素对比 4/4 STABLE），只有工具组内容换。头部固定 44px 行高（工具组高度差不传导）；顺带消除了 .doc-head 与 doc-block 标题行的 class 撞名。首版踩坑两则：返回钮放头部右端被 ChatPanel（默认开启）头部遮挡→移左；工具组放标题左侧会把标题横向推挤→标题恒左
 - 联动：两栏点击共用 selectedId；选中变化 60ms 后两栏 scrollIntoView（等展开祖先的新行渲染）
+- **左侧树整栏收展**（2026-10-02）：开关在统一头部（"画布"钮旁，lucide
+  panel-left，active 态显示当前展开）——收起 = 负 margin 滑出（264+1px，
+  内容保留动画顺滑，.doc-mode overflow:hidden 防横向滚动条），文档区占满
+  全宽；localStorage `docTreeOpen` 记忆（docMode 同款惯例），aria-pressed
+
+**mermaid 失败可视化**（2026-10-03，用户报"note 有 mermaid 渲染有问题"）：
+13 种图型宽扫描定案——**渲染管线本身正常**（中文标签/圆形节点/sequence/
+class/state/er/pie/gantt/mindmap/timeline 全 OK），失败均为 mermaid 库自身
+语法约束：`[]` 标签内引号/括号需转义、gitGraph 分支名仅 ASCII。原降级是
+裸原文（用户无从排查）——Mermaid.tsx 失败态改为三段：常见坑提示条（i18n
+双语）+ mermaid 具体报错（行号列号）+ 等宽原文（可复制修改）。ChatPanel
+同管线共享此改进。
+
+**mermaid 点击大图**（2026-10-04）：块宽 820px 内大图看不清细节——缩略图
+zoom-in 光标可点（键盘 Enter/Space 亦可），portal 全屏遮罩按 viewBox 矢量
+等比放大至 min(85vw,1600px)（超限容器滚动）；Esc（capture 优先于编辑器
+全局 Esc 链，防连锁退出）或点遮罩关闭。CSS 踩坑两则：`width:auto` 会覆盖
+svg 原始尺寸属性致 0×0；mermaid 给 svg 内联 `max-width:Npx`（内联优先级
+高于 CSS），需 `!important` 覆盖。
 - 快捷键：画布全局键 `if (docMode) return` 全禁（Esc 浮层链除外）；DocMode 自挂 F2（编辑标题）/ Space（折叠）/ ↑↓（可见行序列移动）
 - Esc 不切模式（持久偏好防误触，头部按钮切换）
 - 不做虚拟化：collapsed 裁剪天然限长；>500 可见块再评估

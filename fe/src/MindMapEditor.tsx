@@ -865,6 +865,14 @@ const MapIcon = () => (
   </svg>
 )
 
+// 左侧导航树开关（lucide panel-left：面板 + 左侧竖栏）
+const PanelLeftIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M9 3v18" />
+  </svg>
+)
+
 // 返回列表（lucide house：房子线稿——"回家/回列表"语义，替代原 ☰ 字符
 // 图标：字形留白随平台字体回退漂移，与 FoldPlusIcon 同一教训）
 const HomeIcon = () => (
@@ -1033,6 +1041,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   // localStorage 记忆（layoutMode 同款惯例）。会话级视图态（focusId 等）不动
   // ——文档模式无视 focusId，切回画布恢复原聚焦视图
   const [docMode, setDocMode] = useState(() => localStorage.getItem('docMode') === 'true')
+  // 文档模式左侧导航树的展开/收起（2026-10-02）：收起后文档区占满全宽。
+  // localStorage 记忆（docMode 同款惯例），默认展开
+  const [docTreeOpen, setDocTreeOpen] = useState(() => localStorage.getItem('docTreeOpen') !== 'false')
+  useEffect(() => {
+    localStorage.setItem('docTreeOpen', String(docTreeOpen))
+  }, [docTreeOpen])
   useEffect(() => {
     localStorage.setItem('docMode', String(docMode))
   }, [docMode])
@@ -2371,10 +2385,22 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             )}
           </div>
         {docMode ? (
-          <button className="btn sm doc-back" onClick={toggleDocMode} title={t('doc.backToMap')} aria-label={t('doc.backToMap')}>
-            <MapIcon />
-            {t('doc.backToMap')}
-          </button>
+          <>
+            {/* 左侧导航树展开/收起：IDE 侧栏同款——收起后文档区占满全宽 */}
+            <button
+              className={`btn${docTreeOpen ? ' active' : ''}`}
+              onClick={() => setDocTreeOpen((v) => !v)}
+              title={t('doc.treeToggleTitle')}
+              aria-label={t('doc.treeToggleAria')}
+              aria-pressed={docTreeOpen}
+            >
+              <PanelLeftIcon />
+            </button>
+            <button className="btn sm doc-back" onClick={toggleDocMode} title={t('doc.backToMap')} aria-label={t('doc.backToMap')}>
+              <MapIcon />
+              {t('doc.backToMap')}
+            </button>
+          </>
         ) : (
           <div className="view-tools">
             {/* 文档模式切换（specs/008）：与布局形态切换并列的视图形态开关。
@@ -2439,6 +2465,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           <DocMode
             detail={detail}
             selectedId={selectedId}
+            treeOpen={docTreeOpen}
             onSelect={setSelectedId}
             onToggleFold={toggleDocFold}
             onUpdateNode={updateNode}

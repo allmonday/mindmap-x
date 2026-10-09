@@ -1585,7 +1585,7 @@ button.id-badge {
    chrome 侧 token（--bg/--bg-side/--hairline/--accent）——文档区是内容区，
    不用画布的 --canvas-*。block 视觉边界 = 左边框 + hover/选中底色 + 缩进，
    深度靠 margin-left 递进（--doc-depth 由组件内联注入，8 封顶防深层溢出）。 */
-.doc-mode { flex: 1; display: flex; min-width: 0; min-height: 0; background: var(--bg); }
+.doc-mode { flex: 1; display: flex; min-width: 0; min-height: 0; background: var(--bg); overflow: hidden; /* 树收起滑出时不产生横向滚动条 */ }
 .doc-back { display: inline-flex; align-items: center; gap: 5px; }
 
 /* ── 左：导航树 ── */
@@ -1593,7 +1593,10 @@ button.id-badge {
   width: 264px; flex: none; overflow-y: auto; overscroll-behavior: contain;
   background: var(--bg-side); border-right: 1px solid var(--hairline);
   padding: 8px 6px; box-sizing: border-box;
+  /* 整栏收起（开关在统一头部）：负 margin 滑出——内容保留、动画顺滑 */
+  transition: margin-left 0.18s ease;
 }
+.doc-tree.collapsed { margin-left: -265px; /* 264 + 1px border */ }
 .doc-row {
   display: flex; align-items: center; gap: 4px; height: 28px;
   padding-left: calc(var(--doc-depth) * 14px + 6px); padding-right: 6px;
@@ -1690,3 +1693,57 @@ button.id-badge {
 .doc-note-vditor { height: 320px; margin-top: 4px; border-radius: var(--radius); overflow: hidden; }
 .doc-note-vditor .vditor { border-radius: var(--radius); }
 .doc-note-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-3); }
+
+/* mermaid 渲染失败降级（2026-10-03）：错误信息 + 原文——裸原文让用户无从
+   排查语法问题；红色淡底提示 + 等宽原文可复制修改 */
+.mermaid-failed {
+  margin: 8px 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.mermaid-failed-tip {
+  padding: 5px 10px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+}
+.mermaid-failed-msg {
+  padding: 4px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-family: ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.mermaid-failed-src {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--code-bg);
+  color: #f1f1ef;
+  font-size: 12px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+/* mermaid 点击大图（2026-10-04）：块内缩略可点（zoom-in 光标），portal
+   全屏遮罩内原生尺寸展示（解除 max-width:100% 约束；超出视口滚动看细节） */
+.mermaid-svg { cursor: zoom-in; }
+.mermaid-zoom {
+  position: fixed; inset: 0; z-index: 90;
+  background: color-mix(in srgb, #000 72%, transparent);
+  display: flex; align-items: center; justify-content: center;
+  cursor: zoom-out;
+}
+.mermaid-zoom-body {
+  max-width: 92vw; max-height: 90vh; overflow: auto;
+  background: var(--bg); border-radius: 8px; padding: 24px;
+}
+.mermaid-zoom-body svg {
+  /* 矢量等比放大到接近视口（viewBox 保真），超宽超高在容器内滚动 */
+  width: min(85vw, 1600px);
+  max-height: 85vh;
+  /* mermaid 给 svg 内联 style="max-width:Npx"（内联优先级高于 CSS），！important 覆盖 */
+  max-width: min(85vw, 1600px) !important;
+}

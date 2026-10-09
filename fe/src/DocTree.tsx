@@ -11,6 +11,7 @@ import type { DocRow } from './docRows'
 interface Props {
   rows: DocRow[]
   selectedId: number | null
+  collapsed?: boolean // 整栏收起（负 margin 滑出，开关在统一头部）
   onSelect: (id: number) => void
   onToggleFold: (id: number) => void
 }
@@ -77,10 +78,15 @@ const TreeRow = memo(
     a.onToggleFold === b.onToggleFold,
 )
 
-export function DocTree({ rows, selectedId, onSelect, onToggleFold }: Props) {
+export function DocTree({ rows, selectedId, collapsed = false, onSelect, onToggleFold }: Props) {
   const { t } = useI18n()
   return (
-    <div className="doc-tree" role="tree" aria-label={t('doc.treeAria')}>
+    <div
+      className={`doc-tree${collapsed ? ' collapsed' : ''}`}
+      role="tree"
+      aria-label={t('doc.treeAria')}
+      aria-hidden={collapsed}
+    >
       {rows.map((row) => (
         <TreeRow
           key={row.node.display_id}

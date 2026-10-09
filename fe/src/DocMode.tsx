@@ -18,12 +18,13 @@ import type { MapDetail } from './types'
 interface Props {
   detail: MapDetail
   selectedId: number | null // 复用编辑器选中态（Ctrl+P goto 等共用）
+  treeOpen: boolean // 左侧导航树展开/收起（开关在统一头部，localStorage 记忆）
   onSelect: (id: number | null) => void
   onToggleFold: (id: number) => void
   onUpdateNode: (id: number, content?: string, note?: string) => Promise<boolean>
 }
 
-export function DocMode({ detail, selectedId, onSelect, onToggleFold, onUpdateNode }: Props) {
+export function DocMode({ detail, selectedId, treeOpen, onSelect, onToggleFold, onUpdateNode }: Props) {
   const { t } = useI18n()
   // 可见行序列：文档纵向顺序 = Tree 行序，两栏共用同一份（折叠态驱动裁剪）
   const rows = useMemo(() => buildDocRows(detail), [detail])
@@ -74,11 +75,14 @@ export function DocMode({ detail, selectedId, onSelect, onToggleFold, onUpdateNo
 
   return (
     <div className="doc-mode" aria-label={t('doc.treeAria')}>
+      {/* 收起 = 负 margin 滑出（内容保留，动画顺滑；.doc-mode overflow:hidden
+          防横向滚动条），开关在统一头部 */}
       <DocTree
         rows={rows}
         selectedId={selectedId}
         onSelect={onSelect}
         onToggleFold={onToggleFold}
+        collapsed={!treeOpen}
       />
       <DocView
         rows={rows}

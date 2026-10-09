@@ -279,6 +279,10 @@ const zh = {
   'doc.noteEmpty': '双击添加正文…',
   'doc.viewAria': '文档正文',
   'doc.treeAria': '文档导航树',
+  'md.mermaidFailed': 'mermaid 渲染失败（常见：标签内引号/括号需转义、gitGraph 分支名仅支持英文数字）',
+  'md.mermaidZoom': '点击查看大图（Esc 关闭）',
+  'doc.treeToggleTitle': '展开 / 收起左侧导航树',
+  'doc.treeToggleAria': '切换左侧导航树',
   // ── 交互指南：文档模式小节 ──
   'help.secDoc': '文档模式',
   'help.docSwitch': '文档模式开关（画布左上工具列）',
@@ -551,6 +555,10 @@ const en: Record<I18nKey, string> = {
   'doc.noteEmpty': 'Double-click to add body text…',
   'doc.viewAria': 'Document body',
   'doc.treeAria': 'Document navigation tree',
+  'md.mermaidFailed': 'mermaid render failed (common: quotes/parens in labels need escaping; gitGraph branch names are ASCII-only)',
+  'md.mermaidZoom': 'Click to enlarge (Esc to close)',
+  'doc.treeToggleTitle': 'Show / hide the left navigation tree',
+  'doc.treeToggleAria': 'Toggle the left navigation tree',
   // ── Help: doc mode section ──
   'help.secDoc': 'Doc mode',
   'help.docSwitch': 'Doc mode toggle (canvas tools, top-left)',
