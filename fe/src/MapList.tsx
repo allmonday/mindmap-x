@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { api } from './api'
 import { fmtDate, useI18n } from './i18n'
 import { LangSwitch } from './LangSwitch'
@@ -19,11 +19,21 @@ const PlusIcon = () => (
   </svg>
 )
 
+// 视图模式：卡片（海报感）/ 表格（信息密度优先——扫读效率高）
+type ViewMode = 'card' | 'table'
+
 export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
   const { t, locale } = useI18n()
   const [maps, setMaps] = useState<MapSummary[] | null>(null)
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // localStorage 记忆手动选择（chatOpen 同款惰性初始化），默认卡片
+  const [view, setView] = useState<ViewMode>(() =>
+    localStorage.getItem('mapListView') === 'table' ? 'table' : 'card',
+  )
+  useEffect(() => {
+    localStorage.setItem('mapListView', view)
+  }, [view])
   // 新建卡片两态：静止（虚线 ＋ 卡）↔ 输入中（卡内 input，Enter 才创建）
   const [creatingCard, setCreatingCard] = useState(false)
   const [creatingTitle, setCreatingTitle] = useState('')
@@ -55,6 +65,18 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
   const cancelCreate = () => {
     setCreatingCard(false)
     setCreatingTitle('')
+  }
+
+  // 新建输入的键盘/失焦行为——卡片模式与表格模式的输入行共用同一状态机
+  const onNewInputKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      void create()
+    }
+    if (e.key === 'Escape') cancelCreate()
+  }
+  const onNewInputBlur = () => {
+    if (!creatingTitle.trim()) cancelCreate()
   }
 
   const askDelete = (id: number) => {
@@ -120,8 +142,113 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
           placeholder={t('map.searchPlaceholder')}
           onChange={(e) => setQuery(e.target.value)}
         />
+        {/* 卡片/表格视图切换：搜索旁（作用于同一份列表数据） */}
+        <div className="view-switch" role="group" aria-label={t('map.viewAria')}>
+          <button
+            type="button"
+            className={`btn sm${view === 'card' ? ' active' : ''}`}
+            aria-pressed={view === 'card'}
+            onClick={() => setView('card')}
+          >
+            {t('map.viewCard')}
+          </button>
+          <button
+            type="button"
+            className={`btn sm${view === 'table' ? ' active' : ''}`}
+            aria-pressed={view === 'table'}
+            onClick={() => setView('table')}
+          >
+            {t('map.viewTable')}
+          </button>
+        </div>
       </div>
       {error && <div className="toast">{error}</div>}
+      {view === 'table' ? (
+        <table className="maps-table">
+          <colgroup>
+            {/* fixed 布局：定宽列 + 标题列吃剩余宽（ellipsis 才可靠） */}
+            <col style={{ width: 44 }} />
+            <col />
+            <col style={{ width: 52 }} />
+            <col style={{ width: 116 }} />
+            <col style={{ width: 116 }} />
+            <col style={{ width: 108 }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>{t('map.colTitle')}</th>
+              <th>v</th>
+              {/* ↓ 标示当前排序：最近更新从新到旧（服务端排序，暂不可点换向） */}
+              <th>
+                {t('map.colUpdated')} <span className="sort-mark">↓</span>
+              </th>
+              <th>{t('map.colCreated')}</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {/* 首行恒为新建（搜索中也保留，与卡片模式一致） */}
+            <tr className="new-row">
+              <td colSpan={6}>
+                {creatingCard ? (
+                  <input
+                    autoFocus
+                    className="new-map-input"
+                    value={creatingTitle}
+                    placeholder={t('map.placeholder')}
+                    disabled={creating}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setCreatingTitle(e.target.value)}
+                    onKeyDown={onNewInputKey}
+                    onBlur={onNewInputBlur}
+                  />
+                ) : (
+                  <button className="new-map-btn" onClick={() => setCreatingCard(true)}>
+                    <PlusIcon /> {t('map.newCard')}
+                  </button>
+                )}
+              </td>
+            </tr>
+            {shown.map((m) => {
+              const updated = fmtDate(m.updated_at ?? m.created_at, locale)
+              const created = fmtDate(m.created_at, locale)
+              return (
+                <tr key={m.id} onClick={() => confirmId === null && onOpen(m.id)}>
+                  <td className="num">#{m.id}</td>
+                  <td className="t-title" title={m.title}>
+                    {m.title}
+                  </td>
+                  <td className="num">v{m.version}</td>
+                  <td className="date updated" title={t('map.dateTip', { updated, created })}>
+                    {updated}
+                  </td>
+                  <td className="date">{created}</td>
+                  <td className="t-op">
+                    {confirmId === m.id ? (
+                      <button
+                        className="row-del confirm"
+                        onClick={(e) => { e.stopPropagation(); void del(m.id) }}
+                      >
+                        {t('map.deleteConfirm')}
+                      </button>
+                    ) : (
+                      <button
+                        className="row-del"
+                        title={t('map.deleteThis')}
+                        aria-label={t('map.deleteAria', { title: m.title })}
+                        onClick={(e) => { e.stopPropagation(); askDelete(m.id) }}
+                      >
+                        <TrashIcon />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      ) : (
       <div className="cards">
         {/* 第一格恒为新建卡片（搜索中也保留，随时可建） */}
         {creatingCard ? (
@@ -133,16 +260,8 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
               disabled={creating}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => setCreatingTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  void create()
-                }
-                if (e.key === 'Escape') cancelCreate()
-              }}
-              onBlur={() => {
-                if (!creatingTitle.trim()) cancelCreate()
-              }}
+              onKeyDown={onNewInputKey}
+              onBlur={onNewInputBlur}
             />
           </div>
         ) : (
@@ -185,8 +304,10 @@ export function MapList({ onOpen }: { onOpen: (mapId: number) => void }) {
           </div>
           )
         })}
-        {maps != null && maps.length === 0 && <p>{t('map.empty')}</p>}
       </div>
+      )}
+      {/* 空态两种视图共用 */}
+      {maps != null && maps.length === 0 && <p>{t('map.empty')}</p>}
     </div>
   )
 }

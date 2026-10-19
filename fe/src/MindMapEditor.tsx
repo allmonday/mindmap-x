@@ -2386,9 +2386,10 @@ export function MindMapEditor({ mapId, onBack }: Props) {
           </div>
         {docMode ? (
           <>
-            {/* 左侧导航树展开/收起：IDE 侧栏同款——收起后文档区占满全宽 */}
+            {/* 左侧导航树展开/收起：IDE 侧栏同款——收起后文档区占满全宽。
+                btn sm 与"画布"钮同基类（view-head > .btn 定高兜底等高） */}
             <button
-              className={`btn${docTreeOpen ? ' active' : ''}`}
+              className={`btn sm${docTreeOpen ? ' active' : ''}`}
               onClick={() => setDocTreeOpen((v) => !v)}
               title={t('doc.treeToggleTitle')}
               aria-label={t('doc.treeToggleAria')}

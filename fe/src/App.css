@@ -537,29 +537,32 @@ body.chat-resizing {
 /* 语言/主题切换：悬浮于列右上角，与 h1 同行（flex 容器收纳两组 pill） */
 .map-list .list-actions { position: absolute; top: 6px; right: 20px; display: flex; gap: 8px; }
 
-/* ── 拼合 pill 组（LangSwitch / ThemeSwitch 共用，复用 .btn 体系）── */
-.lang-switch, .theme-switch { display: inline-flex; }
+/* ── 拼合 pill 组（LangSwitch / ThemeSwitch / 列表视图切换共用，复用 .btn 体系）── */
+.lang-switch, .theme-switch, .view-switch { display: inline-flex; }
 /* 与相邻的 .btn.icon 同高：图标按钮的 svg 行内基线空隙实测撑到 33px，
    显式对齐之（6px padding + 16px 行高本只有 30px） */
-.lang-switch .btn, .theme-switch .btn { padding: 6px 9px; font-size: 12px; line-height: 16px; height: 33px; display: inline-flex; align-items: center; justify-content: center; border-radius: 0; }
+.lang-switch .btn, .theme-switch .btn, .view-switch .btn { padding: 6px 9px; font-size: 12px; line-height: 16px; height: 33px; display: inline-flex; align-items: center; justify-content: center; border-radius: 0; }
 /* 圆角只归两端：中间段无圆角（.btn + .btn 只去左框，右圆角交 .btn:last-child
    ——曾用 + 通配右圆角，双段 LangSwitch 侥幸正确，三段 ThemeSwitch 的中间
    段（dark）被误赋右圆角与末段相接处内凹，2026-09-09 修正，同 fold-steps） */
-.lang-switch .btn:first-child, .theme-switch .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
-.lang-switch .btn + .btn, .theme-switch .btn + .btn { border-left: none; }
-.lang-switch .btn:last-child, .theme-switch .btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
-.lang-switch .btn.active, .theme-switch .btn.active { background: var(--bg-hover); font-weight: 600; }
+.lang-switch .btn:first-child, .theme-switch .btn:first-child, .view-switch .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.lang-switch .btn + .btn, .theme-switch .btn + .btn, .view-switch .btn + .btn { border-left: none; }
+.lang-switch .btn:last-child, .theme-switch .btn:last-child, .view-switch .btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.lang-switch .btn.active, .theme-switch .btn.active, .view-switch .btn.active { background: var(--bg-hover); font-weight: 600; }
 
 
-.search-row { margin-bottom: 24px; }
+/* 搜索行 = 输入框 + 视图切换（同一份列表数据的两种看法，放一起） */
+.search-row { margin-bottom: 24px; display: flex; gap: 8px; align-items: center; }
 .search-row input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   border: 1px solid var(--hairline-2);
   border-radius: var(--radius);
   padding: 8px 12px;
   font: inherit;
   background: var(--bg);
 }
+.search-row .view-switch { flex-shrink: 0; }
 .search-row input:focus {
   outline: none;
   border-color: var(--accent);
@@ -670,6 +673,85 @@ body.chat-resizing {
   padding: 4px 8px;
 }
 .card-del.confirm:hover { background: var(--danger-hover); }
+
+/* ── 列表页表格视图：信息密度优先（卡片模式图多时扫读效率差）── */
+/* fixed 布局：colgroup 定宽列 + 标题列吃剩余宽——table ellipsis 只有在
+   fixed 下才可靠（auto 布局按内容撑开，nowrap 标题会顶破表格） */
+.maps-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.maps-table th {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--hairline-2);
+  white-space: nowrap;
+}
+.maps-table td { padding: 7px 10px; border-bottom: 1px solid var(--hairline); }
+/* 排序标示：更新列的 ↓（服务端按最近更新从新到旧，暂不可点换向） */
+.maps-table .sort-mark { color: var(--ink-3); font-weight: 400; }
+/* 数据行可点开（.new-row 除外）；hover 与卡片同款弱高亮 */
+.maps-table tbody tr:not(.new-row) { cursor: pointer; transition: background 0.1s; }
+.maps-table tbody tr:not(.new-row):hover { background: var(--bg-hover); }
+.maps-table .num { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+.maps-table td.t-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 更新时间列（排序依据）比创建时间列稍强一档 */
+.maps-table td.date { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.maps-table td.updated { color: var(--ink-2); }
+/* 新建行：跨全列的虚线按钮 ↔ 行内输入（与卡片模式同一状态机） */
+.maps-table tr.new-row td { padding: 12px 10px 14px; }
+.maps-table .new-map-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px dashed var(--hairline-2);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+.maps-table .new-map-btn:hover { border-color: var(--ink-3); color: var(--ink-2); background: var(--bg-hover); }
+.maps-table .new-map-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--bg);
+}
+.maps-table .new-map-input:focus { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent); }
+.maps-table .new-map-input::placeholder { color: var(--ink-3); font-weight: 400; }
+/* 行删除：hover 显示 + 两步确认（与卡片 .card-del 同款视觉） */
+.maps-table .row-del {
+  visibility: hidden;
+  display: inline-flex;
+  border: none;
+  background: none;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.maps-table tr:hover .row-del { visibility: visible; }
+.maps-table .row-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.maps-table .row-del.confirm {
+  visibility: visible;
+  background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.maps-table .row-del.confirm:hover { background: var(--danger-hover); }
 
 /* ── 编辑器 ───────────────────────────────────────────── */
 .editor { display: flex; flex-direction: column; height: 100vh; }
@@ -980,6 +1062,9 @@ button.crumb:hover { color: var(--ink); }
   border-bottom: 1px solid var(--hairline);
   background: var(--bg);
 }
+/* Doc 模式工具组的两个钮（树开关/画布，均为 .btn 直予子）：定高等高——
+   图标 16px 与文字行高 ~18px 天然差 2px，不定高必有残差 */
+.view-head > .btn { height: 28px; }
 /* 模式工具组（标题区右侧）：Map = 视图工具（文档模式/布局形态/层级刻度条），
    Doc = 切回画布。宽度差异吸收进右侧 spacer，不推挤标题区 */
 .view-tools {
@@ -1660,6 +1745,19 @@ button.id-badge {
 .doc-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .doc-head-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .doc-head .doc-id { flex: none; }
+/* 标题行右端折叠钮（2026-10-15 拍板）：margin-left:auto 推到文字列右缘；
+   钮本体复用 .doc-fold。文档块版加大并加方框（可见性好、易点），
+   树行版维持 16px 素钮；baseline 行内小按钮会错位，self-center 对齐 */
+.doc-head .doc-fold {
+  margin-left: auto;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 5px;
+  background: var(--bg);
+}
+.doc-head .doc-fold svg { width: 13px; height: 13px; }
 /* 标题阶梯（限定 .doc-head：字号只作用于标题行——headClass 同时挂在块上
    供间距规则用）：heading 收敛 3 档（Notion 同款——更多档位人眼分不出，
    信号被稀释），depth≥4 走 .doc-h-deep 小节段落 */

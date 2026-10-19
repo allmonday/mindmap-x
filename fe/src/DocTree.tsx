@@ -16,8 +16,10 @@ interface Props {
   onToggleFold: (id: number) => void
 }
 
-// 折叠钮：与 DocView 的同款（树行版尺寸更小，随 .doc-row 上下文缩放）
-function TreeFoldBtn({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+// 折叠钮：树行与文档块标题行共用（DocView import 复用；样式 .doc-fold
+// 在 App.css 注释同款声明），箭头朝向表开合。
+// 三个事件都 stopPropagation：连点不冒泡成标题行的双击编辑（doc 块）
+export function TreeFoldBtn({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const { t } = useI18n()
   return (
     <button
@@ -30,6 +32,7 @@ function TreeFoldBtn({ open, onToggle }: { open: boolean; onToggle: () => void }
         e.stopPropagation()
         onToggle()
       }}
+      onDoubleClick={(e) => e.stopPropagation()}
     >
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {open ? <path d="m6 9 6 6 6-6" /> : <path d="m9 6 6 6-6 6" />}

@@ -16,6 +16,7 @@ import { Suspense, lazy, memo, useEffect, useMemo, useRef } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useI18n } from './i18n'
+import { TreeFoldBtn } from './DocTree'
 import { mdComponents } from './Mermaid'
 import { headingLevel, type DocRow } from './docRows'
 
@@ -33,6 +34,7 @@ interface Props {
   editing: DocEditTarget | null // 就地编辑目标（至多一个；null = 无）
   mapId: number // 块内嵌 vditor 的图片上传分目录（var/uploads/<map_id>/）
   onSelect: (id: number) => void
+  onToggleFold: (id: number) => void
   // 开启就地编辑（target）/ 收起编辑态（null）
   onEdit: (target: DocEditTarget | null) => void
   // 就地编辑保存（content/note 单值；另一键 undefined 被 api 层丢弃 = 不动）
@@ -224,7 +226,9 @@ function DocNoteEditor({ initial, mapId, uploadErrorText, onDone, onSave }: Note
 }
 
 // ── 单个文档块 ─────────────────────────────────────────────────────────
-// 收拢（折叠）不在文档块上提供——由左侧 Tree 统一承担（2026-09-26 用户拍板）
+// 折叠钮：有子节点的块在标题行右端给展开/收起（2026-10-15 用户拍板——阅读
+// 现场直接收拢子树，视线不跳左栏；取代 2026-09-26"文档块不做折叠"的旧拍板，
+// 左侧 Tree 的折叠交互保留）
 interface BlockProps {
   row: DocRow
   selected: boolean
@@ -233,14 +237,16 @@ interface BlockProps {
   uploadErrorText: string
   langLabel: { emptyNote: string }
   onSelect: (id: number) => void
+  onToggleFold: (id: number) => void
   onEdit: (target: DocEditTarget | null) => void
   onUpdateNode: (id: number, content?: string, note?: string) => Promise<boolean>
 }
 
 // detail 每次全量重拉都换对象身份，必须字段级比较（nodesSig 同精神）；
-// 回调由 DocMode 层 useCallback 稳定 + 本层透传，引用不等才视为变化
+// 回调由 DocMode 层 useCallback 稳定 + 本层透传，引用不等才视为变化。
+// collapsed 必须参与比较——折叠态变化是本块 chevron 朝向的数据源
 const DocBlock = memo(
-  function DocBlock({ row, selected, editingField, mapId, uploadErrorText, langLabel, onSelect, onEdit, onUpdateNode }: BlockProps) {
+  function DocBlock({ row, selected, editingField, mapId, uploadErrorText, langLabel, onSelect, onToggleFold, onEdit, onUpdateNode }: BlockProps) {
     const { node, depth } = row
     const hl = headingLevel(depth)
     const isRoot = depth === 0
@@ -262,6 +268,9 @@ const DocBlock = memo(
         }}
       >
         <span className="doc-head-text">{node.content}</span>
+        {row.hasChildren && (
+          <TreeFoldBtn open={!node.collapsed} onToggle={() => onToggleFold(node.display_id)} />
+        )}
       </div>
     )
 
@@ -322,17 +331,20 @@ const DocBlock = memo(
     a.row.node.display_id === b.row.node.display_id &&
     a.row.node.content === b.row.node.content &&
     a.row.node.note === b.row.node.note &&
+    a.row.node.collapsed === b.row.node.collapsed &&
+    a.row.hasChildren === b.row.hasChildren &&
     a.row.depth === b.row.depth &&
     a.selected === b.selected &&
     a.editingField === b.editingField &&
     a.langLabel === b.langLabel &&
     a.onSelect === b.onSelect &&
+    a.onToggleFold === b.onToggleFold &&
     a.onEdit === b.onEdit &&
     a.onUpdateNode === b.onUpdateNode,
 )
 
 // ── 滚动容器 ───────────────────────────────────────────────────────────
-export function DocView({ rows, selectedId, editing, mapId, onSelect, onEdit, onUpdateNode }: Props) {
+export function DocView({ rows, selectedId, editing, mapId, onSelect, onToggleFold, onEdit, onUpdateNode }: Props) {
   const { t, lang } = useI18n()
   // 文案对象整包引用（memo 比较 langLabel === langLabel）：仅切语言换新对象
   const langLabel = useMemo(
@@ -353,6 +365,7 @@ export function DocView({ rows, selectedId, editing, mapId, onSelect, onEdit, on
             uploadErrorText={langLabel.uploadErrorText}
             langLabel={langLabel}
             onSelect={onSelect}
+            onToggleFold={onToggleFold}
             onEdit={onEdit}
             onUpdateNode={onUpdateNode}
           />

@@ -90,6 +90,7 @@ export function DocMode({ detail, selectedId, treeOpen, onSelect, onToggleFold, 
         editing={editingLive}
         mapId={detail.id /* 块内嵌 vditor 的上传分目录 */}
         onSelect={onSelect}
+        onToggleFold={onToggleFold}
         onEdit={handleEdit}
         onUpdateNode={onUpdateNode}
       />
