@@ -44,3 +44,9 @@ src/static/
 
 # fe/ 下误跑后端会产生运行时产物（var/ 数据库、上传目录）——根目录的 var/* 不覆盖子目录
 fe/var/
+
+# 懒猫微服打包产物（lzc-cli 构建；源配置 lzc-*.yml / images/ 进库）
+*.lpk
+.lzc-cli-cache/
+# lzc-content/ 由 buildscript 每次打包 rm -rf 后从 src/static 拷入——纯构建产物
+lzc-content/

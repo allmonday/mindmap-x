@@ -1,0 +1,34 @@
+# release 构建配置（lzc-cli project release 默认用此）
+# 对齐 child-calendar 的写法（https://developer.lazycat.cloud/getting-started/dev-workflow.html）
+
+manifest: ./lzc-manifest.yml
+
+# lpk 输出目录
+pkgout: ./
+
+# 打包内容目录（前端静态资源）
+contentdir: lzc-content
+
+# 应用图标（png 1:1 <200KB；源文件 lzc-icon.svg）
+icon: ./lzc-icon.png
+
+# 构建脚本：先跑前端构建（vite outDir=../src/static），再拷进 content 目录
+buildscript: |
+  set -e
+  cd fe
+  npm install --registry=https://registry.npmmirror.com
+  npm run build
+  cd ..
+  rm -rf lzc-content
+  mkdir -p lzc-content/web
+  cp -r src/static/* lzc-content/web/
+
+# 后端镜像：embed image 模式，本地 Dockerfile 构建
+# builder: local —— 盒子端 devtools/远程 build-pack 不可用（fuse 缺失 +
+# 开发者工具唤醒超时，2026-08-19 / 2026-10-02，child-calendar 同因）。
+# 本地 docker 构建后 embed 进 lpk；依赖本地 docker daemon。
+images:
+  backend:
+    dockerfile: ./images/Dockerfile
+    context: ./
+    builder: local

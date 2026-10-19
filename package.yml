@@ -1,0 +1,13 @@
+package: local.mindmap
+version: 0.0.8
+name: MindMap X
+description: 人 + Agent 实时协同的思维导图。浏览器直接编辑，Agent 经 MCP 读写同一棵树，变更实时广播；版本时间线、整树回滚、文档模式双视图。
+author: local
+license: MIT
+locales:
+  zh-CN:
+    name: MindMap X
+    description: 人 + Agent 实时协同的思维导图。浏览器直接编辑，Agent 经 MCP 读写同一棵树，变更实时广播；版本时间线、整树回滚、文档模式双视图。
+permissions:
+  required:
+    - net.internet

@@ -1,10 +1,19 @@
 # 压缩 build context + 防本地产物/密钥混入镜像
 .git
 .venv
+# var/ —— 本机真实数据（DB/上传/会话），严禁打进镜像
 var/
-fe/node_modules
-src/static
+# fe/ —— 前端由宿主 buildscript 构建；node_modules 尤其大
+fe/
+# src/static —— 前端构建产物，由 lzc 内容目录承载（buildscript 拷贝）
+src/static/
+# .env —— Provider 密钥，绝不进镜像
 .env
 tests/
 scripts/
+specs/
 docs/
+lzc-content/
+*.lpk
+__pycache__/
+*.pyc

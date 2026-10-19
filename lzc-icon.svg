@@ -1,0 +1,21 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- MindMap X 应用图标：人（白）+ Agent（琥珀）围绕同一棵树协作 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1E2C4A"/>
+      <stop offset="1" stop-color="#2C4E82"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" rx="118" fill="url(#bg)"/>
+  <!-- 分支连线 -->
+  <path d="M 238 256 C 296 246, 336 188, 390 138" stroke="#8FA9CC" stroke-width="13" fill="none" stroke-linecap="round"/>
+  <path d="M 238 256 C 306 258, 354 260, 410 262" stroke="#8FA9CC" stroke-width="13" fill="none" stroke-linecap="round"/>
+  <path d="M 238 256 C 296 272, 326 344, 378 392" stroke="#8FA9CC" stroke-width="13" fill="none" stroke-linecap="round"/>
+  <!-- 中央节点（人） -->
+  <circle cx="238" cy="256" r="50" fill="#FFFFFF"/>
+  <circle cx="238" cy="256" r="14" fill="#2C4E82"/>
+  <!-- 分支节点：上（白）右（Agent 琥珀）下（白） -->
+  <circle cx="390" cy="138" r="34" fill="#FFFFFF" opacity="0.92"/>
+  <circle cx="410" cy="262" r="41" fill="#F5A623"/>
+  <circle cx="378" cy="392" r="29" fill="#FFFFFF" opacity="0.85"/>
+</svg>

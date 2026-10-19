@@ -1,0 +1,22 @@
+# dev 构建覆盖（lzc-cli project deploy 默认用此）
+# 目标：在盒子上安装一个与正式版并存的完整 dev 实例：
+# - package 加 .dev 后缀，保证 dev 不覆盖正式包
+# - 显示名加 DEV 后缀（package_override 是浅合并，name 与 locales.zh-CN.name 都要改）
+# - contentdir 不写 → 继承 lzc-build.yml，完整打包前端静态资源，
+#   dev 实例独立可跑
+# - subdomain 仍是 mindmap，盒子会自动给 dev 加 "1" 后缀
+package_override:
+  package: local.mindmap.dev
+  name: MindMap X DEV
+  locales:
+    zh-CN:
+      name: MindMap X DEV
+      description: 【DEV 预览】人 + Agent 实时协同的思维导图。
+
+# 镜像本地构建（盒子端 fuse 环境损坏，同 lzc-build.yml 注释）。
+# 注意 mergeBuildOptions 是浅合并，这里必须写全 images 字段。
+images:
+  backend:
+    dockerfile: ./images/Dockerfile
+    context: ./
+    builder: local

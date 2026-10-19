@@ -1,0 +1,35 @@
+# 运行时清单：前端静态 + 后端容器
+# lzcinit 的 routes 默认剥掉 URL 前缀再转发，后端 API 路径含前缀语义
+# （/api/… /uploads/<map_id>/… /ws/<map_id>），必须 upstreams +
+# disable_trim_location 保留前缀。
+# 文档：https://developer.lazycat.cloud/advanced-route.html
+application:
+  subdomain: mindmap
+  routes:
+    # 前端静态（兜底；/ 无前缀剥除问题）
+    - /=file:///lzcapp/pkg/content/web
+  upstreams:
+    # REST API（nexusx UseCase router）
+    - location: /api/
+      backend: http://backend:8000
+      disable_trim_location: true
+    # 图片上传（按 map 分目录，前端全相对路径）
+    - location: /uploads/
+      backend: http://backend:8000
+      disable_trim_location: true
+    # MCP（Agent 接入；stateful 会话，POST/GET 双通道）
+    - location: /mcp/
+      backend: http://backend:8000
+      disable_trim_location: true
+    # Voyager schema 浏览器
+    - location: /voyager
+      backend: http://backend:8000
+      disable_trim_location: true
+    # WebSocket 实时同步（断线自动降级 version 轮询）
+    - location: /ws/
+      backend: http://backend:8000
+      disable_trim_location: true
+
+services:
+  backend:
+    image: embed:backend
