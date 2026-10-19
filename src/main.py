@@ -76,11 +76,29 @@ use_case_config = UseCaseAppConfig(
 
 # ── MCP server（必须在 lifespan 定义之前创建 http_app） ───────────────
 
+# confirm_mutations：mutation 经 MCP 执行前须人类确认（SEP-2322 guard 模式，
+# nexusx AI mutation safety contract 层验证）。仅拦声明了 elicitation 能力的
+# 客户端（Claude Code 等）；页内 Agent（chat.py，空 capabilities）不受影响。
+# instructions：initialize 握手携带的 Agent 使用指南（整会话常驻，≤120 tokens，
+# 域地图/组合规则/写通道/协议要点）——fastapi-gql-mcp 写法五条。
 mcp = create_use_case_graphql_mcp_server(
     apps=[use_case_config],
     name="Agent MindMap MCP",
+    confirm_mutations=True,
+    instructions=(
+        "Human + Agent collaborate on one shared mind-map tree. "
+        "Read the whole tree via get_tree (indented outline with [id:N] anchors); "
+        "batch-write via apply_outline (merge keeps unmentioned nodes); "
+        "single edits via update_node / update_notes. "
+        "All node IDs are map-local display_id. "
+        "compose_query combines multiple methods per call. "
+        "Keep the tree shallow: few nodes, with details in each node's note "
+        "(markdown; update_notes writes them in batch) — do not flatten a topic "
+        "into many small nodes. "
+        "Mutations pause for human confirmation—surface the ask to the user instead of retrying."
+    ),
 )
-mcp_http = mcp.http_app(path="/", transport="streamable-http", stateless_http=True)
+mcp_http = mcp.http_app(path="/", transport="streamable-http", stateless_http=False)
 
 
 @asynccontextmanager
