@@ -15,17 +15,35 @@ import { DocTree } from './DocTree'
 import { DocView, type DocEditTarget } from './DocView'
 import type { MapDetail } from './types'
 
+// 手机判定（iPhone 基准，≤768px 涵盖主流手机横竖屏）：matchMedia + change
+// 监听（theme.tsx 同款模式），横竖屏旋转 / 窗口缩放实时切换渲染分支
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(
+    () => window.matchMedia('(max-width: 768px)').matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)')
+    const onChange = () => setMobile(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return mobile
+}
+
 interface Props {
   detail: MapDetail
   selectedId: number | null // 复用编辑器选中态（Ctrl+P goto 等共用）
-  treeOpen: boolean // 左侧导航树展开/收起（开关在统一头部，localStorage 记忆）
+  treeOpen: boolean // 左侧导航树展开/收起（开关在统一头部，localStorage 记忆）；
+  // PC = 内联侧栏；手机 = Modal 抽屉（覆盖式不挤压文档区）
+  onTreeClose: () => void // 关闭侧栏（手机 Modal 的 backdrop/选中关闭路径）
   onSelect: (id: number | null) => void
   onToggleFold: (id: number) => void
   onUpdateNode: (id: number, content?: string, note?: string) => Promise<boolean>
 }
 
-export function DocMode({ detail, selectedId, treeOpen, onSelect, onToggleFold, onUpdateNode }: Props) {
+export function DocMode({ detail, selectedId, treeOpen, onTreeClose, onSelect, onToggleFold, onUpdateNode }: Props) {
   const { t } = useI18n()
+  const isMobile = useIsMobile()
   // 可见行序列：文档纵向顺序 = Tree 行序，两栏共用同一份（折叠态驱动裁剪）
   const rows = useMemo(() => buildDocRows(detail), [detail])
   const [editing, setEditing] = useState<DocEditTarget | null>(null) // 就地编辑目标（标题/正文二选一）
@@ -75,15 +93,40 @@ export function DocMode({ detail, selectedId, treeOpen, onSelect, onToggleFold, 
 
   return (
     <div className="doc-mode" aria-label={t('doc.treeAria')}>
-      {/* 收起 = 负 margin 滑出（内容保留，动画顺滑；.doc-mode overflow:hidden
-          防横向滚动条），开关在统一头部 */}
-      <DocTree
-        rows={rows}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        onToggleFold={onToggleFold}
-        collapsed={!treeOpen}
-      />
+      {/* 手机：侧栏以左侧抽屉 Modal 呈现（覆盖式——内联展开会把 390px 宽的
+          文档区压到不可读）。treeOpen 是与 PC 共用的真相源：选中行或点
+          backdrop 即关。 */}
+      {isMobile ? (
+        treeOpen && (
+          <div className="doc-tree-modal" role="dialog" aria-label={t('doc.treeAria')}>
+            <button
+              className="backdrop"
+              aria-label={t('doc.treeClose')}
+              onClick={onTreeClose}
+            />
+            <DocTree
+              rows={rows}
+              selectedId={selectedId}
+              onSelect={(id) => {
+                onSelect(id)
+                onTreeClose() // 选中即关：跳去读内容，抽屉不留场
+              }}
+              onToggleFold={onToggleFold}
+              collapsed={false}
+            />
+          </div>
+        )
+      ) : (
+        /* PC：收起 = 负 margin 滑出（内容保留，动画顺滑；.doc-mode
+           overflow:hidden 防横向滚动条），开关在统一头部 */
+        <DocTree
+          rows={rows}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onToggleFold={onToggleFold}
+          collapsed={!treeOpen}
+        />
+      )}
       <DocView
         rows={rows}
         selectedId={selectedId}

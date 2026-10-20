@@ -1043,7 +1043,12 @@ export function MindMapEditor({ mapId, onBack }: Props) {
   const [docMode, setDocMode] = useState(() => localStorage.getItem('docMode') === 'true')
   // 文档模式左侧导航树的展开/收起（2026-10-02）：收起后文档区占满全宽。
   // localStorage 记忆（docMode 同款惯例），默认展开
-  const [docTreeOpen, setDocTreeOpen] = useState(() => localStorage.getItem('docTreeOpen') !== 'false')
+  // 手机端初始收起：PC 的持久化偏好不该让手机一进文档模式就弹 Modal
+  const [docTreeOpen, setDocTreeOpen] = useState(
+    () =>
+      !window.matchMedia('(max-width: 768px)').matches &&
+      localStorage.getItem('docTreeOpen') !== 'false',
+  )
   useEffect(() => {
     localStorage.setItem('docTreeOpen', String(docTreeOpen))
   }, [docTreeOpen])
@@ -2467,6 +2472,7 @@ export function MindMapEditor({ mapId, onBack }: Props) {
             detail={detail}
             selectedId={selectedId}
             treeOpen={docTreeOpen}
+            onTreeClose={() => setDocTreeOpen(false)}
             onSelect={setSelectedId}
             onToggleFold={toggleDocFold}
             onUpdateNode={updateNode}

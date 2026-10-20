@@ -290,6 +290,7 @@ const zh = {
   'md.mermaidZoom': '点击查看大图（Esc 关闭）',
   'doc.treeToggleTitle': '展开 / 收起左侧导航树',
   'doc.treeToggleAria': '切换左侧导航树',
+  'doc.treeClose': '关闭导航树',
   // ── 交互指南：文档模式小节 ──
   'help.secDoc': '文档模式',
   'help.docSwitch': '文档模式开关（画布左上工具列）',
@@ -573,6 +574,7 @@ const en: Record<I18nKey, string> = {
   'md.mermaidZoom': 'Click to enlarge (Esc to close)',
   'doc.treeToggleTitle': 'Show / hide the left navigation tree',
   'doc.treeToggleAria': 'Toggle the left navigation tree',
+  'doc.treeClose': 'Close the navigation tree',
   // ── Help: doc mode section ──
   'help.secDoc': 'Doc mode',
   'help.docSwitch': 'Doc mode toggle (canvas tools, top-left)',

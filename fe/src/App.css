@@ -1682,6 +1682,43 @@ button.id-badge {
   transition: margin-left 0.18s ease;
 }
 .doc-tree.collapsed { margin-left: -265px; /* 264 + 1px border */ }
+/* 手机端侧栏 Modal（DocMode ≤768px 分支）：左侧抽屉覆盖式（不挤压文档区），
+   与 .modal 同层（z-10）；遮罩同款 0.3 黑。iPhone 基准 */
+.doc-tree-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden; /* fixed 弹层不外溢（iOS 布局视口偏宽时防穿透） */
+}
+.doc-tree-modal .backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgba(15, 15, 15, 0.3);
+  animation: doc-tree-fade 0.15s ease;
+}
+.doc-tree-modal .doc-tree {
+  position: relative; /* 盖在 backdrop 上 */
+  width: min(80vw, 320px);
+  margin: 0; /* 恒展开：不进入 PC 的负 margin 收起机制 */
+  /* iOS Safari 实测坑：fixed 弹层内的滚动子元素必须显式高度（不能只靠
+     flex stretch）+ dvh 适配动态工具栏 + 触摸惯性声明，否则触摸滚不动 */
+  height: 100dvh;
+  max-height: 100dvh;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  border-radius: 0 12px 12px 0;
+  box-shadow: 8px 0 32px rgba(15, 15, 15, 0.18);
+  animation: doc-tree-slide 0.18s ease;
+}
+@keyframes doc-tree-slide { from { transform: translateX(-100%); } }
+@keyframes doc-tree-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .doc-tree-modal .backdrop, .doc-tree-modal .doc-tree { animation: none; }
+}
 .doc-row {
   display: flex; align-items: center; gap: 4px; height: 28px;
   padding-left: calc(var(--doc-depth) * 14px + 6px); padding-right: 6px;
@@ -1732,7 +1769,11 @@ button.id-badge {
    （不够时压父区域，不占布局），pointer-events:none 纯视觉 */
 .doc-gutter {
   position: absolute;
-  left: -50px;
+  /* -32 而非 -50：depth-1 块缩进为 0（缩进从 depth-2 起），块外只有列
+     padding 32px——挂 -50 时锚点左缘被 .doc-view 裁掉 18px（#N 恰好在
+     裁剪区）→ "ID 不见了"。-32 让它恰好落在 列padding(32) + 块左padding(12)
+     里，任何深度都不越界、不压内容 */
+  left: -32px;
   top: 8px;
   width: 44px;
   display: flex;
@@ -1740,6 +1781,18 @@ button.id-badge {
   gap: 3px;
   color: var(--ink-3);
   pointer-events: none;
+}
+/* 手机（≤768px）整组覆盖——必须放在全部被覆盖规则之后：同特异性下
+   源顺序后写者胜，曾因插在 .doc-gutter 之前导致覆盖失效（锚点消失）。
+   块不缩进：层级信息由 Modal 侧栏承担（390px × 24px/级太奢侈） */
+@media (max-width: 768px) {
+  .doc-block { margin-left: 0; }
+  /* #N 锚点：PC 是块外左侧装订线；手机改块内右上角绝对定位（左上与标题
+     文字打架）。top:-3 让它沉进块的 8px 顶部 padding 带，避开右端折叠钮
+     （钮垂直居中，小字号块最多蹭到 ~2px 角） */
+  .doc-gutter { left: auto; right: 6px; top: 1px; width: auto; }
+  /* 列 padding 同步收窄（32px→12px）：装订线不再外挂，无需留左padding */
+  .doc-col { padding: 20px 12px 48px; }
 }
 /* 标题阶梯：根 = 文档大标题（# 层级自 depth 1 起，6 级封顶后走 .doc-h-deep） */
 .doc-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
